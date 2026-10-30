@@ -1,6 +1,6 @@
 // 진입점: 화면 전환·UI·지도 연결
 import { Map3D, toWorld } from './map3d.js';
-import { Game, SAVE_KEY, forceColor, UNIT_TYPES, josa, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC } from './game.js';
+import { Game, SAVE_KEY, forceColor, UNIT_TYPES, josa, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES } from './game.js';
 import { aiThink } from './ai.js';
 
 const $ = id => document.getElementById(id);
@@ -169,6 +169,36 @@ function onPick(nx, ny) {
   selectedUnit = null;
   showCityPanel(c);
 }
+function showFacilities(c) {
+  const p = $('panel'); p.classList.remove('hidden');
+  c.facilities = c.facilities ?? [];
+  const slots = game.facSlots(c);
+  let html = `<h3>${c.name_ko} 시설 <small>(개발지 ${c.facilities.length}/${slots})</small></h3>`;
+  if (c.facilities.length) {
+    html += c.facilities.map((f, i) => {
+      const spec = FACILITIES[f.type];
+      const body = f.done
+        ? `${f.type} — ${spec.desc}`
+        : `${f.type} 공사 중 ${f.progress}/${spec.turns} (담당 ${f.builders.map(b => DATA.officers[b]?.name_ko).join('·') || '없음'})`;
+      return `<div class="officer"><div><div class="st">${body}</div></div><button class="cmd cmd-demol" data-i="${i}">철거</button></div>`;
+    }).join('');
+  } else html += '<p>건설된 시설이 없습니다.</p>';
+  html += '<h3 style="margin-top:10px">건설</h3>';
+  const polTop = [...c.officers].sort((a, b) => (DATA.officers[b]?.pol ?? 0) - (DATA.officers[a]?.pol ?? 0)).slice(0, 3);
+  for (const [t, spec] of Object.entries(FACILITIES)) {
+    html += `<div class="officer"><div><div class="nm">${t} <span class="st">금${spec.cost} · 공기 ${spec.turns}턴</span></div><div class="st">${spec.desc}</div></div><button class="cmd cmd-build" data-t="${t}">건설</button></div>`;
+  }
+  html += `<p class="st">담당 무장 자동 배정 (정치 상위 3명: ${polTop.map(i => DATA.officers[i]?.name_ko).join('·') || '없음'}) · 정치 합산 250 이상이면 공기 2배</p>`;
+  html += `<button class="cmd" id="cmd-fac-back">← 도시 패널로</button>`;
+  p.innerHTML = html;
+  p.querySelectorAll('.cmd-build').forEach(btn => btn.onclick = () => {
+    if (game.buildFacility(c.id, btn.dataset.t, polTop)) { refreshAll(); showFacilities(c); }
+  });
+  p.querySelectorAll('.cmd-demol').forEach(btn => btn.onclick = () => {
+    if (game.demolishFacility(c.id, Number(btn.dataset.i))) { refreshAll(); showFacilities(c); }
+  });
+  $('cmd-fac-back').onclick = () => showCityPanel(c);
+}
 function showTech() {
   const f = game.forces[game.playerForce];
   const p = $('panel'); p.classList.remove('hidden');
@@ -213,6 +243,7 @@ function showCityPanel(c) {
       <button class="cmd" id="cmd-dispatch">출진</button>
       <button class="cmd" id="cmd-move">무장 이동</button>
       <button class="cmd" id="cmd-tech">기교 연구</button>
+      <button class="cmd" id="cmd-fac">시설 건설</button>
     </div>`;
   }
   html += `<h3 style="margin-top:10px">주둔 무장 (${c.officers.length})</h3>`;
@@ -233,6 +264,7 @@ function showCityPanel(c) {
     $('cmd-dispatch').onclick = () => showDispatch(c);
     $('cmd-move').onclick = () => showMove(c);
     $('cmd-tech').onclick = () => showTech();
+    $('cmd-fac').onclick = () => showFacilities(c);
     p.querySelectorAll('.cmd-rec').forEach(b => b.onclick = () => { game.recruitOfficer(c.id, Number(b.dataset.i)); refreshAll(); showCityPanel(c); });
   }
   const join = $('cmd-join');
