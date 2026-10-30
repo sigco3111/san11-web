@@ -393,6 +393,7 @@ function showCityPanel(c) {
     }
   }
   p.innerHTML = html;
+  p.scrollTop = 0; // 패널 상단 고정 (이전 스크롤 잔류로 도시명이 가려지는 문제 방지)
   if (mine) {
     $('cmd-dev-c').onclick = () => { game.develop(c.id, 'commerce'); refreshAll(); showCityPanel(c); };
     $('cmd-dev-f').onclick = () => { game.develop(c.id, 'farm'); refreshAll(); showCityPanel(c); };
