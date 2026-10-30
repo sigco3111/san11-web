@@ -223,7 +223,7 @@ function showChronicle() { // R14: 연감 — 【】 주요 사건 기록 (설�
   const m = $('modal'); m.classList.remove('hidden');
   const ch = (game.chronicle ?? []).slice().reverse();
   const body = ch.length ? ch.map(e => `<p class="st">[${e.y}년 ${e.m}월] ${e.msg}</p>`).join('') : '<p>기록된 사건이 없습니다.</p>';
-  m.innerHTML = `<div class="box" style="max-height:70vh;overflow:auto;max-width:560px"><h3>연감</h3>${body}<button id="chr-close">닫기</button></div>`;
+  m.innerHTML = `<div class="box" style="max-height:72vh;max-width:560px;display:flex;flex-direction:column"><h3>연감</h3><div style="overflow:auto;flex:1;min-height:0">${body}</div><button id="chr-close" style="flex:none;margin-top:8px">닫기</button></div>`; // R14: 기록이 길어도 닫기 버튼 고정 노출
   m.querySelector('#chr-close').onclick = () => m.classList.add('hidden');
 }
 
