@@ -155,6 +155,22 @@ function showDuel() {
   };
   render();
 }
+function showSwear(c) { // R12: 의형제 결연 모달
+  const m = $('modal'); m.classList.remove('hidden');
+  const eligible = c.officers.filter(i => (DATA.officers[i]?.state?.merit ?? 0) >= 500);
+  const techP = game.forces[c.force]?.techP ?? 0;
+  const render = sel => {
+    m.innerHTML = `<div class="box" style="min-width:380px">
+      <h3 style="color:#fd7">의형제 결연 — ${c.name_ko}</h3>
+      <p style="font-size:12px">공적 500 이상 무장 2~3명 선택 · 세력 기교P 500 소비 (보유 ${techP}) · 결연 무장 충성 +10 · 같은 부대 공·방 +10%, 일기토 교체 지원 상승</p>
+      ${eligible.length ? eligible.map(i => { const o = DATA.officers[i]; return `<p><label><input type="checkbox" class="swear-pick" data-i="${i}" ${sel.has(i) ? 'checked' : ''}> ${o.name_ko} (공적 ${o.state?.merit ?? 0}${game.relOf(i).sworn.length ? ' · 이미 결연: ' + game.relOf(i).sworn.map(x => DATA.officers[x]?.name_ko).join('·') : ''})</label></p>`; }).join('') : '<p>조건을 갖춘 무장이 없습니다 (공적 500 필요)</p>'}
+      <p><button class="cmd" id="swear-ok" ${sel.size >= 2 && sel.size <= 3 && techP >= 500 ? '' : 'disabled'}>결연 맺기</button> <button class="cmd" id="swear-cancel">취소</button></p></div>`;
+    m.querySelectorAll('.swear-pick').forEach(cb => cb.onchange = () => { const i = Number(cb.dataset.i); cb.checked ? sel.add(i) : sel.delete(i); render(sel); });
+    $('swear-ok').onclick = () => { if (game.swearBrotherhood(c.id, [...sel])) { m.classList.add('hidden'); refreshAll(); showCityPanel(c); } };
+    $('swear-cancel').onclick = () => { m.classList.add('hidden'); };
+  };
+  render(new Set());
+}
 function showDebate() { // R11: 설전 모달
   const d = game.pendingDebate; if (!d) return;
   const m = $('modal'); m.classList.remove('hidden');
@@ -401,9 +417,20 @@ function showTech() {
   });
   $('cmd-tech-back').onclick = () => { const c = lastCityId != null && game.cityById[lastCityId]; if (c) showCityPanel(c); else p.classList.add('hidden'); };
 }
+function relLine(idx) { // R12: 관계 표시
+  const r = game.relOf(idx);
+  const nm = i => DATA.officers[i]?.name_ko ?? '?';
+  const parts = [];
+  if (r.sworn.length) parts.push('의형제: ' + r.sworn.map(nm).join('·'));
+  if (r.spouse != null) parts.push('배우자: ' + nm(r.spouse));
+  if (r.dear.length) parts.push('친애: ' + r.dear.map(nm).join('·'));
+  if (r.hate.length) parts.push('혐오: ' + r.hate.map(nm).join('·'));
+  parts.push('상성 ' + game.affOf(idx));
+  return ' · ' + parts.join(' · ');
+}
 function officerRow(idx) {
   const o = DATA.officers[idx];
-  return `<div class="officer"><span class="pimg" style="${portraitCss(idx)}"></span><div><div class="nm">${o.name_ko} <span class="st">${o.name_zh}</span></div><div class="st">통${o.ldr} 무${o.war} 지${o.int} 정${o.pol} 매${o.chr} · ${o.skill ? o.skill + ' — ' + (DATA.skills[o.skill] || '') : '특기 없음'} · 충성 ${o.state?.loyal ?? '-'} · 공적 ${o.state?.merit ?? 0}${(o.state?.injuredUntil ?? 0) > game.turn ? ' · <span style="color:#f66">부상</span>' : ''}${(o.state?.items ?? []).length ? ' · 명품: ' + o.state.items.map(id => ITEMS.find(i => i.id === id)?.name ?? id).join('·') : ''}</div></div></div>`;
+  return `<div class="officer"><span class="pimg" style="${portraitCss(idx)}"></span><div><div class="nm">${o.name_ko} <span class="st">${o.name_zh}</span></div><div class="st">통${o.ldr} 무${o.war} 지${o.int} 정${o.pol} 매${o.chr} · ${o.skill ? o.skill + ' — ' + (DATA.skills[o.skill] || '') : '특기 없음'} · 충성 ${o.state?.loyal ?? '-'} · 공적 ${o.state?.merit ?? 0}${(o.state?.injuredUntil ?? 0) > game.turn ? ' · <span style="color:#f66">부상</span>' : ''}${(o.state?.items ?? []).length ? ' · 명품: ' + o.state.items.map(id => ITEMS.find(i => i.id === id)?.name ?? id).join('·') : ''}</div><div class="st" style="color:#b9a">${relLine(idx)}</div></div></div>`;
 }
 let lastCityId = null;
 function showCityPanel(c) {
@@ -453,6 +480,7 @@ function showCityPanel(c) {
       <button class="cmd" id="cmd-legion">군단</button>
     </div>`;
   }
+  if (mine) html += `<p style="margin-top:8px"><button class="cmd" id="cmd-swear">의형제 결연 (공적 500+ 무장 2~3명 · 기교P 500)</button></p>`;
   html += `<h3 style="margin-top:10px">주둔 무장 (${c.officers.length})</h3>`;
   html += c.officers.map(officerRow).join('') || '<p>무장 없음</p>';
   const free = Object.values(DATA.officers).filter(o => o.state?.status === 'free' && o.state.city === c.id && o.state.found !== false);
@@ -468,6 +496,8 @@ function showCityPanel(c) {
   p.innerHTML = html;
   p.scrollTop = 0; // 패널 상단 고정 (이전 스크롤 잔류로 도시명이 가려지는 문제 방지)
   if (mine) {
+    const sw = $('cmd-swear');
+    if (sw) sw.onclick = () => showSwear(c);
     $('cmd-dev-c').onclick = () => { game.develop(c.id, 'commerce'); refreshAll(); showCityPanel(c); };
     $('cmd-dev-f').onclick = () => { game.develop(c.id, 'farm'); refreshAll(); showCityPanel(c); };
     $('cmd-recruit').onclick = () => { game.recruit(c.id); refreshAll(); showCityPanel(c); };
