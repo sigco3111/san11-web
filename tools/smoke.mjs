@@ -1,4 +1,4 @@
-import { RULES, Game, UNIT_TYPES, ITEMS, FACILITIES, AB_BRANCHES, AB_P, AB_SKILL, isWaterAt, isSeaAt, isRiverAt, isFordAt, ARTS, FIELD_FACS } from '../js/game.js';
+import { TACTICS, RULES, Game, UNIT_TYPES, ITEMS, FACILITIES, AB_BRANCHES, AB_P, AB_SKILL, isWaterAt, isSeaAt, isRiverAt, isFordAt, ARTS, FIELD_FACS } from '../js/game.js';
 import { aiThink } from '../js/ai.js';
 import { readFileSync } from 'fs';
 const officers = {}; for (const o of JSON.parse(readFileSync('data/officers670.json'))) officers[o.idx] = o;
@@ -1825,5 +1825,22 @@ if (g.units.find(u => u.id === 9999) && g.units.find(u => u.id === 9999).qi === 
   if (sp.tacLogs || sp.direct || cv.tacLogs || cv.direct || bw.tacLogs || bw.direct) fail('육군/기병/노병이 도시 대상 전법 사용 ' + JSON.stringify({ sp, cv, bw }));
   if (!ct.direct) fail('병기 직접 전법 불가');
   console.log('R34 기본공격/전법 분리 게이트 PASS (창·기·노 도시 전법 0회, 투석기 직접 전법 ' + ct.direct + '/60)');
+}
+// === R38: AI 장기 공성 철수 시험 게이트 ===
+{
+  const fail = m => { console.log('FAIL: R38 ' + m); process.exit(1); };
+  const mkg = () => { const g = new Game(JSON.parse(JSON.stringify(scen)), JSON.parse(JSON.stringify(officers)), {}, 0); g.units = []; return g; };
+  const setup = (troops, ctroops) => {
+    const g = mkg(); const fid = Object.keys(g.forces).map(Number).find(i => g.forces[i].alive && i !== g.playerForce && g.forceCities(i).length >= 2); if (fid == null) fail("세력 없음");
+    const home = g.forceCities(fid)[0]; const tc = g.cities.find(c => c.force != null && c.force !== fid && !g.isAllied(fid, c.force));
+    tc.troops = ctroops; tc.hp = tc.maxhp = 100000;
+    const u = { id: 1, force: fid, officers: [home.officers[0]], troops, type: 'spear', x: tc.lon, z: tc.lat, path: [], tx: tc.lon, tz: tc.lat, targetCity: tc.id, label: 'S', qi: 100, conf: 0 };
+    g.units.push(u); return { g, fid, tc, u };
+  };
+  { const { g, fid, tc, u } = setup(3000, 20000); u._siegeAge = 8; aiThink(g, fid); if (u.targetCity !== tc.id) fail('9턴째 철수 (10턴 미만)'); aiThink(g, fid); if (u.targetCity === tc.id || u.targetCity == null) fail('10턴 열세 부대가 철수하지 않음'); if (g.cityById[u.targetCity].force !== fid) fail('철수지가 아군 도시가 아님'); }
+  { const { g, fid, tc, u } = setup(30000, 5000); u._siegeAge = 12; aiThink(g, fid); if (u.targetCity !== tc.id) fail('병력 우세 부대가 철수함'); }
+  if (TACTICS.sword) fail('검병 TACTICS 항목이 남아 있음'); if (TACTICS.bow.name !== '불화살' || TACTICS.bow.qi !== 15) fail('노병 기본 전법 불화살(잠정 15) 아님');
+  { const g = mkg(); const f = g.playerForce; const oi = g.forceCities(f)[0].officers[0]; const c = g.cities.find(c => c.force != null && c.force !== f); g.officers[oi].apt = {}; for (let k = 0; k < 12; k++) g.officers[oi].apt[k] = 'S'; const u = { id: 5, force: f, officers: [oi], troops: 4000, type: 'sword', x: c.lon, z: c.lat, path: [], tx: c.lon, tz: c.lat, targetCity: c.id, label: 'W', qi: 100, conf: 0 }; g.units.push(u); RULES.cityTacticSiegeOnly = false; try { g.stepUnit(u); } catch (e) { RULES.cityTacticSiegeOnly = true; fail('검병 공성 중 예외 ' + e.message); } RULES.cityTacticSiegeOnly = true; }
+  console.log('R38 AI 장기 공성 철수 게이트 PASS (10턴 미만 유지, 열세 10턴 철수 후 아군 도시, 우세 부대 유지)');
 }
 console.log('sample logs:'); for (const l of g.logs.slice(-8)) console.log(' ', l.t, l.msg);
