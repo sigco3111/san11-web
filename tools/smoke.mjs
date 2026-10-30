@@ -1,4 +1,4 @@
-import { Game, UNIT_TYPES, ITEMS } from '../js/game.js';
+import { Game, UNIT_TYPES, ITEMS, FACILITIES, AB_BRANCHES, AB_P, AB_SKILL } from '../js/game.js';
 import { aiThink } from '../js/ai.js';
 import { readFileSync } from 'fs';
 const officers = {}; for (const o of JSON.parse(readFileSync('data/officers670.json'))) officers[o.idx] = o;
@@ -872,6 +872,104 @@ if (g.units.find(u => u.id === 9999) && g.units.find(u => u.id === 9999).qi === 
   // 상성: affOf 결정적 + 군주 궁합 차 반영 (월 처리 경로는 시뮬에서 간접 검증)
   if (g13.affOf(liu.idx) !== g13.affOf(liu.idx) || g13.affOf(liu.idx) < 0 || g13.affOf(liu.idx) >= 150) { console.error('FAIL: R12 상성 범위'); process.exit(1); }
   console.log('R12 관계 게이트 PASS (의형제매핑/부대보정/결연비용/결연충성/결연저장/혐오등용/상성)');
+// === R13: PK 3요소 게이트 (결정적) ===
+{
+  const need = ['부절대','군사부','인재부','외교부','회계청','곡물창고','훈련장','의관','감찰소','서재'];
+  if (!need.every(t => FACILITIES[t])) { console.log('FAIL: R13 신시설 등록', need.filter(t => !FACILITIES[t])); process.exit(1); }
+  const g14 = new Game(scen, officers, {}, 0);
+  const c14 = g14.cities.find(c => c.force === g14.playerForce);
+  const f14 = g14.forces[g14.playerForce];
+  const settle = () => { if (g14.pendingDuel) g14.duelAuto(g14.pendingDuel); if (g14.pendingDebate) g14.debateAuto(g14.pendingDebate); };
+  const runMonth = () => { const o0 = Math.random; Math.random = () => 0.999; for (let i = 0; i < 3; i++) { g14.endTurn(aiThink); settle(); } Math.random = o0; };
+  g14.units = []; // 전투 간섭 제거
+  // 흡수합병
+  c14.facilities = [{ type: '시장', progress: 2, builders: [], done: true }, { type: '시장', progress: 2, builders: [], done: true }, { type: '농장', progress: 2, builders: [], done: true }];
+  c14.gold = 1000; f14.ap = 100;
+  if (!g14.absorbFacility(c14.id, 0, 1)) { console.log('FAIL: R13 흡수합병 실행'); process.exit(1); }
+  if (c14.facilities.length !== 2 || c14.facilities[0].level !== 2 || c14.gold !== 800 || f14.ap !== 90) { console.log('FAIL: R13 흡수합병 결과', c14.facilities.length, c14.facilities[0].level, c14.gold, f14.ap); process.exit(1); }
+  if (g14.absorbFacility(c14.id, 0, 1)) { console.log('FAIL: R13 타입 다른 합병 허용'); process.exit(1); }
+  c14.facilities[0].level = 3;
+  c14.facilities.push({ type: '시장', progress: 2, builders: [], done: true });
+  if (g14.absorbFacility(c14.id, 0, 2)) { console.log('FAIL: R13 Lv3 상한 합병 허용'); process.exit(1); }
+  if (g14.cityFacLv(c14, '시장') !== 4) { console.log('FAIL: R13 시설 레벨 합산', g14.cityFacLv(c14, '시장')); process.exit(1); }
+  // 능력연구
+  f14.techP = 6000;
+  const off14 = g14.forceOfficers(g14.playerForce);
+  const w0 = off14[0].war;
+  if (!g14.researchAbility(g14.playerForce, '공격')) { console.log('FAIL: R13 능력연구 실행'); process.exit(1); }
+  if (f14.techP !== 5500 || f14.ab['공격'] !== 1 || off14[0].war !== Math.min(100, w0 + 2)) { console.log('FAIL: R13 능력연구 결과', f14.techP, f14.ab['공격'], off14[0].war, w0); process.exit(1); }
+  if ((off14[0].state.bonus?.war ?? 0) !== 2) { console.log('FAIL: R13 능력 보너스 저장'); process.exit(1); }
+  const skTarget = off14.filter(o => !o.skill).sort((a, b) => (b.state?.merit ?? 0) - (a.state?.merit ?? 0))[0];
+  g14.researchAbility(g14.playerForce, '공격'); g14.researchAbility(g14.playerForce, '공격');
+  if (f14.ab['공격'] !== 3) { console.log('FAIL: R13 능력연구 3단계'); process.exit(1); }
+  if (skTarget && (skTarget.skill !== AB_SKILL['공격'] || skTarget.state.grantSkill !== AB_SKILL['공격'])) { console.log('FAIL: R13 연구 특기 습득', skTarget?.name_ko, skTarget?.skill); process.exit(1); }
+  if (g14.researchAbility(g14.playerForce, '공격')) { console.log('FAIL: R13 능력연구 상한 초과'); process.exit(1); }
+  // 부절대: 턴 시작 AP 회복 +10
+  c14.facilities.push({ type: '부절대', progress: 3, builders: [], done: true });
+  f14.ap = 0;
+  { const o0 = Math.random; Math.random = () => 0.999; g14.endTurn(aiThink); settle(); Math.random = o0; }
+  if (f14.ap !== 40) { console.log('FAIL: R13 부절대 AP 회복', f14.ap); process.exit(1); }
+  // 서재: 월 기교P +10 (기저 대비 차분)
+  f14.techP = 0;
+  runMonth(); const tpBase = f14.techP;
+  c14.facilities.push({ type: '서재', progress: 3, builders: [], done: true });
+  runMonth();
+  if (f14.techP - tpBase - tpBase !== 10) { console.log('FAIL: R13 서재 기교P', f14.techP, tpBase); process.exit(1); }
+  // 감찰소: 치안 월 +2 (기저 대비 차분)
+  c14.security = 50; runMonth(); const secBase = c14.security;
+  c14.security = 50; c14.facilities.push({ type: '감찰소', progress: 3, builders: [], done: true });
+  runMonth();
+  if (c14.security - secBase !== 2) { console.log('FAIL: R13 감찰소 치안', c14.security, secBase); process.exit(1); }
+  // 의관: 부상 회복 2배 (월 -1 추가)
+  const inj = off14[0]; inj.state.injuredUntil = g14.turn + 10;
+  c14.facilities.push({ type: '의관', progress: 3, builders: [], done: true });
+  runMonth();
+  if (inj.state.injuredUntil - g14.turn !== 6) { console.log('FAIL: R13 의관 부상 회복', inj.state.injuredUntil - g14.turn); process.exit(1); }
+  // 회계청·곡물창고: 금·병량 수입 +10% (기저 대비 비율)
+  c14.facilities = c14.facilities.filter(x => !['시장','농장'].includes(x.type)); // 시장·농장 간섭 제거
+  const savedOff = c14.officers; c14.officers = []; // 봉록 공제 배제 (수입 비율 순수 비교)
+  c14.gold = 0; c14.food = 0; runMonth(); const gBase = c14.gold, fdBase = c14.food;
+  c14.gold = 0; c14.food = 0; c14.facilities.push({ type: '회계청', progress: 3, builders: [], done: true }, { type: '곡물창고', progress: 3, builders: [], done: true });
+  runMonth();
+  c14.officers = savedOff;
+  const goldRatio = c14.gold / gBase, foodRatio = c14.food / fdBase;
+  if (Math.abs(goldRatio - 1.1) > 0.02 || Math.abs(foodRatio - 1.1) > 0.02) { console.log('FAIL: R13 회계청·곡물창고', goldRatio.toFixed(3), foodRatio.toFixed(3)); process.exit(1); }
+  // 군사부·인재부·외교부: AP 절감
+  c14.gold = 5000; c14.food = 50000; f14.ap = 200;
+  g14.recruit(c14.id); const apRecruit = 200 - f14.ap;
+  c14.facilities.push({ type: '군사부', progress: 3, builders: [], done: true });
+  f14.ap = 200; g14.recruit(c14.id); const apRecruit2 = 200 - f14.ap;
+  if (apRecruit !== 30 || apRecruit2 !== 23) { console.log('FAIL: R13 군사부', apRecruit, apRecruit2); process.exit(1); }
+  const c14b = g14.cities.find(c => c.force === g14.playerForce && c.id !== c14.id) ?? c14; // 이동 대상 도시
+  c14.facilities.push({ type: '인재부', progress: 3, builders: [], done: true });
+  f14.ap = 100; g14.moveOfficers(c14.id, c14b.id, [c14.officers[0]]); const apMove = 100 - f14.ap;
+  if (apMove !== 15) { console.log('FAIL: R13 인재부', apMove); process.exit(1); }
+  c14.facilities.push({ type: '외교부', progress: 3, builders: [], done: true });
+  const tgt = g14.aliveForces().map(x => x.id ?? x).find(x => x !== g14.playerForce);
+  f14.ap = 100; c14.gold = 5000; g14.envoy(g14.playerForce, tgt, c14.id); const apEnvoy = 100 - f14.ap;
+  if (apEnvoy !== 15) { console.log('FAIL: R13 외교부', apEnvoy); process.exit(1); }
+  // 훈련장: 주둔 부대 기력 +5
+  c14.facilities.push({ type: '훈련장', progress: 3, builders: [], done: true });
+  g14.units.push({ id: 9996, force: g14.playerForce, officers: [c14.officers[0]], troops: 5000, type: 'spear', x: c14.lon, z: c14.lat, path: [], tx: null, tz: null, targetCity: null, label: '주둔시험 5k', qi: 50, conf: 0 });
+  { const o0 = Math.random; Math.random = () => 0.999; g14.endTurn(aiThink); settle(); Math.random = o0; }
+  const qiT = g14.units.find(u => u.id === 9996)?.qi;
+  if (qiT !== 65) { console.log('FAIL: R13 훈련장 기력', qiT); process.exit(1); }
+  // 저장 영속: 세력 ab 포함
+  if (!g14.forces[g14.playerForce].ab) { console.log('FAIL: R13 ab 저장 필드'); process.exit(1); }
+  // AI 동일 규칙: 능력연구·흡수합병 자동 실행
+  const g15 = new Game(scen, officers, {}, 0); g15.units = [];
+  const aiF = g15.aliveForces().map(x => x.id ?? x).find(x => x !== g15.playerForce);
+  g15.forces[aiF].techP = 5000;
+  const aiC = g15.cities.find(c => c.force === aiF);
+  aiC.facilities = [{ type: '시장', progress: 2, builders: [], done: true }, { type: '시장', progress: 2, builders: [], done: true }];
+  aiC.gold = 1000;
+  { const o0 = Math.random; Math.random = () => 0.999; for (let i = 0; i < 3; i++) { g15.endTurn(aiThink); if (g15.pendingDuel) g15.duelAuto(g15.pendingDuel); if (g15.pendingDebate) g15.debateAuto(g15.pendingDebate); } Math.random = o0; }
+  const aiAb = Object.values(g15.forces[aiF].ab ?? {}).reduce((s, v) => s + v, 0);
+  const aiMerged = (aiC.facilities ?? []).some(x => (x.level ?? 1) >= 2);
+  if (aiAb < 1) { console.log('FAIL: R13 AI 능력연구', aiAb); process.exit(1); }
+  if (!aiMerged) { console.log('FAIL: R13 AI 흡수합병', JSON.stringify(aiC.facilities)); process.exit(1); }
+  console.log('R13 PK 3요소 게이트 PASS (신시설10종/흡수합병/상한/레벨합산/능력연구/특기습득/부절대/서재/감찰소/의관/회계청곡물창고/군사부/인재부/외교부/훈련장/저장/AI동일규칙)');
+}
 }
 {
   const fs = await import('fs');
