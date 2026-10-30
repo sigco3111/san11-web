@@ -869,7 +869,7 @@ export class Game {
     // 전법: 병종 적성 B 이상 + 기력 소모, 무력이 높을수록 발동 잘됨
     const tac = TACTICS[u.type];
     const aptLv = u.type === 'sword' ? 1 : APT_LV(lead.apt?.[APT_IDX[u.type]]);
-    if (aptLv >= (tac.minApt ?? 1) && u.qi >= tac.qi && Math.random() < Math.min(0.55, 0.15 + lead.war/250)) {
+    if ((u._tacTurn ?? -1) !== this.turn && aptLv >= (tac.minApt ?? 1) && u.qi >= tac.qi && Math.random() < Math.min(0.55, 0.15 + lead.war/250)) {
       u.qi -= tac.qi;
       this.gainMerit(u.officers[0], MERIT.tactic);
       dmg = Math.round(dmg * tac.mult);
@@ -878,7 +878,7 @@ export class Game {
     }
     // 계략(공격측): 화계 — 부대 내 최고 지력 무장
     const caster = u.officers.map(i => this.officers[i]).sort((a, b) => b.int - a.int)[0];
-    if (caster && caster.int >= STRATS.fire.minInt && u.qi >= STRATS.fire.qi && Math.random() < Math.min(0.5, 0.1 + caster.int/300 + (this.unitHasSkill(u, '풍계') ? 0.15 : 0)) * (1 - this.mindDefense(c.force))) {
+    if (caster && (u._stratTurn ?? -1) !== this.turn && caster.int >= STRATS.fire.minInt && u.qi >= STRATS.fire.qi && Math.random() < Math.min(0.5, 0.1 + caster.int/300 + (this.unitHasSkill(u, '풍계') ? 0.15 : 0)) * (1 - this.mindDefense(c.force))) {
       u.qi -= STRATS.fire.qi;
       this.gainMerit(caster.idx, MERIT.stratagem);
       const burn = Math.round(c.troops * 0.08 * (1 + 0.15 * this.techLv(u.force, '화공')));
@@ -939,7 +939,7 @@ export class Game {
       // 전법 (공성과 같은 규칙)
       const tac = TACTICS[att.type];
       const aptLv = att.type === 'sword' ? 1 : APT_LV(lead.apt?.[APT_IDX[att.type]]);
-      if (aptLv >= (tac.minApt ?? 1) && (att.qi ?? 100) >= tac.qi && Math.random() < Math.min(0.55, 0.15 + lead.war/250)) {
+      if ((att._tacTurn ?? -1) !== this.turn && aptLv >= (tac.minApt ?? 1) && (att.qi ?? 100) >= tac.qi && Math.random() < Math.min(0.55, 0.15 + lead.war/250)) {
         att.qi -= tac.qi; dmg = Math.round(dmg * tac.mult);
         if (tac.guard) att._guard = true;
         if (att.type === 'cav') att._cavTactic = true; // R10: 기병 전법 시 일기토 발동률 상승 (설계안 110행)
@@ -947,12 +947,12 @@ export class Game {
       }
       // 계략: 혼란
       const caster = att.officers.map(i => this.officers[i]).sort((x, y) => y.int - x.int)[0];
-      if (caster && caster.int >= STRATS.confuse.minInt && !this.unitHasSkill(def, '위장') && (att.qi ?? 100) >= 25 && Math.random() < Math.min(0.35, 0.08 + caster.int/400) * (1 - this.mindDefense(def.force))) {
+      if (caster && (att._stratTurn ?? -1) !== this.turn && caster.int >= STRATS.confuse.minInt && !this.unitHasSkill(def, '위장') && (att.qi ?? 100) >= 25 && Math.random() < Math.min(0.35, 0.08 + caster.int/400) * (1 - this.mindDefense(def.force))) {
         att.qi -= 25; def.conf = Math.max(def.conf ?? 0, STRATS.confuse.turns);
         this.log(`【계략】${caster.name_ko}의 혼란! ${def.label}이(가) ${STRATS.confuse.turns}턴간 움직이지 못합니다`, att.force === this.playerForce);
       }
       // 계략: 화계
-      if (caster && caster.int >= STRATS.fire.minInt && !this.unitHasSkill(def, '위장') && (att.qi ?? 100) >= STRATS.fire.qi && Math.random() < Math.min(0.5, 0.1 + caster.int/300 + (this.unitHasSkill(att, '풍계') ? 0.15 : 0)) * (1 - this.mindDefense(def.force))) {
+      if (caster && (att._stratTurn ?? -1) !== this.turn && caster.int >= STRATS.fire.minInt && !this.unitHasSkill(def, '위장') && (att.qi ?? 100) >= STRATS.fire.qi && Math.random() < Math.min(0.5, 0.1 + caster.int/300 + (this.unitHasSkill(att, '풍계') ? 0.15 : 0)) * (1 - this.mindDefense(def.force))) {
         att.qi -= STRATS.fire.qi;
         const burn = Math.round(def.troops * 0.06 * (1 + 0.15 * this.techLv(att.force, '화공')));
         def.troops = Math.max(0, def.troops - burn);
@@ -995,7 +995,7 @@ export class Game {
   // === R15: 전법·계략 직접 발동 — 자동 발동과 같은 비용·수치, 플레이어가 부대 패널에서 대상을 직접 선택 (설계안 본편 조작) ===
   tacticInfo(u) { // 직접 전법 가능 여부 (자동 발동의 자격·기력 조건과 동일)
     const tac = u ? TACTICS[u.type] : null;
-    if (!u || !tac || (u.conf ?? 0) > 0) return null;
+    if (!u || !tac || (u.conf ?? 0) > 0 || (u._tacTurn ?? -1) === this.turn) return null; // 턴 1회 제한 (자동 발동의 교전당 1회 판정과 같은 행동 경제)
     const lead = this.officers[u.officers[0]] ?? { war: 60, int: 30, apt: null, name_ko: '적병 두목', idx: -1 };
     const aptLv = u.type === 'sword' ? 1 : APT_LV(lead.apt?.[APT_IDX[u.type]]);
     if (aptLv < (tac.minApt ?? 1) || (u.qi ?? 100) < tac.qi) return null;
@@ -1014,7 +1014,7 @@ export class Game {
       let dmg = Math.round(u.troops * 0.05 * utA.atk * (0.7 + lead.war/150) / utD.def * this.aptMult(u) * this.unitDmgMult(u) * this.unitItemAtk(u) * this.unitDefMult(d) * this.unitTechAtk(u) * this.unitRelMult(u) / this.unitRelMult(d) * (1 - 0.03 * this.techLv(d.force, '연병'))); // 야전 산식과 동일
       if (isWaterAt(u.x, u.z)) dmg = Math.round(dmg * (utA.ship ? 1.3 : 0.7) * (this.unitHasSkill(u, '수완') ? 1.15 : 1));
       dmg = Math.round(dmg * tac.mult);
-      u.qi -= tac.qi;
+      u.qi -= tac.qi; u._tacTurn = this.turn;
       this.gainMerit(u.officers[0], MERIT.tactic);
       d.troops = Math.max(0, d.troops - dmg);
       this.gainTechP(u.force, Math.min(40, Math.floor(dmg / 100)));
@@ -1033,7 +1033,7 @@ export class Game {
       if (ut.burn) { const ex = Math.round(c.troops * 0.03); c.troops = Math.max(0, c.troops - ex); c.hp = Math.max(0, c.hp - Math.round(ex * 0.5)); }
       if (this.cityHasSkill(c, '수성')) dmg = Math.round(dmg * 0.85);
       if (c.force != null) dmg = Math.round(dmg * (1 - 0.05 * this.techLv(c.force, '방위')));
-      u.qi -= tac.qi;
+      u.qi -= tac.qi; u._tacTurn = this.turn;
       this.gainMerit(u.officers[0], MERIT.tactic);
       c.troops = Math.max(0, c.troops - dmg);
       c.hp = Math.max(0, c.hp - Math.round(dmg * 0.5));
@@ -1066,7 +1066,7 @@ export class Game {
         const d = enemyUnit();
         if (!d) return false;
         u._stratTurn = this.turn;
-        if (Math.random() >= p * (1 - this.mindDefense(d.force))) { this.log(`【계략】${caster.name_ko}의 화계가 ${d.label}에 실패했습니다`, u.force === this.playerForce); return true; }
+        if (Math.random() >= p * (1 - this.mindDefense(d.force))) { this.log(`【계략】${caster.name_ko}의 화계가 ${d.label}에 실패했습니다`, u.force === this.playerForce); this.autosave(); return true; }
         u.qi -= STRATS.fire.qi;
         this.gainMerit(caster.idx, MERIT.stratagem);
         const burn = Math.round(d.troops * 0.06 * (1 + 0.15 * this.techLv(u.force, '화공')));
@@ -1080,7 +1080,7 @@ export class Game {
         const c = this.cityById[target.id];
         if (!c || c.force == null || c.force === u.force || this.isPeace(u.force, c.force) || !inRange(c.lon, c.lat)) return false;
         u._stratTurn = this.turn;
-        if (Math.random() >= p * (1 - this.mindDefense(c.force))) { this.log(`【계략】${caster.name_ko}의 화계가 ${c.name_ko}에 실패했습니다`, u.force === this.playerForce); return true; }
+        if (Math.random() >= p * (1 - this.mindDefense(c.force))) { this.log(`【계략】${caster.name_ko}의 화계가 ${c.name_ko}에 실패했습니다`, u.force === this.playerForce); this.autosave(); return true; }
         u.qi -= STRATS.fire.qi;
         this.gainMerit(caster.idx, MERIT.stratagem);
         const burn = Math.round(c.troops * 0.08 * (1 + 0.15 * this.techLv(u.force, '화공')));
@@ -1097,7 +1097,7 @@ export class Game {
       const d = enemyUnit();
       if (!d) return false;
       u._stratTurn = this.turn;
-      if (Math.random() >= Math.min(0.35, 0.08 + caster.int/400) * (1 - this.mindDefense(d.force))) { this.log(`【계략】${caster.name_ko}의 혼란이 ${d.label}에 실패했습니다`, u.force === this.playerForce); return true; }
+      if (Math.random() >= Math.min(0.35, 0.08 + caster.int/400) * (1 - this.mindDefense(d.force))) { this.log(`【계략】${caster.name_ko}의 혼란이 ${d.label}에 실패했습니다`, u.force === this.playerForce); this.autosave(); return true; }
       u.qi -= 25;
       this.gainMerit(caster.idx, MERIT.stratagem);
       d.conf = Math.max(d.conf ?? 0, STRATS.confuse.turns);
