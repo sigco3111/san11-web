@@ -107,6 +107,10 @@ export const FIELD_FACS = {
   '채':     { cost: 350, turns: 2, hp: 900, r: 3.5, desc: '반경 3.5 안 아군 부대가 받는 피해 -15%, 매 턴 기력 +5' },
   '석벽':   { cost: 300, turns: 2, hp: 900, r: 1.2, art: '석벽술', desc: '(기교 「석벽술」 필요) 적 육군이 반경 1.2 안에서 이동 속도 15%로 감소 (강한 통행 방해)' },
   '토루':   { cost: 120, turns: 1, hp: 300, r: 1.4, desc: '적 육군이 반경 1.4 안에서 이동 속도 40%로 감소 (통행 방해)' },
+  '성채':   { cost: 800, turns: 3, hp: 1500, r: 4.0, desc: '반경 4 안 아군 부대가 받는 피해 -25%, 매 턴 기력 +8' },
+  '태고대': { cost: 400, turns: 2, hp: 500, r: 3.0, desc: '반경 3 안 아군 부대 공격력 +10%' },
+  '군악대': { cost: 400, turns: 2, hp: 500, r: 3.0, desc: '반경 3 안 아군 부대 이동 속도 +15%' },
+  '석병팔진': { cost: 1200, turns: 3, hp: 1000, r: 1.8, desc: '적 육군이 반경 1.8 안에서 이동 속도 10%로 감소 (가장 강한 통행 방해)' },
   '투석대': { cost: 300, turns: 2, hp: 500, r: 3.0, desc: '매 턴 반경 3 안 적 부대 병력의 4%(최소 100) 피해' },
 };
 // R28: 함정 (설계 함정 항목: 불화살 함정·낙석 - 수치·효과 자체). 1회 발동 후 소멸, 적에게는 보이지 않음
@@ -281,8 +285,9 @@ export class Game {
     const lead = this.officers[u.officers[0]];
     return 0.9 + APT_LV(lead?.apt?.[APT_IDX[u.type]]) * 0.1;
   }
-  unitDmgMult(u, siege = false) { // 공격 특기 보정
-    let m = 1;
+  fieldNear(u, type) { return (this.fieldFacs ?? []).some(f => f.type === type && f.force === u.force && f.left <= 0 && Math.hypot(u.x - f.x, u.z - f.z) <= FIELD_FACS[type].r); }
+  unitDmgMult(u, siege = false) { // 공격 특기 보정 + 태고대(반경 안 +10%)
+    let m = this.fieldNear(u, '태고대') ? 1.1 : 1;
     if (siege) { if (this.unitHasSkill(u, '파성')) m *= 1.2; return m; }
     if ((u.type === 'spear' || u.type === 'pike') && this.unitHasSkill(u, '파진')) m *= 1.15;
     if (u.type === 'bow' && this.unitHasSkill(u, '신궁')) m *= 1.15;
@@ -294,7 +299,7 @@ export class Game {
   unitDefMult(u) { return (this.unitHasSkill(u, '강직') ? 0.85 : 1) * this.fieldDefMult(u); }
   fieldDefMult(u) { // R26: 진·채 (중첩 없이 가장 큰 쪽)
     let best = 1;
-    for (const f of this.fieldFacs ?? []) { if (f.force !== u.force || f.left > 0) continue; const sp = FIELD_FACS[f.type]; if (!sp || (f.type !== '진' && f.type !== '채') || Math.hypot(u.x - f.x, u.z - f.z) > sp.r) continue; best = Math.min(best, f.type === '채' ? 0.85 : 0.92); }
+    for (const f of this.fieldFacs ?? []) { if (f.force !== u.force || f.left > 0) continue; const sp = FIELD_FACS[f.type]; if (!sp || (f.type !== '진' && f.type !== '채' && f.type !== '성채') || Math.hypot(u.x - f.x, u.z - f.z) > sp.r) continue; best = Math.min(best, f.type === '성채' ? 0.75 : f.type === '채' ? 0.85 : 0.92); }
     return best;
   }
   canBuildField(u, type) { // 야전 시설 건설 가능 여부 (불가 사유 반환, 가능하면 null)
@@ -349,7 +354,7 @@ export class Game {
         const d = Math.max(100, Math.round(v.troops * 0.04)); v.troops = Math.max(1, v.troops - d);
         if (f._logT !== this.turn) { f._logT = this.turn; this.log(`【야전】투석대가 ${v.label}에 ${d} 피해를 입혔습니다`, f.force === this.playerForce || v.force === this.playerForce); }
       }
-      if (f.type === '진' || f.type === '채') for (const v of this.units) if (v.force === f.force && Math.hypot(v.x - f.x, v.z - f.z) <= sp.r) v.qi = Math.min(100, (v.qi ?? 100) + (f.type === '채' ? 5 : 3));
+      if (f.type === '진' || f.type === '채' || f.type === '성채') for (const v of this.units) if (v.force === f.force && Math.hypot(v.x - f.x, v.z - f.z) <= sp.r) v.qi = Math.min(100, (v.qi ?? 100) + (f.type === '성채' ? 8 : f.type === '채' ? 5 : 3));
       if (f.hp <= 0) { list.splice(list.indexOf(f), 1); this.log(`【야전】${f.type}이 파괴되었습니다`, f.force === this.playerForce); }
     }
   }
@@ -383,7 +388,7 @@ export class Game {
   fieldSlow(u) { // 토루 통행 방해 배율
     if (u.slowT > 0) { u.slowT--; return 0.5; } // R28: 낙석
     let m = 1;
-    for (const f of this.fieldFacs ?? []) if ((f.type === '토루' || f.type === '석벽') && f.left <= 0 && f.force !== u.force && Math.hypot(u.x - f.x, u.z - f.z) <= FIELD_FACS[f.type].r) m = Math.min(m, f.type === '석벽' ? 0.15 : 0.4);
+    for (const f of this.fieldFacs ?? []) if ((f.type === '토루' || f.type === '석벽' || f.type === '석병팔진') && f.left <= 0 && f.force !== u.force && Math.hypot(u.x - f.x, u.z - f.z) <= FIELD_FACS[f.type].r) m = Math.min(m, f.type === '석병팔진' ? 0.1 : f.type === '석벽' ? 0.15 : 0.4);
     return m;
   }
   aiFieldBuild() { // AI도 같은 buildField로 건설: 적이 가까운 정지 부대가 4턴마다 투석대/채/진/토루 순으로 시도
@@ -393,7 +398,7 @@ export class Game {
       const nc = this.cities.find(c => c.force != null && c.force !== u.force && this.canBreakLevee(u, c) === null);
       if (nc && this.breakLevee(u.id, nc.id)) continue; // R28: AI도 같은 breakLevee
       if (!this.units.some(v => v.force !== u.force && v.force !== -1 && Math.hypot(v.x - u.x, v.z - u.z) < 4)) continue;
-      for (const t of ['투석대', '채', '진', '석벽', '토루', '불화살함정', '낙석']) { if (this.buildField(u.id, t)) break; }
+      for (const t of ['투석대', '성채', '채', '태고대', '군악대', '진', '석병팔진', '석벽', '토루', '불화살함정', '낙석']) { if (this.buildField(u.id, t)) break; }
     }
   }
   // === 기교 (자체 수치) ===
@@ -1089,7 +1094,7 @@ export class Game {
     }
     const ut = UNIT_TYPES[u.type];
     const spdMult = this.unitHasSkill(u, '질풍') ? 1.25 : (this.unitHasSkill(u, '신행') ? 1.15 : 1); // R17: 신행 = 이동 +15% (자체 재정의 — 야간·날씨 시스템 부재, 질풍 우선)
-    let speed = 0.55 * ut.move * spdMult;
+    let speed = 0.55 * ut.move * spdMult * (this.fieldNear(u, '군악대') ? 1.15 : 1);
     while (u.path?.length && Math.hypot(u.path[0][0] - u.x, u.path[0][1] - u.z) < 0.35) { if (u.path.length > 1) { u.x = u.path[0][0]; u.z = u.path[0][1]; } u.path.shift(); } // R17: 경유지 통과 (연속 근접 경유지 모두 소비, 마지막 경유지=목표는 위치 스냅 없이 제거 → d=0 NaN 방지)
     const aimX = u.path?.length ? u.path[0][0] : u.tx, aimZ = u.path?.length ? u.path[0][1] : u.tz;
     const dx = aimX - u.x, dz = aimZ - u.z;
