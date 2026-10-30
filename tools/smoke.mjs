@@ -1871,6 +1871,31 @@ if (g.units.find(u => u.id === 9999) && g.units.find(u => u.id === 9999).qi === 
   if (run('spear', 'D', 100, false).logs.length) fail('적성 B 미만인데 자동 전법 발동');
   if (run('spear', 'S', 10, false).logs.length) fail('기력 부족인데 자동 전법 발동');
   if (run('spear', 'S', 100, true).logs.length) fail('같은 턴 두 번째 자동 전법 발동');
+  { const g = new Game(JSON.parse(JSON.stringify(scen)), JSON.parse(JSON.stringify(officers)), {}, 0); g.units = []; const o = g.forces[g.playerForce].ruler; g.officers[o].apt = {}; for (let k = 0; k < 12; k++) g.officers[o].apt[k] = 'S';
+    const mkS = (t, id) => ({ id, force: g.playerForce, officers: [o], troops: 5000, type: t, x: 0, z: 0, path: [], tx: null, tz: null, targetCity: null, label: 'S', qi: 100, conf: 0 });
+    const li = g.tacticInfo(mkS('lou', 1)), di = g.tacticInfo(mkS('dou', 2));
+    if (!li || li.opts.some(x => x.id === 'base') || li.opts.filter(x => x.name === '격돌').length !== 1) fail('누선 격돌 중복 ' + JSON.stringify(li?.opts.map(x => x.name)));
+    if (!di || !di.opts.some(x => x.name === '격돌') || !di.opts.some(x => x.id === 'base' && x.name === '투석')) fail('투함 격돌/투석 ' + JSON.stringify(di?.opts.map(x => x.name))); }
   console.log('R39 창·극·기병 자동 전법 게이트 PASS (설계 EX 사용: 창 나선찌르기(15)·극 선풍베기(25, 혼란형 없음→최고 기력형), 기병 사용, 적성 B 미만/기력 부족/턴 1회 차단)');
+}
+// === R41: ai.js 호환 가드 - game에 pickTactic이 없어도(구 game.js와 혼합 로드) AI 전법이 예외 없이 같은 규칙으로 동작 ===
+{
+  const fail = m => { console.log('FAIL: R41 ' + m); process.exit(1); };
+  const rand0 = Math.random;
+  const run = noPick => {
+    const g = new Game(JSON.parse(JSON.stringify(scen)), JSON.parse(JSON.stringify(officers)), {}, 0); g.units = [];
+    const pf = g.playerForce, ef = g.cities.find(c => c.force != null && c.force !== pf).force;
+    const o1 = g.forces[pf].ruler, o2 = g.forces[ef].ruler;
+    for (const o of [o1, o2]) { g.officers[o].int = 10; g.officers[o].apt = {}; for (let k = 0; k < 12; k++) g.officers[o].apt[k] = 'S'; }
+    const mk = (id, force, o, t, x) => { const u = { id, force, officers: [o], troops: 9000, type: t, x, z: 10, path: [], tx: null, tz: null, targetCity: null, label: 'V' + id, qi: 100, conf: 0 }; g.units.push(u); return u; };
+    const ai = mk(1, ef, o2, 'spear', 50), tgt = mk(2, pf, o1, 'sword', 50.5);
+    if (noPick) g.pickTactic = undefined;
+    Math.random = () => 0; try { aiThink(g, ef); } catch (e) { Math.random = rand0; fail('AI 예외 ' + e.message); } finally { Math.random = rand0; }
+    return { turn: ai._tacTurn, qi: ai.qi, conf: tgt.conf };
+  };
+  const a = run(false), b = run(true);
+  if (a.turn == null || b.turn == null) fail('AI 전법 미발동 ' + JSON.stringify({ a, b }));
+  if (a.qi !== b.qi || a.conf !== b.conf) fail('가드 경로가 같은 규칙이 아님 ' + JSON.stringify({ a, b }));
+  console.log('R41 AI 호환 가드 게이트 PASS (pickTactic 없는 game에서도 AI 전법 발동, 정상 경로와 같은 기력·혼란 결과)');
 }
 console.log('sample logs:'); for (const l of g.logs.slice(-8)) console.log(' ', l.t, l.msg);
