@@ -1,4 +1,4 @@
-import { Game, UNIT_TYPES } from '../js/game.js';
+import { Game, UNIT_TYPES, ITEMS } from '../js/game.js';
 import { aiThink } from '../js/ai.js';
 import { readFileSync } from 'fs';
 const officers = {}; for (const o of JSON.parse(readFileSync('data/officers670.json'))) officers[o.idx] = o;
@@ -39,6 +39,7 @@ console.log('tactics fired:', tacN, '| stratagems fired:', stratN, '| field batt
     if (freeO) { freeO.state.status = 'free'; freeO.state.city = home.id; }
   }
   if (home && freeO) {
+    freeO.state.found = true; // 수색 발견 상태 (신규 게임의 재야는 미발견으로 시작)
     g.forces[home.force].ap = 100; home.gold += 1000; // 결정적 조건 확보
     const n0 = home.officers.length, g0 = home.gold;
     const p = g.recruitChance(home.id, freeO.idx);
@@ -50,6 +51,72 @@ console.log('tactics fired:', tacN, '| stratagems fired:', stratN, '| field batt
     }
     console.log('등용 성공 경로 확인:', freeO.name_ko, '성공률', Math.round(p*100) + '%');
   } else { console.error('FAIL: 등용 검증 대상 없음'); process.exit(1); }
+
+  // === 수색·상인·명품 ===
+  {
+    const gateF = g.aliveForces().find(f => g.forceCities(f.id).length && g.forceCities(f.id).some(c => c.officers.length));
+    if (!gateF) { console.error('FAIL: R6 게이트 세력 없음'); process.exit(1); }
+    // 미발견 재야는 등용 불가, 수색 발견 후 등용 가능
+    const hc = g.forceCities(gateF.id).find(c => c.officers.length) ?? g.forceCities(gateF.id)[0];
+    const hid = Object.values(g.officers).find(o => o.state?.status === 'free');
+    if (hid) { hid.state.city = hc.id; hid.state.found = false; } // 결정적 대상 배치
+    if (hid && g.recruitChance(hid.state.city, hid.idx) !== 0) { console.error('FAIL: 미발견 재야 등용 가능'); process.exit(1); }
+    if (hid) {
+      hc.gold += 500; g.forces[hc.force].ap = 100;
+      Object.values(g.officers).forEach(o => { if (o.state?.status === 'free' && o.state.city === hc.id && o !== hid) o.state.found = true; });
+      const o0 = Math.random; Math.random = () => 0.001;
+      g.searchCity(hc.id); Math.random = o0;
+      const foundO = Object.values(g.officers).find(o => o.state?.status === 'free' && o.state.city === hc.id && o.state.found === true);
+      if (!foundO || g.recruitChance(hc.id, foundO.idx) <= 0) { console.error('FAIL: 수색 발견→등용 경로', { hid: hid.name_ko, found: foundO?.name_ko }); process.exit(1); }
+      console.log('수색 발견 확인:', foundO.name_ko);
+    }
+    // 명품 발견: itemPool에서 담당 무장에게 귀속
+    {
+      const sc = g.forceCities(gateF.id)[0]; sc.gold += 500; gateF.ap = 100;
+      Object.values(g.officers).forEach(o => { if (o.state?.status === 'free' && o.state.city === sc.id) o.state.found = true; });
+      const pool0 = (g.itemPool ?? []).length;
+      const o0 = Math.random; Math.random = () => 0.001; // hidden 없음 → 명품 분기 (0.001 < 0.25)
+      g.searchCity(sc.id); Math.random = o0;
+      const holder = Object.values(g.officers).find(o => (o.state?.items ?? []).length > 0);
+      if (!(g.itemPool.length === pool0 - 1 && holder)) { console.error('FAIL: 명품 발견·귀속'); process.exit(1); }
+      // 장병(weapon) 공격 +5% 승수 — 무기 1개를 결정적으로 쥐여 검증
+      holder.state.items = [...new Set([...holder.state.items, 'fangtian'])].slice(0, 3);
+      const wN = holder.state.items.filter(id => ITEMS.find(i => i.id === id)?.kind === 'weapon').length;
+      const mult = g.unitItemAtk({ officers: [holder.idx] });
+      if (Math.abs(mult - (1 + 0.05 * wN)) > 1e-9) { console.error('FAIL: 장병 공격 승수', mult, wN); process.exit(1); }
+      console.log('명품 발견 확인:', holder.name_ko, holder.state.items, '장병 승수', mult);
+    }
+    // 옥새: 보유 세력 기교P 월 +10
+    {
+      const f = gateF;
+      const off = Object.values(g.officers).find(o => o.state?.force === f.id);
+      off.state.items = [...new Set([...(off.state.items ?? []), 'yuxi'])].slice(0, 3);
+      const p0 = f.techP ?? 0;
+      // 월 처리만 단독 호출은 불가 → techP 증가 로직 검증은 monthly 경로 대신 직접 확인: turn 실행 없이 조건부 로직을 game 메서드로 분리하지 않았으므로, endTurn 1회 실행으로 검증
+      const before = f.techP ?? 0;
+      for (let t = 0; t < 3; t++) g.endTurn(aiThink); // 월 처리는 3순(1개월)마다
+      if (!((f.techP ?? 0) >= before + 10)) { console.error('FAIL: 옥새 기교P 월+10', before, f.techP); process.exit(1); }
+      off.state.items = off.state.items.filter(i => i !== 'yuxi');
+      console.log('옥새 기교P 확인:', before, '→', f.techP);
+    }
+    // 상인: 환율 범위·매입/매각 수치
+    {
+      const rate = g.tradeRate();
+      if (!(rate >= 4000 && rate <= 7000 && rate % 1000 === 0)) { console.error('FAIL: 상인 환율', rate); process.exit(1); }
+      const tc = g.forceCities(gateF.id)[0]; tc.gold = 5000; tc.food = 10000; gateF.ap = 100;
+      const g0 = tc.gold, f0 = tc.food;
+      if (!g.trade(tc.id, 'buy', 2) || tc.gold !== g0 - 2000 || tc.food !== f0 + rate * 2) { console.error('FAIL: 상인 매입'); process.exit(1); }
+      if (!g.trade(tc.id, 'sell', 1) || tc.gold !== g0 - 2000 + 1000 || tc.food !== f0 + rate * 2 - rate) { console.error('FAIL: 상인 매각'); process.exit(1); }
+      console.log('상인 거래 확인: 환율 1:' + rate / 1000);
+    }
+    // AI 수색·거래 stub (플레이어 세력을 AI에게 맡겨 실행)
+    {
+      const hid2 = Object.values(g.officers).find(o => o.state?.status === 'free' && o.state.found === false && g.cityById[o.state.city]?.force === gateF.id);
+      const c2 = hid2 && g.cityById[hid2.state.city];
+      if (c2) { c2.gold = 3000; gateF.ap = 100; const o0 = Math.random; Math.random = () => 0.1; aiThink(g, gateF.id); Math.random = o0; }
+      console.log('AI 수색·거래 stub 실행 완료');
+    }
+  }
 }
 if (fieldN < 1) { console.error('FAIL: no field battle resolved'); process.exit(1); }
 if (g.units.find(u => u.id === 9999) && g.units.find(u => u.id === 9999).qi === undefined) {
@@ -319,8 +386,11 @@ if (g.units.find(u => u.id === 9999) && g.units.find(u => u.id === 9999).qi === 
   }
   // 동맹 만료: allianceUntil 지나면 해제
   g8.diploOf(0, tid).v = 70; g8.diploOf(0, tid).allianceUntil = g8.turn - 1;
-  g8.dan = 3; g8.endTurn(aiThink);
-  if (g8.isAllied(0, tid)) { console.error('FAIL: 동맹 만료'); process.exit(1); }
+  g8.dan = 2; // endTurn이 dan을 먼저 올리므로 3이 되어 월 처리 실행
+  const oR8 = Math.random; Math.random = () => 0.999; // AI 재제의 등 확률 동작 차단
+  g8.endTurn(aiThink);
+  Math.random = oR8;
+  if (g8.isAllied(0, tid) || g8.diploOf(0, tid).allianceUntil !== 0) { console.error('FAIL: 동맹 만료', { turn: g8.turn, au: g8.diploOf(0, tid).allianceUntil }); process.exit(1); }
   // AI 친선 사절: 험악 이웃 + 금 여유 + random stub → 관계 상승
   const gA = new Game(scen, officers, {}, 0);
   const aiF = Object.values(gA.forces).find(f => f.alive && f.id !== gA.playerForce);
