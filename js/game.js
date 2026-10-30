@@ -1,4 +1,5 @@
 // 게임 상태·턴 엔진 (삼국지11 기본 구조의 단순화 1차 구현)
+export { RANKS, MERIT };
 export const SAVE_KEY = 'cheonha-xi-web.save.v1';
 export const FORCE_COLORS = ['#4a7fd4','#d44a4a','#4ad47f','#d4a44a','#9a4ad4','#4ad4d4','#d44a8f','#8fd44a','#d47f4a','#6a6ad4','#d4d44a','#4a9a6a','#c46a4a','#7a4a2a','#2a7a8a','#8a2a4a','#5a8a2a','#aa6aaa','#4a5a9a','#9a8a3a','#3a7a4a','#b45a7a','#6aaac4','#c48a3a','#7a3a9a','#3a9a8a','#aa4a3a','#5a7a2a','#8a6aaa','#4a8aaa','#ca7a5a','#3a6a3a','#9a4a6a','#6a8a4a','#4a4aaa','#aa9a3a','#3a8a6a','#b46a8a','#5a9aca'];
 export function forceColor(fid) { return FORCE_COLORS[fid % FORCE_COLORS.length]; }
@@ -50,6 +51,10 @@ export const FACILITIES = {
   '공방':   { cost: 300, turns: 3, desc: '병기 생산 (병기 라운드에서 활성)' },
   '조선소': { cost: 300, turns: 3, desc: '선박 생산 (수군 라운드에서 활성)' },
 };
+
+// === 공적·관작 (자체 수치) ===
+const RANKS = [[2,'주자사'],[4,'주목'],[6,'우림중랑장'],[8,'오관중랑장'],[12,'대장군'],[14,'대사마'],[18,'공'],[20,'왕']]; // 설계안 사다리(황제는 R14 통합). 황건 세력은 작위 불가
+const MERIT = { develop: 30, recruit: 80, facility: 100, tactic: 40, stratagem: 30, capture: 150 }; // 공적 부여량 (자체 수치)
 
 export class Game {
   constructor(scen, officers, skills, playerForceId) {
@@ -117,6 +122,29 @@ export class Game {
     this.log(`【기교】${this.forceName(fid)} ${b} ${lv + 1}단계 연구 완료 (기교P ${TECH_P[lv]}·금 ${TECH_GOLD[lv]} 소비)`, fid === this.playerForce);
     return true;
   }
+// === 공적·충성·관작 ===
+  gainMerit(i, n) { const st = this.officers[i]?.state; if (st) st.merit = (st.merit ?? 0) + n; }
+  meritGrade(i) { return Math.min(8, Math.floor((this.officers[i]?.state?.merit ?? 0) / 500)); } // 공적 500당 1등급 (자체 수치)
+  salaryOf(i) { return 10 + this.meritGrade(i) * 5; } // 월 봉록: 기본 10금 + 등급당 5금 (자체 수치)
+  forceRank(fid) { // 소유 도시 수 기준 관작 (황건 제외, 황제 승격은 R14)
+    const f = this.forces[fid];
+    if (!f?.alive || this.forceName(fid).includes('황건')) return null;
+    const n = this.cities.filter(c => c.force === fid).length;
+    let r = null;
+    for (const [need, name] of RANKS) if (n >= need) r = name;
+    return r;
+  }
+  checkRanks() { // 관작 자동 승진: 승진 시 전 소속 무장 충성 +5 (자체 수치)
+    for (const f of Object.values(this.forces)) {
+      if (!f.alive) continue;
+      const r = this.forceRank(f.id);
+      if (r && r !== f.rank) {
+        f.rank = r;
+        for (const o of Object.values(this.officers)) if (o.state?.force === f.id) o.state.loyal = Math.min(100, (o.state.loyal ?? 70) + 5);
+        this.log(`【관작】${this.forceName(f.id)}이(가) ${r}(으)로 승진했습니다! 소속 무장 충성 상승`, true);
+      }
+    }
+  }
   // === 내정시설 ===
   facSlots(c) { return c.metropolis ? 12 : 8; } // 개발지 수 (자체 수치)
   cityFac(c, t) { return (c.facilities ?? []).filter(f => f.type === t && f.done); }
@@ -142,8 +170,10 @@ export class Game {
   develop(cityId, kind) { // kind: 'commerce' | 'farm', 비용 금 300, AP 30
     const c = this.cityById[cityId], f = this.forces[c.force];
     if (c.gold < 300 || f.ap < 30 || c[kind] >= 100) return false;
+    const bestOff = c.officers.length ? [...c.officers].sort((a, b) => this.officers[b].pol - this.officers[a].pol)[0] : null;
     const best = Math.max(50, ...c.officers.map(i => this.officers[i].pol));
     c.gold -= 300; f.ap -= 30;
+    if (bestOff != null) this.gainMerit(bestOff, MERIT.develop);
     const gain = Math.round(4 + best/20);
     c[kind] = Math.min(100, c[kind] + gain);
     this.gainTechP(c.force, 25); // 커맨드 실행 기교P
@@ -183,8 +213,10 @@ export class Game {
     const envoy = Math.max(...c.officers.map(i => this.officers[i].chr));
     c.gold -= 100; f.ap -= 20;
     if (Math.random() < p) {
+      const envoyIdx = c.officers.length ? [...c.officers].sort((a, b) => this.officers[b].chr - this.officers[a].chr)[0] : null;
+      if (envoyIdx != null) this.gainMerit(envoyIdx, MERIT.recruit);
       t.state.status = 'serving'; t.state.force = c.force;
-      c.officers.push(officerIdx);
+      if (!c.officers.includes(officerIdx)) c.officers.push(officerIdx);
       this.log(`【등용】${t.name_ko}이(가) 【${this.forceName(c.force)}】에 등용되었습니다 (${c.name_ko}, 사자 매력 ${envoy})`, true);
       return true;
     }
@@ -196,11 +228,12 @@ export class Game {
     if (f.ap < 20) return false;
     f.ap -= 20;
     a.officers = a.officers.filter(i => !idxs.includes(i));
-    for (const i of idxs) { b.officers.push(i); this.officers[i].state.city = toCity; }
+    for (const i of new Set(idxs)) { if (!b.officers.includes(i)) b.officers.push(i); this.officers[i].state.city = toCity; }
     this.log(`${a.name_ko} → ${b.name_ko} 무장 ${idxs.length}명 이동`, a.force === this.playerForce);
     return true;
   }
   dispatch(cityId, officerIdxs, troops, type) { // 부대 출진, AP 40
+    officerIdxs = [...new Set(officerIdxs)];
     const c = this.cityById[cityId], f = this.forces[c.force];
     if (f.ap < 40 || c.troops < troops || officerIdxs.length === 0) return false;
     const ut = UNIT_TYPES[type];
@@ -251,6 +284,29 @@ export class Game {
           else { c.spears += 100; c.pikes += 100; c.bows += 100; }
         }
         if (this.cityFac(c, '마구간').length) c.horses += (c.specialty ?? []).includes('군마') ? 400 : 100;
+        // 봉록: 소속 무장에게 도시 금으로 월급 지급, 못 주면 충성 하락 (설계안: 봉록을 못 주면 충성 하락)
+        for (const i of [...new Set(c.officers)]) {
+          const st = this.officers[i]?.state;
+          if (!st || st.force == null) continue;
+          const sal = this.salaryOf(i);
+          if (c.gold >= sal) { c.gold -= sal; st.loyal = Math.min(100, (st.loyal ?? 70) + 1); }
+          else {
+            st.loyal = Math.max(0, (st.loyal ?? 70) - 4);
+            this.log(`${c.name_ko}의 ${this.officers[i].name_ko}에게 봉록 ${sal}금을 주지 못했습니다 (충성 하락)`, c.force === this.playerForce);
+          }
+        }
+      }
+      // 충성 25 이하 무장은 월 15% 확률로 하야 (자체 수치)
+      for (const c of this.cities) {
+        for (const i of [...c.officers]) {
+          const st = this.officers[i]?.state;
+          if (!st || (st.status !== 'serving' && st.status !== 'taesu')) continue;
+          if ((st.loyal ?? 70) <= 25 && Math.random() < 0.15) {
+            st.status = 'free'; st.force = null; st.city = null;
+            c.officers = c.officers.filter(x => x !== i);
+            this.log(`【하야】${this.officers[i].name_ko}이(가) 충성이 낮아 【${this.forceName(c.force)}】을(를) 떠났습니다`, true);
+          }
+        }
       }
     }
     // 신규 등장 무장
@@ -287,10 +343,12 @@ export class Game {
         fc.progress += polSum >= 250 ? 2 : 1;
         if (fc.progress >= FACILITIES[fc.type].turns) {
           fc.done = true;
+          for (const b of fc.builders) this.gainMerit(b, MERIT.facility);
           this.log(`${c.name_ko}에 ${fc.type} 완성!`, c.force === this.playerForce);
         }
       }
     }
+    this.checkRanks();
     this.dan++;
     if (this.dan > 3) { this.dan = 1; this.month++; if (this.month > 12) { this.month = 1; this.year++; } }
     this.turn++;
@@ -325,7 +383,7 @@ export class Game {
     if (c.force === u.force) { // 아군 도시 합류
       const cap = c.metropolis ? 150000 : 100000;
       c.troops = Math.min(cap, c.troops + u.troops);
-      for (const i of u.officers) { c.officers.push(i); this.officers[i].state.city = c.id; }
+      for (const i of u.officers) { if (!c.officers.includes(i)) c.officers.push(i); this.officers[i].state.city = c.id; }
       this.units = this.units.filter(x => x !== u);
       return;
     }
@@ -338,6 +396,7 @@ export class Game {
     const aptLv = u.type === 'sword' ? 1 : APT_LV(lead.apt?.[APT_IDX[u.type]]);
     if (aptLv >= 1 && u.qi >= tac.qi && Math.random() < Math.min(0.55, 0.15 + lead.war/250)) {
       u.qi -= tac.qi;
+      this.gainMerit(u.officers[0], MERIT.tactic);
       dmg = Math.round(dmg * tac.mult);
       if (tac.guard) loss = Math.round(loss * tac.guard);
       this.log(`【전법】${lead.name_ko}의 ${tac.name}! ${c.name_ko}에 큰 피해`, u.force === this.playerForce);
@@ -346,6 +405,7 @@ export class Game {
     const caster = u.officers.map(i => this.officers[i]).sort((a, b) => b.int - a.int)[0];
     if (caster && caster.int >= STRATS.fire.minInt && u.qi >= STRATS.fire.qi && Math.random() < Math.min(0.5, 0.1 + caster.int/300 + (this.unitHasSkill(u, '풍계') ? 0.15 : 0))) {
       u.qi -= STRATS.fire.qi;
+      this.gainMerit(caster.idx, MERIT.stratagem);
       const burn = Math.round(c.troops * 0.08 * (1 + 0.15 * this.techLv(u.force, '화공')));
       c.troops = Math.max(0, c.troops - burn);
       c.hp = Math.max(0, c.hp - Math.round(burn * 0.5));
@@ -373,6 +433,7 @@ export class Game {
       c.force = u.force; c.district = null;
       c.hp = Math.round(c.maxhp * 0.4);
       this.gainTechP(u.force, 200); // 도시 함락 기교P
+      for (const i of u.officers) this.gainMerit(i, MERIT.capture);
       this.log(`【${c.name_ko}】함락! ${old != null ? this.forceName(old) : '공백지'} → ${this.forceName(u.force)}`, true);
       // 수비 무장 일부 포로/퇴각은 후속 구현 — 일단 공격측 도시에 그대로 둠
       u.tx = null; u.targetCity = null;
@@ -455,4 +516,4 @@ export function josa(name, pair) { // [을,를] 형태
   const code = name.charCodeAt(name.length-1);
   const jong = (code >= 0xAC00 && code <= 0xD7A3) ? (code-0xAC00)%28 : 0;
   return name + (jong ? pair[0] : pair[1]);
-  }
+                                                      }
