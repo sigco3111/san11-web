@@ -991,6 +991,123 @@ export class Game {
       }
     }
   }
+
+  // === R15: 전법·계략 직접 발동 — 자동 발동과 같은 비용·수치, 플레이어가 부대 패널에서 대상을 직접 선택 (설계안 본편 조작) ===
+  tacticInfo(u) { // 직접 전법 가능 여부 (자동 발동의 자격·기력 조건과 동일)
+    const tac = u ? TACTICS[u.type] : null;
+    if (!u || !tac || (u.conf ?? 0) > 0) return null;
+    const lead = this.officers[u.officers[0]] ?? { war: 60, int: 30, apt: null, name_ko: '적병 두목', idx: -1 };
+    const aptLv = u.type === 'sword' ? 1 : APT_LV(lead.apt?.[APT_IDX[u.type]]);
+    if (aptLv < (tac.minApt ?? 1) || (u.qi ?? 100) < tac.qi) return null;
+    return { tac, lead };
+  }
+  fireTactic(uid, target) { // 직접 전법: 확정 발동(기력 소모), 피해 산식은 자동 발동과 동일. target: {type:'unit'|'city', id}
+    const u = this.units.find(x => x.id === uid);
+    const info = this.tacticInfo(u);
+    if (!info) return false;
+    const { tac, lead } = info;
+    const inRange = (x, z) => Math.hypot(x - u.x, z - u.z) < 2.2;
+    if (target.type === 'unit') {
+      const d = this.units.find(x => x.id === target.id);
+      if (!d || d.force === u.force || this.isPeace(u.force, d.force) || !inRange(d.x, d.z)) return false;
+      const utA = UNIT_TYPES[u.type], utD = UNIT_TYPES[d.type];
+      let dmg = Math.round(u.troops * 0.05 * utA.atk * (0.7 + lead.war/150) / utD.def * this.aptMult(u) * this.unitDmgMult(u) * this.unitItemAtk(u) * this.unitDefMult(d) * this.unitTechAtk(u) * this.unitRelMult(u) / this.unitRelMult(d) * (1 - 0.03 * this.techLv(d.force, '연병'))); // 야전 산식과 동일
+      if (isWaterAt(u.x, u.z)) dmg = Math.round(dmg * (utA.ship ? 1.3 : 0.7) * (this.unitHasSkill(u, '수완') ? 1.15 : 1));
+      dmg = Math.round(dmg * tac.mult);
+      u.qi -= tac.qi;
+      this.gainMerit(u.officers[0], MERIT.tactic);
+      d.troops = Math.max(0, d.troops - dmg);
+      this.gainTechP(u.force, Math.min(40, Math.floor(dmg / 100)));
+      this.log(`【전법】${lead.name_ko}의 ${tac.name}! 야전에서 ${d.label}에 큰 피해 (-${dmg})`, u.force === this.playerForce);
+      if (d.troops <= 0) { this.units = this.units.filter(x => x !== d); this.log(`${d.label} 부대가 전멸했습니다`, false); }
+      this.autosave();
+      return true;
+    }
+    if (target.type === 'city') {
+      const c = this.cityById[target.id];
+      if (!c || c.force === u.force || (c.force != null && this.isPeace(u.force, c.force)) || !inRange(c.lon, c.lat)) return false;
+      const ut = UNIT_TYPES[u.type];
+      let dmg = Math.round(u.troops * 0.12 * ut.atk * (0.7 + lead.war/150) * this.aptMult(u) * this.unitDmgMult(u, true) * this.unitItemAtk(u) * this.unitTechAtk(u) * this.unitRelMult(u) * (1 + 0.1 * this.techLv(u.force, '발명'))); // 공성 산식과 동일
+      dmg = Math.round(dmg * tac.mult);
+      if (ut.siege) dmg = Math.round(dmg * ut.siege);
+      if (ut.burn) { const ex = Math.round(c.troops * 0.03); c.troops = Math.max(0, c.troops - ex); c.hp = Math.max(0, c.hp - Math.round(ex * 0.5)); }
+      if (this.cityHasSkill(c, '수성')) dmg = Math.round(dmg * 0.85);
+      if (c.force != null) dmg = Math.round(dmg * (1 - 0.05 * this.techLv(c.force, '방위')));
+      u.qi -= tac.qi;
+      this.gainMerit(u.officers[0], MERIT.tactic);
+      c.troops = Math.max(0, c.troops - dmg);
+      c.hp = Math.max(0, c.hp - Math.round(dmg * 0.5));
+      this.gainTechP(u.force, Math.min(50, Math.floor(dmg / 100)));
+      this.log(`【전법】${lead.name_ko}의 ${tac.name}! ${c.name_ko}에 큰 피해 (-${dmg})`, u.force === this.playerForce);
+      if (c.troops <= 0 || c.hp <= 0) {
+        c.force = u.force; c.district = null;
+        c.hp = Math.round(c.maxhp * 0.4);
+        this.gainTechP(u.force, 200);
+        for (const i of u.officers) this.gainMerit(i, MERIT.capture);
+        u.tx = null; u.targetCity = null;
+        this.log(`【${c.name_ko}】함락! → ${this.forceName(u.force)}`, true);
+      }
+      this.autosave();
+      return true;
+    }
+    return false;
+  }
+  fireStrat(uid, kind, target) { // 직접 계략: 성공률·비용·효과는 자동 발동과 동일, 부대당 턴 1회 시도
+    const u = this.units.find(x => x.id === uid);
+    if (!u || (u.conf ?? 0) > 0 || (u._stratTurn ?? -1) === this.turn) return false;
+    const caster = u.officers.map(i => this.officers[i]).sort((a, b) => b.int - a.int)[0];
+    if (!caster) return false;
+    const inRange = (x, z) => Math.hypot(x - u.x, z - u.z) < 2.2;
+    const enemyUnit = () => { const d = this.units.find(x => x.id === target.id); return (d && d.force !== u.force && !this.isPeace(u.force, d.force) && !this.unitHasSkill(d, '위장') && inRange(d.x, d.z)) ? d : null; };
+    if (kind === 'fire') {
+      if (caster.int < STRATS.fire.minInt || (u.qi ?? 100) < STRATS.fire.qi) return false;
+      const p = Math.min(0.5, 0.1 + caster.int/300 + (this.unitHasSkill(u, '풍계') ? 0.15 : 0));
+      if (target.type === 'unit') {
+        const d = enemyUnit();
+        if (!d) return false;
+        u._stratTurn = this.turn;
+        if (Math.random() >= p * (1 - this.mindDefense(d.force))) { this.log(`【계략】${caster.name_ko}의 화계가 ${d.label}에 실패했습니다`, u.force === this.playerForce); return true; }
+        u.qi -= STRATS.fire.qi;
+        this.gainMerit(caster.idx, MERIT.stratagem);
+        const burn = Math.round(d.troops * 0.06 * (1 + 0.15 * this.techLv(u.force, '화공')));
+        d.troops = Math.max(0, d.troops - burn);
+        this.log(`【계략】${caster.name_ko}의 화계! ${d.label} 병력 -${burn}`, u.force === this.playerForce);
+        if (d.troops <= 0) { this.units = this.units.filter(x => x !== d); this.log(`${d.label} 부대가 전멸했습니다`, false); }
+        this.autosave();
+        return true;
+      }
+      if (target.type === 'city') {
+        const c = this.cityById[target.id];
+        if (!c || c.force == null || c.force === u.force || this.isPeace(u.force, c.force) || !inRange(c.lon, c.lat)) return false;
+        u._stratTurn = this.turn;
+        if (Math.random() >= p * (1 - this.mindDefense(c.force))) { this.log(`【계략】${caster.name_ko}의 화계가 ${c.name_ko}에 실패했습니다`, u.force === this.playerForce); return true; }
+        u.qi -= STRATS.fire.qi;
+        this.gainMerit(caster.idx, MERIT.stratagem);
+        const burn = Math.round(c.troops * 0.08 * (1 + 0.15 * this.techLv(u.force, '화공')));
+        c.troops = Math.max(0, c.troops - burn);
+        c.hp = Math.max(0, c.hp - Math.round(burn * 0.5));
+        this.log(`【계략】${caster.name_ko}의 화계! ${c.name_ko} 수비병 -${burn}`, u.force === this.playerForce);
+        this.autosave();
+        return true;
+      }
+      return false;
+    }
+    if (kind === 'confuse') {
+      if (caster.int < STRATS.confuse.minInt || (u.qi ?? 100) < 25 || target.type !== 'unit') return false;
+      const d = enemyUnit();
+      if (!d) return false;
+      u._stratTurn = this.turn;
+      if (Math.random() >= Math.min(0.35, 0.08 + caster.int/400) * (1 - this.mindDefense(d.force))) { this.log(`【계략】${caster.name_ko}의 혼란이 ${d.label}에 실패했습니다`, u.force === this.playerForce); return true; }
+      u.qi -= 25;
+      this.gainMerit(caster.idx, MERIT.stratagem);
+      d.conf = Math.max(d.conf ?? 0, STRATS.confuse.turns);
+      this.log(`【계략】${caster.name_ko}의 혼란! ${d.label}이(가) ${STRATS.confuse.turns}턴간 움직이지 못합니다`, u.force === this.playerForce);
+      this.autosave();
+      return true;
+    }
+    return false;
+  }
+  // === R15 끝 ===
   patrol(cityId) { // R9: 치안 순찰 — 치안 +10 (금 100·AP 20, 자체 수치)
     const c = this.cityById[cityId];
     if (!c || c.force == null || this._blocked(c)) return false;
