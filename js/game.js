@@ -73,6 +73,8 @@ export const STRATS = {
 };
 
 // === 기교 연구 (자체 수치) ===
+// R23: 개별 기교 (설계 106행 예시 명칭, 비용·효과는 자체) - 기교P+금으로 연구
+export const ARTS = { '난소행군': { p: 800, gold: 2000, desc: '강·여울 도하 감속 완화 (깊은 강 이동 0.35→0.8, 여울 0.6→0.8, 경로 비용 완화)' } };
 export const TECH_BRANCHES = ['창병','극병','노병','기병','연병','발명','방위','화공'];
 export const TECH_P = [1000, 2000, 3000, 5000];      // 단계별 필요 기교P
 // === R13: 능력연구 4계통 (설계안 120행 PK 채택, 계통·단계·수치는 자체 설계) ===
@@ -167,6 +169,8 @@ export function isRiverAt(lon, lat) {
       if (wDistToSeg(lon, lat, line[i][0], line[i][1], line[i+1][0], line[i+1][1]) < 0.55) return true;
   return false;
 }
+// R23: 여울(浅瀬) - 강 타일 중 일부(결정적 40%)만 얕아 통과가 쉽다. 설계 92행 간도·여울 통행 방해의 자체 단순화: 통행 불가가 아니라 감속·경로비용으로 표현
+export function isFordAt(lon, lat) { return isRiverAt(lon, lat) && (((Math.round(lon * 10) * 31 + Math.round(lat * 10) * 17) % 5) + 5) % 5 < 2; }
 export function isWaterAt(lon, lat) { return isSeaAt(lon, lat) || isRiverAt(lon, lat); }
 
 // === 명품 (설계안 분류: 명마·활·검·서적·장병·옥새, 명칭·수치 자체) ===
@@ -265,6 +269,16 @@ export class Game {
   techLv(fid, b) { return this.forces[fid]?.techs?.[b] ?? 0; }
   unitTechAtk(u) { const b = TYPE2TECH[u.type]; return b ? 1 + 0.05 * this.techLv(u.force, b) : 1; }
   gainTechP(fid, n) { const f = this.forces[fid]; if (f?.alive) f.techP = (f.techP ?? 0) + n; }
+  riverMult(u) { if (this.forces[u.force]?.arts?.['난소행군']) return 0.8; return isFordAt(u.x, u.z) ? 0.6 : 0.35; }
+  researchArt(fid, name) { // R23: 개별 기교 연구 (기교P+금, 1회)
+    const f = this.forces[fid], a = ARTS[name];
+    if (!f?.alive || !a || f.arts?.[name]) return false;
+    const cap = this.forceCities(fid).sort((x, y) => y.gold - x.gold)[0];
+    if ((f.techP ?? 0) < a.p || !cap || cap.gold < a.gold) return false;
+    f.arts = f.arts ?? {}; f.techP -= a.p; cap.gold -= a.gold; f.arts[name] = true;
+    this.log(`【기교】${this.forceName(fid)} 「${name}」 연구 완료 (기교P ${a.p}·금 ${a.gold} 소비)`, fid === this.playerForce);
+    return true;
+  }
   researchTech(fid, b) { // 기교P + 금 소비, 계통당 4단계
     const f = this.forces[fid];
     if (!f?.alive || !TECH_BRANCHES.includes(b)) return false;
@@ -661,7 +675,8 @@ export class Game {
     const st = 0.15, lon0 = 100, lat0 = 20, W = 226, H = 146;
     const ci = x => Math.round((x - lon0) / st), cj = z => Math.round((z - lat0) / st);
     const pass = (i, j) => ship ? isWaterAt(lon0 + i * st, lat0 + j * st) : !isSeaAt(lon0 + i * st, lat0 + j * st);
-    const stepCost = (i, j) => (!ship && isRiverAt(lon0 + i * st, lat0 + j * st)) ? 3 : 1;
+    const art = !!this.forces[u.force]?.arts?.['난소행군'];
+    const stepCost = (i, j) => { if (ship) return 1; const x = lon0 + i * st, z = lat0 + j * st; if (!isRiverAt(x, z)) return 1; return art ? 1.25 : (isFordAt(x, z) ? 1.7 : 2.9); }; // R23: 여울 우선 도하, 난소행군 시 완화
     const snap = (i, j) => { // 가장 가까운 통과 가능 셀 (반경 8)
       if (i >= 0 && i <= W && j >= 0 && j <= H && pass(i, j)) return [i, j];
       for (let r = 1; r <= 8; r++) for (let di = -r; di <= r; di++) for (let dj = -r; dj <= r; dj++) {
@@ -936,7 +951,7 @@ export class Game {
     const dx = aimX - u.x, dz = aimZ - u.z;
     const d = Math.hypot(dx, dz);
     if ((u.path?.length || d > 1.2) && d > 1e-6) {
-      if (!SHIP_TYPES.has(u.type) && isRiverAt(u.x, u.z)) speed *= 0.5; // R17: 육군 강 도하 감속 (자체 수치)
+      if (!SHIP_TYPES.has(u.type) && isRiverAt(u.x, u.z)) speed *= this.riverMult(u); // R17/R23: 육군 강 도하 감속 - 깊은 강 0.35·여울 0.6·난소행군 0.8 (자체 수치)
       const nx = u.x + dx/d*speed, nz = u.z + dz/d*speed;
       if (SHIP_TYPES.has(u.type) && !isWaterAt(nx, nz)) { // 수군: 강·바다에서만 기동
         if (!u._landWarn) { u._landWarn = true; this.log(`${josa(u.label, ['이','가'])} 수로를 벗어나 더 이상 나아갈 수 없습니다`, u.force === this.playerForce); }
