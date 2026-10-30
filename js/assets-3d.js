@@ -32,7 +32,7 @@ export async function loadGLBAssets() {
 }
 
 // 메탈 GLB가 반사할 환경맵 적용(역광면 검정 방지)
-function applyEnvironment(renderer, scene) {
+export function applyEnvironment(renderer, scene) {
   const pm = new THREE.PMREMGenerator(renderer);
   scene.environment = pm.fromScene(new RoomEnvironment(), 0.04).texture;
 }
