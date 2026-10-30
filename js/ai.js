@@ -149,7 +149,7 @@ export function aiThink(game, fid, legion = null) { // legion 지정 시 그 군
   for (const u of [...game.units]) {
     if (u.force !== fid || !game.units.includes(u)) continue;
     const inR = (x, z) => Math.hypot(x - u.x, z - u.z) < 2.2;
-    const eu = game.units.find(x => x.force !== u.force && !game.isPeace(u.force, x.force) && inR(x.x, x.z));
+    const eu = game.units.filter(x => x.force !== u.force && !game.isPeace(u.force, x.force) && inR(x.x, x.z)).sort((a, b) => (game.unitHasSkill(b, '미끼') ? 1 : 0) - (game.unitHasSkill(a, '미끼') ? 1 : 0))[0]; // R17: 미끼 특기 부대 우선 타겟팅 (모든 AI 세력 공통 경로)
     const ec = game.cities.find(c => c.force != null && c.force !== u.force && !game.isPeace(u.force, c.force) && inR(c.lon, c.lat));
     if (game.tacticInfo(u)) { // 전법: 부대 우선, 없으면 도시
       if (eu) { game.fireTactic(u.id, { type: 'unit', id: eu.id }); }
