@@ -1130,7 +1130,10 @@ if (g.units.find(u => u.id === 9999) && g.units.find(u => u.id === 9999).qi === 
   if (!g21.fireStrat(me2.id, 'fire', { type: 'city', id: ec2.id }) || me2.qi !== cq2 - 30 || ec2.troops !== ct2 - Math.round(ct2 * 0.08)) { console.log('FAIL: R15 화계 도시', me2.qi, ec2.troops); process.exit(1); }
   Math.random = rand0;
   // AI 측도 같은 규칙: 적 부대가 플레이어 부대에 직접 전법 (메서드 공용)
-  const ai = mk(8007, ef, [elead], 9000, 'sword', 40, 41); // sword는 적성 게이트 없음
+  { const ld = g21.officers[elead]; ld.apt = ld.apt ?? {}; for (let k = 0; k < 12; k++) ld.apt[k] = 'S'; }
+  const swd = mk(8009, ef, [elead], 9000, 'sword', 60, 61), swt = mk(8010, pf, [leadIdx], 9000, 'sword', 61, 60); // R36: 검병은 전법 없음(설계 58행)
+  if (g21.tacticInfo(swd) !== null || g21.fireTactic(swd.id, { type: 'unit', id: swt.id })) { console.log('FAIL: R36 검병 전법 차단'); process.exit(1); }
+  const ai = mk(8007, ef, [elead], 9000, 'spear', 40, 41);
   const mine2 = mk(8008, pf, [leadIdx], 9000, 'sword', 41, 40);
   const mt0 = mine2.troops;
   if (!g21.fireTactic(ai.id, { type: 'unit', id: mine2.id }) || mine2.troops >= mt0) { console.log('FAIL: R15 AI 동일 규칙 직접 전법'); process.exit(1); }
@@ -1168,7 +1171,8 @@ if (g.units.find(u => u.id === 9999) && g.units.find(u => u.id === 9999).qi === 
   const g23 = new Game(JSON.parse(JSON.stringify(scen)), JSON.parse(JSON.stringify(officers)), {}, 0);
   g23.units = [];
   const ef23 = g23.cities.find(c => c.force != null && c.force !== g23.playerForce).force;
-  const au = { id: 8201, force: ef23, officers: [g23.forces[ef23].ruler], troops: 9000, type: 'sword', x: 10, z: 10, path: [], tx: null, tz: null, targetCity: null, label: 'AI시험', qi: 100, conf: 0 };
+  { const ld = g23.officers[g23.forces[ef23].ruler]; ld.apt = ld.apt ?? {}; for (let k = 0; k < 12; k++) ld.apt[k] = 'S'; }
+  const au = { id: 8201, force: ef23, officers: [g23.forces[ef23].ruler], troops: 9000, type: 'spear', x: 10, z: 10, path: [], tx: null, tz: null, targetCity: null, label: 'AI시험', qi: 100, conf: 0 };
   const pu = { id: 8202, force: g23.playerForce, officers: [g23.forces[g23.playerForce].ruler], troops: 9000, type: 'sword', x: 11, z: 10, path: [], tx: null, tz: null, targetCity: null, label: '플레이어시험', qi: 100, conf: 0 };
   g23.units.push(au, pu);
   const pt0 = pu.troops;
