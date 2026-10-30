@@ -1,3 +1,4 @@
+// ==== assets-3d.js ====
 // 3D 에셋 (Kenney Castle/Nature Kit, CC0) - GLB base64 임베드
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
@@ -36,6 +37,8 @@ function applyEnvironment(renderer, scene) {
   const pm = new THREE.PMREMGenerator(renderer);
   scene.environment = pm.fromScene(new RoomEnvironment(), 0.04).texture;
 }
+
+// ==== map3d.js ====
 // 3D 저폴리 지도 엔진 (Three.js) - 고정 등각 아이소메트릭 + 계단식 지형 + 성곽/숲
 
 
@@ -557,6 +560,8 @@ class Map3D {
     this.renderer.render(this.scene, this.camera);
   }
 }
+
+// ==== game.js ====
 // 게임 상태·턴 엔진 (삼국지11 기본 구조의 단순화 1차 구현)
 const SAVE_KEY = 'cheonha-xi-web.save.v1';
 const FORCE_COLORS = ['#4a7fd4','#d44a4a','#4ad47f','#d4a44a','#9a4ad4','#4ad4d4','#d44a8f','#8fd44a','#d47f4a','#6a6ad4','#d4d44a','#4a9a6a','#c46a4a','#7a4a2a','#2a7a8a','#8a2a4a','#5a8a2a','#aa6aaa','#4a5a9a','#9a8a3a','#3a7a4a','#b45a7a','#6aaac4','#c48a3a','#7a3a9a','#3a9a8a','#aa4a3a','#5a7a2a','#8a6aaa','#4a8aaa','#ca7a5a','#3a6a3a','#9a4a6a','#6a8a4a','#4a4aaa','#aa9a3a','#3a8a6a','#b46a8a','#5a9aca'];
@@ -957,6 +962,8 @@ function josa(name, pair) { // [을,를] 형태
   const jong = (code >= 0xAC00 && code <= 0xD7A3) ? (code-0xAC00)%28 : 0;
   return name + (jong ? pair[0] : pair[1]);
 }
+
+// ==== ai.js ====
 // 세력 AI — 위임 시 플레이어 세력도 이 AI가 운영 (위임·샌드박스의 실질 주체)
 function aiThink(game, fid) {
   const f = game.forces[fid];
@@ -983,6 +990,16 @@ function aiThink(game, fid) {
     if (!free.length) continue;
     const target = free.sort((a, b) => game.recruitChance(c.id, b.idx) - game.recruitChance(c.id, a.idx))[0];
     if (game.recruitChance(c.id, target.idx) >= 0.3) game.recruitOfficer(c.id, target.idx);
+  }
+  // 2.7) 기교 연구: 플레이어와 같은 비용·효과 규칙. 주력 병종 계통 우선, 없으면 방어 계통
+  {
+    const cnt = { spear: 0, pike: 0, bow: 0, cav: 0 };
+    for (const u of game.units) if (u.force === fid && cnt[u.type] != null) cnt[u.type]++;
+    const mainType = Object.entries(cnt).sort((x, y) => y[1] - x[1])[0][0];
+    const pref = { spear: '창병', pike: '극병', bow: '노병', cav: '기병' }[mainType];
+    for (const b of [pref, '연병', '방위', '화공', '발명', '창병', '극병', '노병', '기병']) {
+      if (game.researchTech(fid, b)) break;
+    }
   }
   // 3) 군사: 전방 도시(적과 인접) 병력이 충분하면 공격, 아니면 집결
   const enemyCities = game.cities.filter(c => c.force !== fid);
@@ -1024,6 +1041,8 @@ function aiThink(game, fid) {
     else if (homes.length) game.orderUnit(u.id, homes[0].id);  // 귀환·합류
   }
 }
+
+// ==== main.js ====
 // 진입점: 화면 전환·UI·지도 연결
 
 
@@ -1086,6 +1105,7 @@ function buildRulerScreen(scenId) {
 // === 게임 시작 ===
 function startGame(scenId, fid) {
   game = new Game(DATA.scenarios[scenId], DATA.officers, DATA.skills, fid);
+  window.__game = game; // 테스트 훅
   enterGame();
   game.log(`${DATA.officers[game.forces[fid].ruler].name_ko}(으)로 ${scenId}년 시나리오를 시작합니다.`, true);
   const cap = game.forceCities(fid)[0];
@@ -1327,6 +1347,7 @@ async function boot() {
     $('btn-continue').onclick = () => {
       const d = JSON.parse(localStorage.getItem(SAVE_KEY));
       const g = new Game(DATA.scenarios[d.scenId], DATA.officers, DATA.skills, d.playerForce);
+      window.__game = g; // 테스트 훅
       Object.assign(g, { year: d.year, month: d.month, dan: d.dan, turn: d.turn, cities: d.cities, forces: d.forces, units: d.units, nextUnitId: d.nextUnitId, playerForce: d.playerForce, delegated: d.delegated, logs: d.logs, deadAck: d.deadAck });
       g.cityById = {}; g.cities.forEach(c => g.cityById[c.id] = c);
       for (const [i, st] of Object.entries(d.officerStates)) if (DATA.officers[i]) DATA.officers[i].state = st;
