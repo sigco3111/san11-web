@@ -170,6 +170,62 @@ function onPick(nx, ny) {
   selectedUnit = null;
   showCityPanel(c);
 }
+function showAdvisor(c) { // 군사 임명: 지력 70 이상만 (설계안 명시)
+  const p = $('panel');
+  const f = game.forces[c.force];
+  const serving = Object.values(DATA.officers).filter(o => o.state?.force === c.force).sort((a, b) => b.int - a.int);
+  let html = `<h3>${game.forceName(c.force)} 군사</h3>`;
+  html += f.advisor != null ? `<p>현재 군사: <b>${DATA.officers[f.advisor].name_ko}</b> (지력 ${DATA.officers[f.advisor].int})</p>` : '<p>현재 군사: 없음</p>';
+  html += '<p style="font-size:12px;color:#998">군사는 지력 70 이상만 임명 가능. 적국의 군주·군사 지력이 높을수록 아군 계략 성공률이 낮아집니다.</p>';
+  for (const o of serving) {
+    const ok = o.int >= 70;
+    html += `<div class="officer"><div><div class="nm">${o.name_ko} <span class="st">지력 ${o.int}${f.advisor === o.idx ? ' · 현 군사' : ''}</span></div></div>${ok && f.advisor !== o.idx ? `<button class="cmd cmd-adv" data-i="${o.idx}">임명</button>` : ''}</div>`;
+  }
+  html += `<button class="cmd" id="adv-back">← 도시 패널로</button>`;
+  p.innerHTML = html;
+  p.querySelectorAll('.cmd-adv').forEach(b => b.onclick = () => { game.appointAdvisor(Number(b.dataset.i)); refreshAll(); showAdvisor(c); });
+  $('adv-back').onclick = () => showCityPanel(c);
+}
+function showLegions(c) { // 군단 편성: 도시 묶음을 도독에게 위임 (제2군단~, 제1군단은 군주 직할)
+  const p = $('panel');
+  const f = game.forces[c.force];
+  const own = game.forceCities(c.force);
+  const serving = Object.values(DATA.officers).filter(o => o.state?.force === c.force);
+  const free = own.filter(x => !game.cityLegion(x.id));
+  const render = () => {
+    let html = `<h3>${game.forceName(c.force)} 군단</h3><p style="font-size:12px;color:#998">제1군단(군주 직할)은 항상 직접 조작. 제2군단부터 도독에게 위임 — 소속 도시는 수동 명령이 불가합니다.</p>`;
+    for (const l of f.legions ?? []) {
+      html += `<div class="officer"><div><div class="nm">${l.name} <span class="st">도독 ${DATA.officers[l.governor]?.name_ko ?? '-'} · 방침 ${{ delegate: '위임', attack_city: '도시공략', attack_force: '세력공략' }[l.policy]}${l.target != null ? ' → ' + (l.policy === 'attack_city' ? game.cityById[l.target]?.name_ko : game.forceName(l.target)) : ''}</span></div><div class="st">${l.cities.map(id => game.cityById[id]?.name_ko).join('·')}</div></div><button class="cmd cmd-disband" data-i="${l.id}">해산</button></div>`;
+    }
+    if (free.length && serving.length) {
+      html += `<h3 style="margin-top:10px">새 군단 편성</h3>
+        <p>도독: <select id="leg-gov">${serving.map(o => `<option value="${o.idx}">${o.name_ko} (통${o.ldr}/지${o.int})</option>`).join('')}</select></p>
+        <p>도시: ${free.map(x => `<label><input type="checkbox" class="leg-city" value="${x.id}"> ${x.name_ko}</label> `).join('')}</p>
+        <p>방침: <select id="leg-pol"><option value="delegate">위임 (전권)</option><option value="attack_city">도시공략</option><option value="attack_force">세력공략</option></select>
+        목표: <select id="leg-target"></select></p>
+        <p><button class="cmd" id="leg-create">편성</button></p>`;
+    }
+    html += `<button class="cmd" id="leg-back">← 도시 패널로</button>`;
+    p.innerHTML = html;
+    const fillTargets = () => {
+      const pol = $('leg-pol')?.value;
+      const t = $('leg-target');
+      if (!t) return;
+      if (pol === 'attack_city') t.innerHTML = game.cities.filter(x => x.force !== c.force).map(x => `<option value="${x.id}">${x.name_ko} (${x.force != null ? game.forceName(x.force) : '공백'})</option>`).join('');
+      else if (pol === 'attack_force') t.innerHTML = Object.values(game.forces).filter(x => x.alive && x.id !== c.force).map(x => `<option value="${x.id}">${game.forceName(x.id)}</option>`).join('');
+      else t.innerHTML = '<option value="">-</option>';
+    };
+    $('leg-pol') && ($('leg-pol').onchange = fillTargets) && fillTargets();
+    $('leg-create') && ($('leg-create').onclick = () => {
+      const cities = [...p.querySelectorAll('.leg-city:checked')].map(x => Number(x.value));
+      const t = $('leg-target').value;
+      if (game.createLegion(Number($('leg-gov').value), cities, $('leg-pol').value, t === '' ? null : Number(t))) { refreshAll(); render(); }
+    });
+    p.querySelectorAll('.cmd-disband').forEach(b => b.onclick = () => { game.disbandLegion(c.force, Number(b.dataset.i)); refreshAll(); render(); });
+    $('leg-back').onclick = () => showCityPanel(c);
+  };
+  render();
+}
 function showTrade(c) { // 상인: 월별 환율, 금↔병량 (자체 수치)
   const p = $('panel');
   const rate = game.tradeRate();
@@ -280,10 +336,12 @@ let lastCityId = null;
 function showCityPanel(c) {
   lastCityId = c.id;
   const p = $('panel'); p.classList.remove('hidden');
-  const mine = c.force === game.playerForce && !game.delegated;
+  const legion = game.cityLegion(c.id);
+  const mine = c.force === game.playerForce && !game.delegated && !legion;
   const owner = c.force != null && game.forces[c.force]?.alive ? game.forceName(c.force) : '공백지';
+  const legionTag = legion ? ` · <span style="color:#7cf">${legion.name} 소속 (도독 ${DATA.officers[legion.governor]?.name_ko ?? '-'} · 방침 ${{ delegate: '위임', attack_city: '도시공략', attack_force: '세력공략' }[legion.policy]})</span>` : '';
   let html = `<h3>${c.name_ko} <small>(${c.name_zh})</small></h3>
-    <p>소속: ${owner} · 태수: ${c.taesu != null ? DATA.officers[c.taesu].name_ko : '-'}<br>
+    <p>소속: ${owner}${legionTag} · 태수: ${c.taesu != null ? DATA.officers[c.taesu].name_ko : '-'}<br>
     병사 ${c.troops.toLocaleString()} · 내구 ${c.hp}/${c.maxhp}<br>
     금 ${c.gold.toLocaleString()} · 병량 ${c.food.toLocaleString()}<br>
     상업 ${c.commerce} · 농업 ${c.farm}${c.metropolis ? ' · 대도시' : ''}${c.specialty.length ? ' · 특색: '+c.specialty.join(',') : ''}<br>
@@ -303,6 +361,8 @@ function showCityPanel(c) {
       <button class="cmd" id="cmd-search">수색 (금100)</button>
       <button class="cmd" id="cmd-trade">상인</button>
       <button class="cmd" id="cmd-diplo">외교</button>
+      <button class="cmd" id="cmd-advisor">군사</button>
+      <button class="cmd" id="cmd-legion">군단</button>
     </div>`;
   }
   html += `<h3 style="margin-top:10px">주둔 무장 (${c.officers.length})</h3>`;
@@ -329,6 +389,8 @@ function showCityPanel(c) {
     $('cmd-diplo').onclick = () => showDiplomacy(c);
     $('cmd-search').onclick = () => { game.searchCity(c.id); refreshAll(); showCityPanel(c); };
     $('cmd-trade').onclick = () => showTrade(c);
+    $('cmd-advisor').onclick = () => showAdvisor(c);
+    $('cmd-legion').onclick = () => showLegions(c);
     p.querySelectorAll('.cmd-rec').forEach(b => b.onclick = () => { game.recruitOfficer(c.id, Number(b.dataset.i)); refreshAll(); showCityPanel(c); });
   }
   const join = $('cmd-join');
@@ -404,7 +466,8 @@ async function boot() {
       for (const c of g.cities) c.officers = [...new Set(c.officers ?? [])]; // 레거시 세이브 중복 무장 정리
       g.diplo = d.diplo ?? {};
       g.itemPool = d.itemPool ?? Object.values(ITEMS).map(i => i.id).filter(id => !Object.values(g.officers).some(o => (o.state.items ?? []).includes(id)));
-      for (const o of Object.values(g.officers)) { o.state.items = o.state.items ?? []; if (o.state.status === 'free' && o.state.found === undefined) o.state.found = true; } // 기존 세이브의 재야는 발견 상태 유지 // 외교 상태 복원 (레거시 세이브는 공백)
+      for (const o of Object.values(g.officers)) { o.state.items = o.state.items ?? []; if (o.state.status === 'free' && o.state.found === undefined) o.state.found = true; } // 기존 세이브의 재야는 발견 상태 유지
+      for (const f of Object.values(g.forces)) { f.advisor = f.advisor ?? null; f.legions = f.legions ?? []; } // 군사·군단 필드 호환 // 외교 상태 복원 (레거시 세이브는 공백)
       for (const [i, st] of Object.entries(d.officerStates)) if (DATA.officers[i]) DATA.officers[i].state = st;
       game = g; enterGame(); refreshAll();
       if (game.delegated) setAuto(true);
