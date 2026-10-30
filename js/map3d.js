@@ -429,12 +429,21 @@ export class Map3D {
     const g = new THREE.Group();
     const mat = c => new THREE.MeshLambertMaterial({ color: c, flatShading: true });
     const add = (geo, color, x=0, y=0, z=0, rx=0, ry=0, rz=0) => { const m = new THREE.Mesh(geo, mat(color)); m.position.set(x, y, z); m.rotation.set(rx, ry, rz); m.castShadow = true; g.add(m); return m; };
-    const soldier = (spearLen = 0, bow = false, blade = false, pikeHead = false) => {
+    const soldier = (kind) => { // 보병: 무기를 과장되게 키워 줌 거리에서도 병종 구분 (저폴리 관례)
       add(new THREE.ConeGeometry(0.45, 1.0, 5), 0x5a4a3a, 0, 0.65, 0);
-      if (spearLen) add(new THREE.CylinderGeometry(0.03, 0.03, spearLen, 4), 0x8a7a5a, 0.3, 0.45 + spearLen/2, 0);
-      if (pikeHead) add(new THREE.BoxGeometry(0.3, 0.06, 0.06), 0xb8b8c0, 0.3, 1.62, 0);
-      if (bow) add(new THREE.TorusGeometry(0.35, 0.04, 4, 10, Math.PI), 0x7a5a3a, 0.35, 0.8, 0, 0, 0, Math.PI/2);
-      if (blade) add(new THREE.BoxGeometry(0.08, 0.5, 0.02), 0xb8b8c0, 0.3, 0.9, 0, 0, 0, 0.5);
+      if (kind === 'sword') { // 대형 방패 + 직검
+        add(new THREE.BoxGeometry(0.08, 0.7, 0.5), 0x8a4a3a, -0.4, 0.7, 0);
+        add(new THREE.BoxGeometry(0.1, 0.7, 0.04), 0xd8d8e0, 0.38, 1.0, 0, 0, 0, 0.4);
+      } else if (kind === 'spear') { // 머리 위로 솟은 굵은 장창 + 금속 촉
+        add(new THREE.CylinderGeometry(0.07, 0.07, 2.0, 5), 0x9a7a4a, 0.34, 1.3, 0);
+        add(new THREE.ConeGeometry(0.12, 0.4, 4), 0xd8d8e0, 0.34, 2.5, 0);
+      } else if (kind === 'pike') { // 장극 + 대형 월아 날
+        add(new THREE.CylinderGeometry(0.07, 0.07, 1.7, 5), 0x9a7a4a, 0.34, 1.2, 0);
+        add(new THREE.BoxGeometry(0.55, 0.18, 0.08), 0xd8d8e0, 0.34, 2.0, 0);
+      } else if (kind === 'bow') { // 몸통만한 대형 활 아크
+        add(new THREE.TorusGeometry(0.55, 0.07, 5, 12, Math.PI), 0xc09a5a, 0.45, 1.0, 0, 0, 0, Math.PI/2);
+        add(new THREE.CylinderGeometry(0.02, 0.02, 1.1, 3), 0xe8e0d0, 0.45, 1.0, 0); // 시위
+      }
     };
     const hull = (len, wid, sailH, tower = false, masts = 1) => {
       add(new THREE.BoxGeometry(wid, 0.3, len), 0x6a4a2a, 0, 0.3, 0);
@@ -447,10 +456,10 @@ export class Map3D {
       if (tower) add(new THREE.BoxGeometry(0.4, 0.5, 0.4), 0x5a4a3a, 0, 0.85, -len*0.15);
     };
     switch (type) {
-      case 'sword': soldier(0, false, true); break;
-      case 'spear': soldier(1.4); break;
-      case 'pike': soldier(1.2, false, false, true); break;
-      case 'bow': soldier(0, true); break;
+      case 'sword': soldier('sword'); break;
+      case 'spear': soldier('spear'); break;
+      case 'pike': soldier('pike'); break;
+      case 'bow': soldier('bow'); break;
       case 'cav': // 말 + 기수
         add(new THREE.BoxGeometry(0.5, 0.45, 1.0), 0x6a4a30, 0, 0.55, 0);
         add(new THREE.BoxGeometry(0.2, 0.3, 0.35), 0x6a4a30, 0, 0.75, 0.55);
