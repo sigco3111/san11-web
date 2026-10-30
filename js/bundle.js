@@ -679,9 +679,13 @@ class Game {
 
   // === 턴 진행 ===
   endTurn(aiThink) {
+    // 전 부대 기력 회복
+    for (const u of this.units) u.qi = Math.min(100, (u.qi ?? 100) + 10);
     // 부대 이동·전투
     for (const u of [...this.units]) this.stepUnit(u);
     // 도시 공성 처리는 stepUnit 내부
+    // 야전: 접촉한 적 부대끼리 교전
+    this.resolveFieldBattles();
     // 수입: 매 3순(한 달)
     if (this.dan === 3) {
       for (const c of this.cities) {
@@ -727,7 +731,18 @@ class Game {
     this.autosave();
   }
   stepUnit(u) {
+    if ((u.conf ?? 0) > 0) { // 혼란: 이동·공격 불가
+      u.conf--;
+      this.log(`${u.label}이(가) 혼란에 빠져 움직이지 못합니다`, u.force === this.playerForce);
+      return;
+    }
     if (u.tx == null) return;
+    // 요격: 인접한 적 부대가 있으면 진격 정지 (아군 도시로의 퇴각은 허용)
+    const engaged = this.units.some(v => v !== u && v.force !== u.force && Math.hypot(v.x-u.x, v.z-u.z) < 2.2);
+    if (engaged) {
+      const tgt = u.targetCity != null ? this.cityById[u.targetCity] : null;
+      if (!tgt || tgt.force !== u.force) return;
+    }
     const ut = UNIT_TYPES[u.type];
     const speed = 0.55 * ut.move;
     const dx = u.tx - u.x, dz = u.tz - u.z;
@@ -745,12 +760,6 @@ class Game {
     }
     // 공성: 도시 내구/병사 공격
     const lead = this.officers[u.officers[0]];
-    u.qi = Math.min(100, (u.qi ?? 100) + 10); // 기력 회복
-    if ((u.conf ?? 0) > 0) { // 혼란: 행동 불가
-      u.conf--;
-      this.log(`${u.label}이(가) 혼란에 빠져 공격하지 못합니다`, u.force === this.playerForce);
-      return;
-    }
     let dmg = Math.round(u.troops * 0.12 * ut.atk * (0.7 + lead.war/150));
     let loss = Math.round(c.troops * 0.06 / ut.def + 150);
     // 전법: 병종 적성 B 이상 + 기력 소모, 무력이 높을수록 발동 잘됨
@@ -792,6 +801,66 @@ class Game {
       this.log(`【${c.name_ko}】함락! ${old != null ? this.forceName(old) : '공백지'} → ${this.forceName(u.force)}`, true);
       // 수비 무장 일부 포로/퇴각은 후속 구현 — 일단 공격측 도시에 그대로 둠
       u.tx = null; u.targetCity = null;
+    }
+  }
+  // === 야전: 접촉한 적 부대 쌍 교전 ===
+  resolveFieldBattles() {
+    const us = [...this.units];
+    for (let i = 0; i < us.length; i++) for (let j = i+1; j < us.length; j++) {
+      const a = us[i], b = us[j];
+      if (!this.units.includes(a) || !this.units.includes(b)) continue;
+      if (a.force === b.force) continue;
+      if (Math.hypot(a.x-b.x, a.z-b.z) >= 2.2) continue;
+      this.fieldBattle(a, b);
+    }
+  }
+  fieldBattle(a, b) {
+    const strike = (att, def) => { // 공격측 1회 타격분 산출 (전법·계략 포함), 피해는 나중에 동시 적용
+      if ((att.conf ?? 0) > 0) return 0; // 혼란은 stepUnit에서 감소 처리됨
+      const utA = UNIT_TYPES[att.type], utD = UNIT_TYPES[def.type];
+      const lead = this.officers[att.officers[0]];
+      let dmg = Math.round(att.troops * 0.05 * utA.atk * (0.7 + lead.war/150) / utD.def);
+      // 전법 (공성과 같은 규칙)
+      const tac = TACTICS[att.type];
+      const aptLv = att.type === 'sword' ? 1 : APT_LV(lead.apt?.[APT_IDX[att.type]]);
+      if (aptLv >= 1 && (att.qi ?? 100) >= tac.qi && Math.random() < Math.min(0.55, 0.15 + lead.war/250)) {
+        att.qi -= tac.qi; dmg = Math.round(dmg * tac.mult);
+        if (tac.guard) att._guard = true;
+        this.log(`【전법】${lead.name_ko}의 ${tac.name}! 야전에서 ${def.label}에 큰 피해`, att.force === this.playerForce);
+      }
+      // 계략: 혼란
+      const caster = att.officers.map(i => this.officers[i]).sort((x, y) => y.int - x.int)[0];
+      if (caster && caster.int >= STRATS.confuse.minInt && (att.qi ?? 100) >= 25 && Math.random() < Math.min(0.35, 0.08 + caster.int/400)) {
+        att.qi -= 25; def.conf = Math.max(def.conf ?? 0, STRATS.confuse.turns);
+        this.log(`【계략】${caster.name_ko}의 혼란! ${def.label}이(가) ${STRATS.confuse.turns}턴간 움직이지 못합니다`, att.force === this.playerForce);
+      }
+      // 계략: 화계
+      if (caster && caster.int >= STRATS.fire.minInt && (att.qi ?? 100) >= STRATS.fire.qi && Math.random() < Math.min(0.5, 0.1 + caster.int/300)) {
+        att.qi -= STRATS.fire.qi;
+        const burn = Math.round(def.troops * 0.06);
+        def.troops = Math.max(0, def.troops - burn);
+        this.log(`【계략】${caster.name_ko}의 화계! ${def.label} 병력 -${burn}`, att.force === this.playerForce);
+      }
+      return dmg;
+    };
+    a._guard = false; b._guard = false;
+    let da = strike(a, b), db = strike(b, a);
+    if (a._guard) db = Math.round(db * TACTICS[a.type].guard); // 철벽: 받는 피해 감소
+    if (b._guard) da = Math.round(da * TACTICS[b.type].guard);
+    a.troops = Math.max(0, a.troops - db);
+    b.troops = Math.max(0, b.troops - da);
+    this.log(`【야전】${a.label} ↔ ${b.label} 교전 (${a.label} -${db} / ${b.label} -${da})`, a.force === this.playerForce || b.force === this.playerForce);
+    for (const u of [a, b]) {
+      if (u.troops <= 0) {
+        this.units = this.units.filter(x => x !== u);
+        this.log(`${u.label} 부대가 전멸했습니다`, false);
+      } else if (u.troops < 1200) { // 퇴각: 가장 가까운 아군 도시로
+        const home = this.forceCities(u.force).sort((pp, qq) => Math.hypot(pp.lon-u.x, pp.lat-u.z) - Math.hypot(qq.lon-u.x, qq.lat-u.z))[0];
+        if (home) {
+          u.targetCity = home.id; u.tx = home.lon; u.tz = home.lat;
+          this.log(`${u.label}이(가) ${home.name_ko}(으)로 퇴각합니다`, u.force === this.playerForce);
+        }
+      }
     }
   }
   autosave() {
