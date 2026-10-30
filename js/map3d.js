@@ -436,11 +436,22 @@ export class Map3D {
 
   pick(nx, ny) {
     this.raycaster.setFromCamera(new THREE.Vector2(nx, ny), this.camera);
-    const hits = this.raycaster.intersectObjects([this.cityGroup, this.unitGroup], true);
+    // 부대 우선: 광선이 부대 중심(몸통/기치 높이) 1.3 유닛 이내를 지나면 도시보다 부대를 선택
+    const v = new THREE.Vector3();
+    let bestU = null, bestD = 1.3;
+    for (const id of Object.keys(this.unitMeshes)) {
+      const g = this.unitMeshes[id].group;
+      for (const h of [0.7, 1.7]) {
+        v.set(g.position.x, g.position.y + h, g.position.z);
+        const d = this.raycaster.ray.distanceToPoint(v);
+        if (d < bestD) { bestD = d; bestU = Number(id); }
+      }
+    }
+    if (bestU != null) return { type: 'unit', id: bestU };
+    const hits = this.raycaster.intersectObjects([this.cityGroup], true);
     for (const h of hits) {
       const o = h.object;
       if (o.userData.cityId !== undefined) return { type: 'city', id: o.userData.cityId };
-      if (o.userData.unitId !== undefined) return { type: 'unit', id: o.userData.unitId };
     }
     return null;
   }
