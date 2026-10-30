@@ -1,7 +1,7 @@
 // 게임 상태·턴 엔진 (삼국지11 기본 구조의 단순화 1차 구현)
 export const SAVE_KEY = 'cheonha-xi-web.save.v1';
 export const FORCE_COLORS = ['#4a7fd4','#d44a4a','#4ad47f','#d4a44a','#9a4ad4','#4ad4d4','#d44a8f','#8fd44a','#d47f4a','#6a6ad4','#d4d44a','#4a9a6a','#c46a4a','#7a4a2a','#2a7a8a','#8a2a4a','#5a8a2a','#aa6aaa','#4a5a9a','#9a8a3a','#3a7a4a','#b45a7a','#6aaac4','#c48a3a','#7a3a9a','#3a9a8a','#aa4a3a','#5a7a2a','#8a6aaa','#4a8aaa','#ca7a5a','#3a6a3a','#9a4a6a','#6a8a4a','#4a4aaa','#aa9a3a','#3a8a6a','#b46a8a','#5a9aca'];
-export function forceColor(fid) { return FORCE_COLORS[fid % FORCE_COLORS.length]; }
+export function forceColor(fid) { const n = FORCE_COLORS.length; return FORCE_COLORS[((fid % n) + n) % n]; }
 
 export const UNIT_TYPES = {
   sword: { name: '검병', atk: 0.7, def: 0.8, move: 1.0, cost: {} },
@@ -169,7 +169,7 @@ export class Game {
     this.over = false;
   }
   log(msg, mine=false) { this.logs.push({ t: `${this.year}년 ${this.month}월`, msg, mine }); if (this.logs.length > 200) this.logs.shift(); }
-  forceName(fid) { return this.officers[this.forces[fid].ruler].name_ko + '군'; }
+  forceName(fid) { const f = this.forces[fid]; return f ? this.officers[f.ruler].name_ko + '군' : '적병'; }
   forceCities(fid) { return this.cities.filter(c => c.force === fid); }
   forceOfficers(fid) { return Object.values(this.officers).filter(o => o.state && o.state.force === fid); }
   aliveForces() { return Object.values(this.forces).filter(f => f.alive); }
@@ -184,7 +184,7 @@ export class Game {
   aptMult(u) { // 병종 적성 공격 보정: C 0.9 / B 1.0 / A 1.1 / S 1.2
     if (u.type === 'sword') return 1;
     const lead = this.officers[u.officers[0]];
-    return 0.9 + APT_LV(lead.apt?.[APT_IDX[u.type]]) * 0.1;
+    return 0.9 + APT_LV(lead?.apt?.[APT_IDX[u.type]]) * 0.1;
   }
   unitDmgMult(u, siege = false) { // 공격 특기 보정
     let m = 1;
@@ -573,7 +573,7 @@ export class Game {
     // 전 부대 기력 회복
     for (const u of this.units) u.qi = Math.min(100, (u.qi ?? 100) + 10);
     // 부대 이동·전투
-    for (const u of [...this.units]) this.stepUnit(u);
+    for (const u of [...this.units]) { if (u.force === -1) this.banditAct(u); else this.stepUnit(u); }
     // 도시 공성 처리는 stepUnit 내부
     // 야전: 접촉한 적 부대끼리 교전
     this.resolveFieldBattles();
@@ -604,6 +604,18 @@ export class Game {
             this.log(`${c.name_ko}의 ${this.officers[i].name_ko}에게 봉록 ${sal}금을 주지 못했습니다 (충성 하락)`, c.force === this.playerForce);
           }
         }
+        // R9: 재해·치안 (설계안 100-101행, 자체 수치)
+        c.security = Math.max(0, Math.min(100, (c.security ?? 80) + (this.cityHasSkill(c, '치안') ? 0 : -1))); // 치안 특기 주둔 시 감소 없음
+        if (c.disaster) { // 역병 지속: 병사·금·병량 감소
+          c.troops = Math.max(0, Math.round(c.troops * 0.95));
+          c.gold = Math.max(0, Math.round(c.gold * 0.9));
+          c.food = Math.max(0, Math.round(c.food * 0.9));
+          if (c.disaster.until <= this.turn) { this.log(`【재해】${c.name_ko}의 ${c.disaster.type}이(가) 지나갔습니다`, c.force === this.playerForce); c.disaster = null; }
+        } else if (Math.random() < 0.02) { // 역병 발생 (월 2%, 자체 수치)
+          c.disaster = { type: '역병', until: this.turn + 6 };
+          this.log(`【재해】${c.name_ko}에 역병이 돌고 있습니다! (2개월간 병사·금·병량 감소)`, true);
+        }
+        if ((c.security ?? 80) < 80 && !this.units.some(u => u.force === -1 && u.targetCity === c.id) && Math.random() < 0.25) this.spawnBandits(c); // 적(賊) 출현 (월 25%, 자체 수치)
       }
       // 옥새: 소유 세력 기교P 월 +10 (자체 수치)
       for (const f of Object.values(this.forces)) {
@@ -804,9 +816,9 @@ export class Game {
       if ((att.conf ?? 0) > 0) return 0; // 혼란은 stepUnit에서 감소 처리됨
       if (SIEGE_TYPES.has(att.type) && (att.qi ?? 100) <= 0) return 0; // 병기: 기력 0 공격 불가
       const utA = UNIT_TYPES[att.type], utD = UNIT_TYPES[def.type];
-      const lead = this.officers[att.officers[0]];
+      const lead = this.officers[att.officers[0]] ?? { war: 60, int: 30, apt: null, name_ko: '적병 두목', idx: -1 };
       let dmg = Math.round(att.troops * 0.05 * utA.atk * (0.7 + lead.war/150) / utD.def * this.aptMult(att) * this.unitDmgMult(att) * this.unitItemAtk(att) * this.unitDefMult(def) * this.unitTechAtk(att) * (1 - 0.03 * this.techLv(def.force, '연병')));
-      if (isWaterAt(att.x, att.z)) dmg = Math.round(dmg * (utA.ship ? 1.3 : 0.7)); // 수전: 수군 우세, 육군 페널티 (자체 수치)
+      if (isWaterAt(att.x, att.z)) { dmg = Math.round(dmg * (utA.ship ? 1.3 : 0.7) * (this.unitHasSkill(att, '수완') ? 1.15 : 1)); } // 수전: 수군 우세, 육군 페널티, 수완 특기 +15% (자체 수치)
       // 전법 (공성과 같은 규칙)
       const tac = TACTICS[att.type];
       const aptLv = att.type === 'sword' ? 1 : APT_LV(lead.apt?.[APT_IDX[att.type]]);
@@ -850,6 +862,58 @@ export class Game {
         }
       }
     }
+  }
+  patrol(cityId) { // R9: 치안 순찰 — 치안 +10 (금 100·AP 20, 자체 수치)
+    const c = this.cityById[cityId];
+    if (!c || c.force == null || this._blocked(c)) return false;
+    const f = this.forces[c.force];
+    if ((f.ap ?? 0) < 20 || c.gold < 100 || (c.security ?? 80) >= 100) return false;
+    f.ap -= 20; c.gold -= 100;
+    c.security = Math.min(100, (c.security ?? 80) + 10);
+    this.log(`【치안】${c.name_ko}에서 순찰을 실시했습니다 (치안 ${c.security})`, c.force === this.playerForce);
+    return true;
+  }
+  spawnBandits(c) { // R9: 치안 80 미만 도시 주변에 적(賊) 출현 (설계안 101행, 자체 수치)
+    let cell = null;
+    for (let r = 2; r <= 5 && !cell; r++)
+      for (let dx = -r; dx <= r && !cell; dx++) for (let dz = -r; dz <= r && !cell; dz++) {
+        if (Math.max(Math.abs(dx), Math.abs(dz)) !== r) continue;
+        const x = c.lon + dx, z = c.lat + dz;
+        if (isWaterAt(x, z)) continue;
+        if (this.cities.some(o => Math.hypot(o.lon - x, o.lat - z) < 1.5)) continue;
+        if (this.units.some(u => Math.hypot(u.x - x, u.z - z) < 1)) continue;
+        cell = { x, z };
+      }
+    if (!cell) return;
+    const u = { id: this.nextUnitId++, force: -1, officers: [], troops: 3000, type: 'spear',
+      x: cell.x, z: cell.z, path: [], tx: null, tz: null, targetCity: c.id, label: '적병 3k', qi: 100, conf: 0, until: this.turn + 18 };
+    this.units.push(u);
+    this.log(`【적】${c.name_ko} 주변에 적의 근거지가 출현했습니다! (치안 ${c.security ?? 80} — 순찰로 치안을 높이세요)`, true);
+  }
+  banditAct(u) { // R9: 적(賊) 행동 — 목표 도시로 이동, 도착 시 완성 시설 파괴·약탈 후 소멸, 6개월 후 자연 소멸
+    if ((u.until ?? Infinity) <= this.turn || u.troops <= 0) { this.units = this.units.filter(x => x !== u); return; }
+    const c = this.cityById[u.targetCity];
+    if (!c || c.force == null) { this.units = this.units.filter(x => x !== u); return; }
+    const d = Math.hypot(c.lon - u.x, c.lat - u.z);
+    if (d < 1.6) { // 도착: 완성 시설 1개 파괴, 없으면 금 약탈
+      const done = (c.facilities ?? []).filter(f => f.done);
+      if (done.length) {
+        const f = done[Math.floor(Math.random() * done.length)];
+        c.facilities = c.facilities.filter(x => x !== f);
+        this.log(`【적】${c.name_ko}의 ${f.key}이(가) 적에게 파괴되었습니다!`, true);
+      } else {
+        const loot = Math.min(c.gold, 500);
+        c.gold -= loot;
+        this.log(`【적】적병이 ${c.name_ko}을(를) 약탈했습니다 (금 -${loot})`, true);
+      }
+      c.security = Math.max(0, (c.security ?? 80) - 5);
+      this.units = this.units.filter(x => x !== u);
+      return;
+    }
+    const step = 0.55 * UNIT_TYPES[u.type].move;
+    const nx = u.x + (c.lon - u.x) / d * step, nz = u.z + (c.lat - u.z) / d * step;
+    if (isWaterAt(nx, nz)) return; // 육군 — 수로는 건너지 못함
+    u.x = nx; u.z = nz;
   }
   autosave() {
     try {
