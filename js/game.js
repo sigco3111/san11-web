@@ -87,7 +87,7 @@ export const TECH_P = [1000, 2000, 3000, 5000];      // 단계별 필요 기교P
 // === R13: 능력연구 4계통 (설계안 120행 PK 채택, 계통·단계·수치는 자체 설계) ===
 export const AB_BRANCHES = { '공격': 'war', '방어': 'ldr', '계략': 'int', '내정': 'pol' };
 export const AB_P = [500, 1500, 3000]; // 계통당 3단계 필요 기교P
-export const SORCERY_MIN_INT = 90; // 요술/낙뢰 습득 후보 최소 지력 (자체 잠정값)
+export const AB_PICK = { '계략': ['논객', '요술', '낙뢰'] }; // 능력연구 3단계 완료 시 고를 수 있는 특기 (자체 잠정규칙, 미지정 시 AB_SKILL 기본값)
 export const AB_SKILL = { '공격': '맹돌', '방어': '강직', '계략': '논객', '내정': '치안' }; // 3단계 완료 시 특기 습득 (자체 선택)
 export const TECH_GOLD = [1000, 2000, 5000, 10000];  // 단계별 연구 비용 (금)
 export const TECH_DESC = {
@@ -1618,7 +1618,7 @@ export class Game {
     this.autosave();
     return true;
   }
-  researchAbility(fid, branch) { // R13 능력연구: 기교P 소비 → 소속 무장 전원 해당 능력 +2 (상한 100), 3단계 완료 시 특기 습득 (자체 수치)
+  researchAbility(fid, branch, pick = null) { // R13 능력연구: 기교P 소비 → 소속 무장 전원 해당 능력 +2 (상한 100), 3단계 완료 시 특기 습득 (자체 수치)
     const f = this.forces[fid]; if (!f?.alive) return false;
     f.ab = f.ab ?? { '공격': 0, '방어': 0, '계략': 0, '내정': 0 };
     const stat = AB_BRANCHES[branch], lv = f.ab[branch] ?? 0;
@@ -1633,10 +1633,9 @@ export class Game {
     if (lv + 1 === 3) {
       let sk = AB_SKILL[branch];
       const free = this.forceOfficers(fid).filter(o => o && !o.skill && !o.state?.grantSkill);
-      let cand = free.sort((a, b) => (b.state?.merit ?? 0) - (a.state?.merit ?? 0))[0];
-      if (branch === '계략') { // 자체 잠정규칙: 지력 90 이상 무특기 무장이 있으면 그 중 지력 최고에게 요술/낙뢰(세력 내 보유 수가 적은 쪽) 습득, 없으면 기존 논객
-        const sage = free.filter(o => o.int >= SORCERY_MIN_INT).sort((a, b) => b.int - a.int)[0];
-        if (sage) { const mine = this.forceOfficers(fid); const n1 = mine.filter(o => o.skill === '요술').length, n2 = mine.filter(o => o.skill === '낙뢰').length; cand = sage; sk = n1 <= n2 ? '요술' : '낙뢰'; }
+      let cand = free.slice().sort((a, b) => (b.state?.merit ?? 0) - (a.state?.merit ?? 0))[0];
+      if (branch === '계략' && pick && AB_PICK['계략'].includes(pick)) { // 선택 가능한 특기 목록: 논객(기본)·요술·낙뢰. 요술/낙뢰는 무특기 무장 중 지력 최고에게(자체 잠정규칙, 임계 지력 없음, 세력당 1회)
+        sk = pick; if (pick !== '논객') cand = free.slice().sort((a, b) => b.int - a.int)[0];
       }
       if (cand) {
         cand.skill = sk; if (cand.state) cand.state.grantSkill = sk; // 저장 영속용
