@@ -601,6 +601,9 @@ const ITEMS = [
 ];
 const RANKS = [[2,'주자사'],[4,'주목'],[6,'우림중랑장'],[8,'오관중랑장'],[12,'대장군'],[14,'대사마'],[18,'공'],[20,'왕']];
 const MERIT = { develop: 30, recruit: 80, facility: 100, tactic: 40, stratagem: 30, capture: 150 };
+const DEBATE_CARDS = {
+질타: { dmg: 12 }, 강변: { dmg: 24, cd: 2, int: 80 }, 반박: { counter: 8 }, 경청: { heal: 12, cd: 2 }, 도발: { seal: true, cd: 3, int: 85 },
+};
 class Game {
 constructor(scen, officers, skills, playerForceId) {
 this.officers = officers;
@@ -609,6 +612,7 @@ this.scenId = scen.id;
 this.year = scen.year; this.month = scen.month; this.dan = 1;
 this.turn = 1;
 this.pendingDuel = null;
+this.pendingDebate = null;
 this.cities = scen.cities.map(c => ({ ...c, commerce: Math.round(c.revenue/10), farm: Math.round(c.harvest/100), hp: c.maxhp, officers: [], troops: c.troops, facilities: [] }));
 this.cityById = {}; this.cities.forEach(c => this.cityById[c.id] = c);
 this.forces = {};
@@ -802,6 +806,7 @@ d.allianceUntil = this.turn + 24;
 return true;
 }
     this.log(`【외교】${this.forceName(tid)}이(가) ${this.forceName(fid)}의 동맹 제의를 거절했습니다`, fid === this.playerForce || tid === this.playerForce);
+this.tryDebate({ kind: 'alliance', fid, tid, cityId });
 return false;
 }
 requestTruce(fid, tid, cityId) {
@@ -818,6 +823,7 @@ const v = this.changeRelation(fid, tid, 30);
 return true;
 }
     this.log(`【외교】${this.forceName(tid)}이(가) 정전 요청을 거절했습니다`, fid === this.playerForce || tid === this.playerForce);
+this.tryDebate({ kind: 'truce', fid, tid, cityId });
 return false;
 }
 demandSurrender(fid, tid, cityId) {
@@ -954,6 +960,7 @@ if (!c.officers.includes(officerIdx)) c.officers.push(officerIdx);
 return true;
 }
     this.log(`${c.name_ko}의 ${t.name_ko} 등용에 실패했습니다`, c.force === this.playerForce);
+this.tryDebate({ kind: 'recruit', fid: c.force, tid: c.force, cityId, officerIdx });
 return false;
 }
 moveOfficers(fromCity, toCity, idxs) {
@@ -1019,7 +1026,7 @@ if (!u || !c) return;
 u.targetCity = targetCityId; u.tx = c.lon; u.tz = c.lat;
 }
 endTurn(aiThink) {
-if (this.pendingDuel) return;
+if (this.pendingDuel || this.pendingDebate) return;
 for (const u of this.units) u.qi = Math.min(100, (u.qi ?? 100) + 10);
 for (const u of [...this.units]) { if (u.force === -1) this.banditAct(u); else this.stepUnit(u); }
 this.resolveFieldBattles();
@@ -1452,6 +1459,90 @@ this.pendingDuel = null;
 return d;
 }
 duelAuto(d) { let guard = 0; while (d && !d.done && guard++ < 200) this.duelTick(d, this.duelPolicy(d, 'a'), this.duelPolicy(d, 'b')); }
+hasItemKindOff(idx, kind) { return (this.officers[idx]?.state?.items ?? []).some(id => ITEMS.find(x => x.id === id)?.kind === kind); }
+debateCards(idx) {
+const o = this.officers[idx], book = this.hasItemKindOff(idx, 'book');
+const out = {};
+for (const [k, v] of Object.entries(DEBATE_CARDS)) if (book || (v.int ?? 0) <= (o?.int ?? 0)) out[k] = v;
+return out;
+}
+debateCardList() { return DEBATE_CARDS; }
+debateCardUsable(d, k, card) { const s = d[k]; return !!card && !s.seal && !!this.debateCards(s.o)[card] && (s.cds[card] ?? 0) <= 0; }
+startDebate(aIdx, bIdx, ctx) { return { a: { o: aIdx, hp: 100, cds: {}, seal: false }, b: { o: bIdx, hp: 100, cds: {}, seal: false }, bout: 0, log: [], done: false, winner: null, ctx }; }
+debatePolicy(d, k) {
+const s = d[k], o = d[k === 'a' ? 'b' : 'a'];
+const usable = c => this.debateCardUsable(d, k, c);
+if (s.hp <= 25 && usable('경청')) return '경청';
+if (usable('도발') && Math.random() < 0.3) return '도발';
+if (o.hp >= 40 && usable('반박') && Math.random() < 0.35) return '반박';
+if (usable('강변')) return '강변';
+return '질타';
+}
+debateTick(d, cardA, cardB) {
+if (d.done) return d;
+d.bout++;
+const name = s => this.officers[s.o].name_ko;
+const mult = s => (0.8 + (this.officers[s.o]?.int ?? 50) / 200) * (this.officers[s.o]?.skill === '논객' ? 1.25 : 1);
+const okCard = (k, c) => { const s = d[k]; return c && this.debateCards(s.o)[c] && (s.cds[c] ?? 0) <= 0; };
+if (!okCard('a', cardA)) cardA = null;
+if (!okCard('b', cardB)) cardB = null;
+    if (d.a.seal) { if (cardA) d.log.push(`${name(d.a)}은(는) 도발에 말려 화술을 쓰지 못했습니다`); cardA = null; d.a.seal = false; }
+    if (d.b.seal) { if (cardB) d.log.push(`${name(d.b)}은(는) 도발에 말려 화술을 쓰지 못했습니다`); cardB = null; d.b.seal = false; }
+const defA = cardA ? DEBATE_CARDS[cardA] : null, defB = cardB ? DEBATE_CARDS[cardB] : null;
+let dmgA = 0, dmgB = 0;
+    if (defA?.dmg) { if (cardB === '반박') { dmgB += Math.round(DEBATE_CARDS.반박.counter * mult(d.b)); d.log.push(`${name(d.b)}의 반박! ${name(d.a)}의 ${cardA}을(를) 되돌림`); } else dmgA += Math.round(defA.dmg * mult(d.a)); }
+    if (defB?.dmg) { if (cardA === '반박') { dmgA += Math.round(DEBATE_CARDS.반박.counter * mult(d.a)); d.log.push(`${name(d.a)}의 반박! ${name(d.b)}의 ${cardB}을(를) 되돌림`); } else dmgB += Math.round(defB.dmg * mult(d.b)); }
+    if (defA?.heal) { d.a.hp = Math.min(100, d.a.hp + defA.heal); d.log.push(`${name(d.a)}의 경청 (논리 +${defA.heal})`); }
+    if (defB?.heal) { d.b.hp = Math.min(100, d.b.hp + defB.heal); d.log.push(`${name(d.b)}의 경청 (논리 +${defB.heal})`); }
+    if (defA?.seal) { d.b.seal = true; d.log.push(`${name(d.a)}의 도발! ${name(d.b)}의 다음 화술 봉인`); }
+    if (defB?.seal) { d.a.seal = true; d.log.push(`${name(d.b)}의 도발! ${name(d.a)}의 다음 화술 봉인`); }
+d.b.hp -= dmgA; d.a.hp -= dmgB;
+    if (dmgA) d.log.push(`${name(d.a)}의 ${cardA} → ${dmgA} 피해`);
+    if (dmgB) d.log.push(`${name(d.b)}의 ${cardB} → ${dmgB} 피해`);
+for (const [s, c] of [[d.a, cardA], [d.b, cardB]]) { for (const k of Object.keys(s.cds)) s.cds[k]--; if (c && DEBATE_CARDS[c]?.cd) s.cds[c] = DEBATE_CARDS[c].cd; }
+    d.log.push(`${d.bout}합: ${name(d.a)} ${Math.max(0, d.a.hp)} / ${name(d.b)} ${Math.max(0, d.b.hp)}`);
+if (d.a.hp <= 0 || d.b.hp <= 0 || d.bout >= 15) this.finishDebate(d);
+return d;
+}
+finishDebate(d) {
+d.done = true;
+const an = this.officers[d.a.o].name_ko, bn = this.officers[d.b.o].name_ko;
+let w = null;
+if (d.a.hp > 0 && d.b.hp <= 0) w = 'a';
+else if (d.b.hp > 0 && d.a.hp <= 0) w = 'b';
+else if (d.a.hp > 0 && d.b.hp > 0 && d.a.hp !== d.b.hp) w = d.a.hp > d.b.hp ? 'a' : 'b';
+d.winner = w;
+const ctx = d.ctx ?? {};
+if (w === 'a') {
+      if (ctx.kind === 'alliance') { const dd = this.diploOf(ctx.fid, ctx.tid); dd.allianceUntil = this.turn + 24; this.log(`【설전】${an}이(가) ${bn}을(를) 논파! ${this.forceName(ctx.fid)}과(와) ${this.forceName(ctx.tid)}이(가) 24턴 동맹을 맺었습니다!`, true); }
+      else if (ctx.kind === 'truce') { const dd = this.diploOf(ctx.fid, ctx.tid); dd.truceUntil = this.turn + 12; const v = this.changeRelation(ctx.fid, ctx.tid, 30); this.log(`【설전】${an}이(가) ${bn}을(를) 논파! 정전 성립 (12턴간 공격 금지, 관계 → ${v})`, true); }
+      else if (ctx.kind === 'recruit') { const c = this.cityById[ctx.cityId], t = this.officers[ctx.officerIdx]; if (c && t?.state && t.state.force == null) { t.state.status = 'serving'; t.state.force = c.force; if (!c.officers.includes(t.idx)) c.officers.push(t.idx); this.gainMerit(d.a.o, MERIT.recruit); this.log(`【설전】${an}의 설파 끝에 ${t.name_ko}이(가) 【${this.forceName(c.force)}】에 등용되었습니다! (${c.name_ko})`, true); } }
+} else if (w === 'b') {
+      if (ctx.kind === 'alliance' || ctx.kind === 'truce') { const v = this.changeRelation(ctx.fid, ctx.tid, -5); this.log(`【설전】${bn}이(가) ${an}을(를) 논파 — 협상 결렬 (관계 → ${v} ${this.relStage(v)})`, ctx.fid === this.playerForce || ctx.tid === this.playerForce); }
+      else this.log(`【설전】${bn}이(가) ${an}을(를) 논파 — 등용 결렬`, ctx.fid === this.playerForce);
+    } else this.log(`【설전】${an} vs ${bn} — ${d.bout}합 무승부`, ctx.fid === this.playerForce || ctx.tid === this.playerForce);
+this.pendingDebate = null;
+return d;
+}
+debateAuto(d) { let guard = 0; while (d && !d.done && guard++ < 100) this.debateTick(d, this.debatePolicy(d, 'a'), this.debatePolicy(d, 'b')); }
+tryDebate(ctx) {
+const c = this.cityById[ctx.cityId];
+let aIdx = null, bIdx = null;
+if (ctx.kind === 'recruit') {
+aIdx = (c?.officers ?? []).slice().sort((x, y) => (this.officers[y]?.int ?? 0) - (this.officers[x]?.int ?? 0))[0] ?? null;
+bIdx = ctx.officerIdx;
+} else {
+aIdx = (c?.officers ?? []).slice().sort((x, y) => (this.officers[y]?.int ?? 0) - (this.officers[x]?.int ?? 0))[0] ?? null;
+bIdx = Object.values(this.officers).filter(o => o.state?.force === ctx.tid).sort((x, y) => y.int - x.int)[0]?.idx ?? null;
+}
+if (aIdx == null || bIdx == null) return false;
+if (Math.random() >= 0.3) return false;
+const d = this.startDebate(aIdx, bIdx, ctx);
+    this.log(`【설전】${this.officers[aIdx].name_ko} vs ${this.officers[bIdx].name_ko} — 설전 시작!`, ctx.fid === this.playerForce || ctx.tid === this.playerForce);
+if ((ctx.fid !== this.playerForce && ctx.tid !== this.playerForce) || this.delegated) this.debateAuto(d);
+else this.pendingDebate = d;
+return true;
+}
 autosave() {
 try {
 const data = {
@@ -1705,6 +1796,7 @@ game.endTurn(aiThink);
 refreshAll();
 checkGameOver();
 if (game.pendingDuel) showDuel();
+if (game.pendingDebate) showDebate();
 }
 function showDuel() {
 const d = game.pendingDuel; if (!d) return;
@@ -1738,6 +1830,38 @@ $('duel-auto').onclick = () => { game.duelAuto(d); after(); };
 };
 const after = () => {
 if (game.pendingDuel) render();
+else { m.classList.add('hidden'); refreshAll(); checkGameOver(); }
+};
+render();
+}
+function showDebate() {
+const d = game.pendingDebate; if (!d) return;
+const m = $('modal'); m.classList.remove('hidden');
+const pk = game.officers[d.a.o].state?.force === game.playerForce ? 'a' : 'b', ek = pk === 'a' ? 'b' : 'a';
+const render = () => {
+const P = d[pk], E = d[ek];
+const po = game.officers[P.o], eo = game.officers[E.o];
+    const bar = (v, max, color) => `<span style="display:inline-block;width:120px;height:10px;background:#333;vertical-align:middle"><span style="display:block;width:${Math.max(0, Math.min(100, v / max * 100))}%;height:100%;background:${color}"></span></span>`;
+const ctxName = { alliance: '동맹 제의', truce: '정전 요청', recruit: '등용' }[d.ctx?.kind] ?? '협상';
+const cardBtn = c => {
+const owned = !!game.debateCards(P.o)[c];
+const ok = game.debateCardUsable(d, pk, c);
+      const cd = (P.cds[c] ?? 0) > 0 ? ` (쿨 ${P.cds[c]})` : '';
+      return `<button class="cmd debate-card" data-c="${c}" ${ok ? '' : 'disabled'}>${c}${cd}${owned ? '' : ' 🔒'}</button>`;
+};
+    m.innerHTML = `<div class="box" style="min-width:420px">
+      <h3 style="color:#6cf">설전 — ${po.name_ko} vs ${eo.name_ko} (${d.bout}합) <span style="font-size:12px;color:#aaa">${ctxName}</span></h3>
+      <p>${po.name_ko} 논리 ${bar(P.hp, 100, '#d44')} ${Math.max(0, P.hp)}${P.seal ? ' · 봉인' : ''}<br>
+      ${eo.name_ko} 논리 ${bar(E.hp, 100, '#d44')} ${Math.max(0, E.hp)}${E.seal ? ' · 봉인' : ''}</p>
+      <p style="font-size:12px;color:#cbb;min-height:54px">${d.log.slice(-3).join('<br>')}</p>
+      <p>화술: ${Object.keys(game.debateCardList()).map(cardBtn).join(' ')}</p>
+      <p style="font-size:11px;color:#999">반박=상대 공격 무효+반격 · 경청=논리 회복 · 도발=다음 화술 봉인 · 🔒는 지력 부족(서적 보유 시 해금)</p>
+      <p><button class="cmd" id="debate-auto">위임 (자동)</button></p></div>`;
+m.querySelectorAll('.debate-card').forEach(b => b.onclick = () => { game.debateTick(d, b.dataset.c, game.debatePolicy(d, ek)); after(); });
+$('debate-auto').onclick = () => { game.debateAuto(d); after(); };
+};
+const after = () => {
+if (game.pendingDebate) render();
 else { m.classList.add('hidden'); refreshAll(); checkGameOver(); }
 };
 render();
@@ -1895,7 +2019,7 @@ if (allied) {
 }
     html += `</div></div></div>`;
 }
-  html += `<p class="st">관계: 80+ 친밀 · 60+ 호의 · 40+ 중립 · 20+ 불화 · 미만 험악 — 매달 중립으로 서서히 회귀. 동맹국은 서로 공격하지 않습니다. 설전(협상 연출)은 R11에서 구현되며 지금은 특기 논객이 성공률을 보정합니다.</p>`;
+  html += `<p class="st">관계: 80+ 친밀 · 60+ 호의 · 40+ 중립 · 20+ 불화 · 미만 험악 — 매달 중립으로 서서히 회귀. 동맹국은 서로 공격하지 않습니다. 협상 결렬·등용 실패 시 30% 확률로 설전이 벌어지며, 승리하면 협상이 재심됩니다. 논객 특기는 성공률과 설전 공격력(+25%)을 보정합니다.</p>`;
   html += `<button class="cmd" id="cmd-diplo-back">← 도시 패널로</button>`;
 p.innerHTML = html;
 p.querySelectorAll('.dip-act').forEach(btn => btn.onclick = () => {
@@ -1903,6 +2027,7 @@ const tid = Number(btn.dataset.t);
 const act = { envoy: 'envoy', ally: 'proposeAlliance', truce: 'requestTruce', surrender: 'demandSurrender', aid: 'requestAid', break: 'breakAlliance' }[btn.dataset.a];
 const r = act === 'breakAlliance' ? game.breakAlliance(c.force, tid) : game[act](c.force, tid, c.id);
 refreshAll(); showDiplomacy(c);
+if (game.pendingDebate) showDebate();
 });
 $('cmd-diplo-back').onclick = () => showCityPanel(c);
 }
@@ -2035,7 +2160,7 @@ $('cmd-search').onclick = () => { game.searchCity(c.id); refreshAll(); showCityP
 $('cmd-trade').onclick = () => showTrade(c);
 $('cmd-advisor').onclick = () => showAdvisor(c);
 $('cmd-legion').onclick = () => showLegions(c);
-p.querySelectorAll('.cmd-rec').forEach(b => b.onclick = () => { game.recruitOfficer(c.id, Number(b.dataset.i)); refreshAll(); showCityPanel(c); });
+p.querySelectorAll('.cmd-rec').forEach(b => b.onclick = () => { game.recruitOfficer(c.id, Number(b.dataset.i)); refreshAll(); showCityPanel(c); if (game.pendingDebate) showDebate(); });
 }
 const join = $('cmd-join');
 if (join) join.onclick = () => {
