@@ -1062,6 +1062,7 @@ export class Game {
     c.facilities.splice(fi2, 1);
     c.gold -= 200; f.ap -= 10;
     this.log(`【합병】${c.name_ko}의 ${a.type}을(를) 흡수합병해 Lv${a.level}(으)로 강화했습니다 (금 200·AP 10, 개발지 1개 회수)`, c.force === this.playerForce);
+    this.autosave();
     return true;
   }
   researchAbility(fid, branch) { // R13 능력연구: 기교P 소비 → 소속 무장 전원 해당 능력 +2 (상한 100), 3단계 완료 시 특기 습득 (자체 수치)
@@ -1084,6 +1085,7 @@ export class Game {
         this.log(`【연구】${cand.name_ko}이(가) 연구 성과로 특기 「${sk}」을(를) 습득했습니다!`, fid === this.playerForce);
       }
     }
+    this.autosave();
     return true;
   }
   swearBrotherhood(cityId, idxs) { // 의형제 결연: 같은 도시·세력 무장 2~3명, 각 공적 500+, 세력 기교P 500 (설계안 55행 비용) · 충성 +10 (자체)
@@ -1100,6 +1102,7 @@ export class Game {
       st.loyal = Math.min(100, (st.loyal ?? 70) + 10);
     }
     this.log(`【결연】${idxs.map(i => this.officers[i].name_ko).join('·')}이(가) ${c.name_ko}에서 의형제를 맺었습니다! (기교P -500, 충성 +10)`, c.force === this.playerForce);
+    this.autosave(); // 커맨드 직후 영속 (턴 종료 전 리로드 소실 방지)
     return true;
   }
   unitHasItemKind(u, kind) {
