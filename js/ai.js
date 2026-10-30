@@ -17,12 +17,32 @@ export function aiThink(game, fid) {
     const avgNbr = cities.reduce((s,x) => s + x.troops, 0) / cities.length;
     if (c.troops < Math.min(avgNbr, 12000) && c.gold > 500 && c.food > 3000) game.recruit(c.id);
   }
-  // 2.7) 외교: 험악한 이웃에게 친선 사절 (같은 비용·효과, 30% 확률)
-  if (f.ap >= 20 && Math.random() < 0.3) {
-    const worst = Object.values(game.forces).filter(t => t.alive && t.id !== fid)
-      .map(t => ({ t, v: game.relation(fid, t.id) })).filter(x => x.v < 40).sort((x, y) => x.v - y.v)[0];
+  // 2.7) 외교: 친선 사절·동맹 제의·정전 요청을 같은 조건·비용으로 사용
+  {
     const from = cities.filter(c => c.gold >= 500 && c.officers.length).sort((x, y) => y.gold - x.gold)[0];
-    if (worst && from) game.envoy(fid, worst.t.id, from.id);
+    if (from) {
+      // 험악 이웃에 친선 사절 (30% 확률)
+      if (f.ap >= 20 && Math.random() < 0.3) {
+        const worst = Object.values(game.forces).filter(t => t.alive && t.id !== fid)
+          .map(t => ({ t, v: game.relation(fid, t.id) })).filter(x => x.v < 40).sort((x, y) => x.v - y.v)[0];
+        if (worst) game.envoy(fid, worst.t.id, from.id);
+      }
+      // 호의 이상 세력에 동맹 제의 (20% 확률, 이미 동맹이면 패스)
+      if (f.ap >= 30 && from.gold >= 1000 && Math.random() < 0.2) {
+        const cand = Object.values(game.forces).filter(t => t.alive && t.id !== fid && !game.isAllied(fid, t.id) && game.relation(fid, t.id) >= 60)
+          .sort((x, y) => game.relation(fid, y.id) - game.relation(fid, x.id))[0];
+        if (cand) game.proposeAlliance(fid, cand.id, from.id);
+      }
+      // 불화 이하 + 수세(도시 2개 이하 또는 위협 도시)면 정전 요청 (50% 확률)
+      if (f.ap >= 30 && from.gold >= 2000 && Math.random() < 0.5) {
+        const threatened = cities.some(c => game.units.some(u => u.force !== fid && u.targetCity === c.id));
+        if (cities.length <= 2 || threatened) {
+          const foe = Object.values(game.forces).filter(t => t.alive && t.id !== fid && !game.isPeace(fid, t.id) && game.relation(fid, t.id) <= 39)
+            .sort((x, y) => game.relation(fid, x.id) - game.relation(fid, y.id))[0];
+          if (foe) game.requestTruce(fid, foe.id, from.id);
+        }
+      }
+    }
   }
   // 2.6) 시설 건설: 개발지가 남고 금이 넉넉하면 시장·농장 우선, 이후 병영
   for (const c of cities) {
