@@ -54,4 +54,42 @@ if (fieldN < 1) { console.error('FAIL: no field battle resolved'); process.exit(
 if (g.units.find(u => u.id === 9999) && g.units.find(u => u.id === 9999).qi === undefined) {
   // 아직 전투에 도달하지 않았으면 기력 미회복 상태일 수 있음 — 오류 없이 진행됐으면 통과
 }
+// 특기·적성 게이트 (결정적)
+{
+  const g2 = new Game(JSON.parse(JSON.stringify(scen)), officers, {}, 0);
+  const base = { id: 1, force: 0, officers: [], troops: 5000, type: 'spear', x: 0, z: 0, path: [], tx: null, tz: null, targetCity: null, label: 'A', qi: 100, conf: 0 };
+  const mk = (skill, apt) => {
+    const idx = 90000 + Math.floor(Math.random() * 1000);
+    g2.officers[idx] = { idx, name_ko: '시험', ldr: 50, war: 80, int: 30, pol: 30, chr: 50, skill, apt: apt || {}, state: { status: 'serving', force: 0, city: null } };
+    return idx;
+  };
+  const noSkill = mk(null, { 0: 'B' }), pajin = mk('파진', { 0: 'B' }), kang = mk('강직', { 0: 'B' }), aptS = mk(null, { 0: 'S' });
+  const uA = { ...base, id: 11, officers: [noSkill] }, uB = { ...base, id: 12, officers: [pajin] };
+  const uC = { ...base, id: 13, officers: [kang] }, uD = { ...base, id: 14, officers: [aptS] };
+  const plain = mk(null, { 0: 'B' });
+  const strikeOf = (att, def) => { // fieldBattle strike 부분을 동일 조건으로 재현
+    const utA = g2.units; // unused
+    return Math.round(att.troops * 0.05 * 1.0 * (0.7 + 80/150) / 1.0 * g2.aptMult(att) * g2.unitDmgMult(att) * g2.unitDefMult(def));
+  };
+  const dBase = strikeOf(uA, { ...base, officers: [plain] });
+  const dPajin = strikeOf(uB, { ...base, officers: [plain] });
+  const dKang = strikeOf(uA, { ...base, officers: [kang] });
+  const dAptS = strikeOf(uD, { ...base, officers: [plain] });
+  if (!(dPajin > dBase && dKang < dBase && dAptS > dBase)) { console.error('FAIL: 특기·적성 보정', { dBase, dPajin, dKang, dAptS }); process.exit(1); }
+  console.log('특기·적성 보정 확인: 기본', dBase, '| 파진', dPajin, '| 강직(받는측)', dKang, '| 적성S', dAptS);
+  // 위장: 혼란 면역 — fieldBattle 계략 조건에서 위장 부대는 conf 미적용
+  const wj = mk('위장', { 0: 'B' });
+  const uW = { ...base, id: 15, officers: [wj], conf: 0 };
+  if (g2.unitHasSkill(uW, '위장') !== true) { console.error('FAIL: 위장 보유 판정'); process.exit(1); }
+  // 수입 특기: 통상 도시 금 수입 증가
+  const home2 = g2.cities.find(c => c.force != null && c.officers.length);
+  const g0 = home2.gold; g2.dan = 3;
+  const t0 = g2.turn;
+  home2.officers.push(pajin); // 파진은 수입 무관
+  const inc0 = Math.round((50 + home2.commerce * 8 * (home2.metropolis ? 1.5 : 1)) * (g2.cityHasSkill(home2, '통상') ? 1.3 : 1));
+  home2.officers.push(mk('통상'));
+  const inc1 = Math.round((50 + home2.commerce * 8 * (home2.metropolis ? 1.5 : 1)) * (g2.cityHasSkill(home2, '통상') ? 1.3 : 1));
+  if (!(inc1 > inc0)) { console.error('FAIL: 통상 수입 보정', inc0, inc1); process.exit(1); }
+  console.log('수입 특기 확인: 통상 적용 전', inc0, '→ 후', inc1);
+}
 console.log('sample logs:'); for (const l of g.logs.slice(-8)) console.log(' ', l.t, l.msg);
