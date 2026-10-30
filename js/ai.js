@@ -25,7 +25,7 @@ export function aiThink(game, fid) {
     const have = t => c.facilities.some(x => x.type === t);
     const pick = !have('시장') ? '시장' : !have('농장') ? '농장' : !have('병영') && c.gold > 2000 ? '병영' : null;
     if (pick) {
-      const builders = [...c.officers].sort((x, y) => (game.officers[y]?.pol ?? 0) - (game.officers[x]?.pol ?? 0)).slice(0, 3);
+      const builders = [...new Set(c.officers)].sort((x, y) => (game.officers[y]?.pol ?? 0) - (game.officers[x]?.pol ?? 0)).slice(0, 3);
       game.buildFacility(c.id, pick, builders);
     }
   }
