@@ -42,6 +42,29 @@ export const TACTICS = {
   lou:  { name: '격돌',   qi: 20, mult: 2.0, minApt: 2 },       // 누선 (A 이상)
   dou:  { name: '투석',   qi: 25, mult: 2.5, minApt: 3 },       // 투함 (S)
 };
+// R18: 병종별 추가 전법 (설계 68~72행 명칭·적성·기력, 효과 수치는 자체. minApt: B=1 A=2 S=3). 부대 대상에만 적용
+export const TACTICS_EX = {
+  spear: [
+    { id: 'spiral', name: '나선찌르기', qi: 15, minApt: 2, eff: 'conf', mult: 1.0 },
+    { id: 'two',    name: '이단찌르기', qi: 15, minApt: 1, eff: 'push', n: 1, mult: 1.2 },
+    { id: 'thrust', name: '돌출찌르기', qi: 20, minApt: 3, eff: 'push', n: 2, mult: 1.3 },
+  ],
+  pike: [
+    { id: 'hook',  name: '웅수',     qi: 15, minApt: 1, eff: 'pull', mult: 1.0 },
+    { id: 'side',  name: '옆베기',   qi: 20, minApt: 2, eff: 'side', mult: 1.2 },
+    { id: 'whirl', name: '선풍베기', qi: 25, minApt: 3, eff: 'whirl', mult: 1.0 },
+  ],
+  bow: [
+    { id: 'pierce', name: '관통화살', qi: 20, minApt: 2, eff: 'pierce', mult: 1.3 },
+    { id: 'volley', name: '난사',     qi: 30, minApt: 3, eff: 'volley', mult: 1.0 },
+  ],
+  cav: [
+    { id: 'rush',   name: '돌진', qi: 10, minApt: 1, eff: 'push', n: 1, mult: 1.3 },
+    { id: 'breach', name: '돌파', qi: 20, minApt: 2, eff: 'pierce', mult: 1.6 },
+    { id: 'charge', name: '돌격(밀기)', qi: 25, minApt: 3, eff: 'push', n: 2, mult: 2.0 },
+  ],
+  lou: [{ id: 'ram', name: '격돌(격퇴)', qi: 20, minApt: 2, eff: 'push', n: 1, mult: 2.0 }],
+};
 export const STRATS = {
   fire:    { name: '화계', qi: 30, minInt: 75 },            // 공격측: 수비 병력 추가 소각
   confuse: { name: '혼란', cooldown: 3, minInt: 80, turns: 2 }, // 수비측: 공격 부대 행동 정지
@@ -1082,14 +1105,56 @@ export class Game {
     if (!u || !tac || (u.conf ?? 0) > 0 || (u._tacTurn ?? -1) === this.turn) return null; // 턴 1회 제한 (자동 발동의 교전당 1회 판정과 같은 행동 경제)
     const lead = this.officers[u.officers[0]] ?? { war: 60, int: 30, apt: null, name_ko: '적병 두목', idx: -1 };
     const aptLv = u.type === 'sword' ? 1 : APT_LV(lead.apt?.[APT_IDX[u.type]]);
-    if (aptLv < (tac.minApt ?? 1) || (u.qi ?? 100) < tac.qi) return null;
-    return { tac, lead };
+    const opts = [];
+    if (aptLv >= (tac.minApt ?? 1) && (u.qi ?? 100) >= tac.qi) opts.push({ id: 'base', ...tac });
+    for (const x of (TACTICS_EX[u.type] || [])) if (aptLv >= x.minApt && (u.qi ?? 100) >= x.qi) opts.push(x);
+    if (!opts.length) return null;
+    return { tac: opts.find(o => o.id === 'base') ?? opts[0], lead, opts };
   }
-  fireTactic(uid, target) { // 직접 전법: 확정 발동(기력 소모), 피해 산식은 자동 발동과 동일. target: {type:'unit'|'city', id}
+  _tacPushDir(u, d) { const dx = d.x - u.x, dz = d.z - u.z, l = Math.hypot(dx, dz) || 1; return [dx / l, dz / l]; }
+  _tacStandable(d, x, z) { return SHIP_TYPES.has(d.type) ? isWaterAt(x, z) : !isSeaAt(x, z); }
+  _tacMove(d, dx, dz, dist) { // 격퇴/끌어당김: 0.4 단위로 나아가며 지형·타 부대에 막히면 그 앞에서 정지. 이동 거리 반환
+    let moved = 0;
+    for (let k = 0; k < Math.ceil(dist / 0.4); k++) {
+      const nx = d.x + dx * 0.4, nz = d.z + dz * 0.4;
+      if (!Number.isFinite(nx + nz) || !this._tacStandable(d, nx, nz)) break;
+      if (this.units.some(v => v !== d && Math.hypot(v.x - nx, v.z - nz) < 0.35)) break;
+      d.x = nx; d.z = nz; moved += 0.4;
+    }
+    if (moved > 0 && d.tx != null && d.tz != null) d.path = this.findPath(d, d.tx, d.tz) || [];
+    return moved;
+  }
+  _tacExtra(u, d, tac, dmg) { // 추가 효과 적용 - 주 대상 피해 후. 부수 피해는 주 피해의 비율(자체)
+    const foes = () => this.units.filter(v => v !== d && v.force !== u.force && !this.isPeace(u.force, v.force));
+    const hurt = (v, r) => { const a = Math.round(dmg * r); v.troops = Math.max(0, v.troops - a); return a; };
+    let note = '';
+    if (tac.eff === 'conf') { d.conf = Math.max(d.conf ?? 0, 2); note = ' 혼란 2턴'; }
+    else if (tac.eff === 'push') { const [ux, uz] = this._tacPushDir(u, d); const m = this._tacMove(d, ux, uz, tac.n * 0.9); note = m > 0 ? ' ' + (Math.round(m / 0.9 * 10) / 10) + '칸 격퇴' : ' (밀리지 않음)'; }
+    else if (tac.eff === 'pull') { const [ux, uz] = this._tacPushDir(u, d); const gap = Math.hypot(d.x - u.x, d.z - u.z); const m = this._tacMove(d, -ux, -uz, Math.max(0, Math.min(0.9, gap - 0.7))); note = m > 0 ? ' 끌어당김' : ' (끌려오지 않음)'; }
+    else if (tac.eff === 'whirl') { let n = 0; for (const v of foes()) if (Math.hypot(v.x - u.x, v.z - u.z) < 2.2) { hurt(v, 0.7); n++; } note = ' 주변 ' + n + '부대 동시 타격'; }
+    else if (tac.eff === 'volley') { let n = 0; for (const v of foes()) if (Math.hypot(v.x - d.x, v.z - d.z) < 1.5) { hurt(v, 0.6); n++; } note = ' 주변 ' + n + '부대 난사'; }
+    else if (tac.eff === 'side' || tac.eff === 'pierce') {
+      const [ux, uz] = this._tacPushDir(u, d); let n = 0;
+      const dd = Math.hypot(d.x - u.x, d.z - u.z);
+      for (const v of foes()) {
+        const rx = v.x - u.x, rz = v.z - u.z, r = Math.hypot(rx, rz); if (r > 2.2 || r < 1e-6) continue;
+        const cos = (rx * ux + rz * uz) / r;
+        if (tac.eff === 'side' ? cos > 0.5 : (cos > 0.93 && r > dd)) { hurt(v, 0.7); n++; }
+      }
+      note = tac.eff === 'side' ? ' 전방 ' + n + '부대 동시 타격' : ' ' + n + '부대 관통';
+    }
+    const dead = this.units.filter(v => v.troops <= 0 && v !== d);
+    for (const v of dead) this.log(v.label + ' 부대가 전멸했습니다', false);
+    this.units = this.units.filter(v => v.troops > 0 || v === d);
+    return note;
+  }
+  fireTactic(uid, target, tid = null) { // 직접 전법: 확정 발동(기력 소모), 피해 산식은 자동 발동과 동일. target: {type:'unit'|'city', id}
     const u = this.units.find(x => x.id === uid);
     const info = this.tacticInfo(u);
     if (!info) return false;
-    const { tac, lead } = info;
+    const lead = info.lead;
+    const tac = tid ? info.opts.find(o => o.id === tid) : info.opts.find(o => o.id === 'base');
+    if (!tac || (tac.id !== 'base' && target.type !== 'unit')) return false; // 추가 전법은 부대 대상만
     const inRange = (x, z) => Math.hypot(x - u.x, z - u.z) < 2.2;
     if (target.type === 'unit') {
       const d = this.units.find(x => x.id === target.id);
@@ -1102,7 +1167,8 @@ export class Game {
       this.gainMerit(u.officers[0], MERIT.tactic);
       d.troops = Math.max(0, d.troops - dmg);
       this.gainTechP(u.force, Math.min(40, Math.floor(dmg / 100)));
-      this.log(`【전법】${lead.name_ko}의 ${tac.name}! 야전에서 ${d.label}에 큰 피해 (-${dmg})`, u.force === this.playerForce);
+      const note = tac.eff ? this._tacExtra(u, d, tac, dmg) : '';
+      this.log(`【전법】${lead.name_ko}의 ${tac.name}! 야전에서 ${d.label}에 큰 피해 (-${dmg})${note}`, u.force === this.playerForce);
       if (d.troops <= 0) { this.units = this.units.filter(x => x !== d); this.log(`${d.label} 부대가 전멸했습니다`, false); }
       this.autosave();
       return true;
