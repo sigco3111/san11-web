@@ -45,6 +45,8 @@ export const TACTICS = {
 export const STRATS = {
   fire:    { name: '화계', qi: 30, minInt: 75 },            // 공격측: 수비 병력 추가 소각
   confuse: { name: '혼란', cooldown: 3, minInt: 80, turns: 2 }, // 수비측: 공격 부대 행동 정지
+  rumor:   { name: '위보', qi: 15, minInt: 80 },            // R18: 적 부대를 가까운 자기 도시로 퇴각 (설계 15, 확률 자체)
+  calm:    { name: '진정', qi: 10, minInt: 70 },            // R18: 아군 부대 혼란 해제·기력 +20 (자체 수치)
 };
 
 // === 기교 연구 (자체 수치) ===
@@ -1184,6 +1186,33 @@ export class Game {
       this.gainMerit(caster.idx, MERIT.stratagem);
       d.conf = Math.max(d.conf ?? 0, STRATS.confuse.turns);
       this.log(`【계략】${caster.name_ko}의 혼란! ${josa(d.label, ['이','가'])} ${STRATS.confuse.turns}턴간 움직이지 못합니다`, u.force === this.playerForce);
+      this.autosave();
+      return true;
+    }
+    if (kind === 'rumor') {
+      if (caster.int < STRATS.rumor.minInt || (u.qi ?? 100) < STRATS.rumor.qi || target.type !== 'unit') return false;
+      const d = enemyUnit();
+      if (!d) return false;
+      u._stratTurn = this.turn;
+      if (Math.random() >= Math.min(0.4, 0.1 + caster.int/350) * (1 - this.mindDefense(d.force))) { this.log(`【계략】${caster.name_ko}의 위보가 ${d.label}에 통하지 않았습니다`, u.force === this.playerForce); this.autosave(); return true; }
+      u.qi -= STRATS.rumor.qi;
+      this.gainMerit(caster.idx, MERIT.stratagem);
+      const home = this.forceCities(d.force).sort((pp, qq) => Math.hypot(pp.lon-d.x, pp.lat-d.z) - Math.hypot(qq.lon-d.x, qq.lat-d.z))[0];
+      const rp = home ? this.findPath(d, home.lon, home.lat) : null;
+      if (rp) { d.targetCity = home.id; d.tx = home.lon; d.tz = home.lat; d.path = rp; d.engaged = null; this.log(`【계략】${caster.name_ko}의 위보! ${josa(d.label, ['이','가'])} 거짓 보고에 속아 ${home.name_ko}(으)로 퇴각합니다`, u.force === this.playerForce); }
+      else this.log(`【계략】${caster.name_ko}의 위보가 ${d.label}에 통하지 않았습니다 (퇴각로 없음)`, u.force === this.playerForce);
+      this.autosave();
+      return true;
+    }
+    if (kind === 'calm') {
+      if (caster.int < STRATS.calm.minInt || (u.qi ?? 100) < STRATS.calm.qi || target.type !== 'unit') return false;
+      const d = this.units.find(x => x.id === target.id);
+      if (!d || d.force !== u.force || !inRange(d.x, d.z)) return false;
+      u._stratTurn = this.turn;
+      u.qi -= STRATS.calm.qi;
+      this.gainMerit(caster.idx, MERIT.stratagem);
+      d.conf = 0; d.qi = Math.min(100, (d.qi ?? 100) + 20);
+      this.log(`【계략】${caster.name_ko}의 진정! ${josa(d.label, ['이','가'])} 안정을 되찾았습니다`, u.force === this.playerForce);
       this.autosave();
       return true;
     }
