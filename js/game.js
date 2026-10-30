@@ -342,29 +342,31 @@ export class Game {
     }
   }
   // === R28: 제방·수몰 (설계: 제방을 파괴하면 인근 도시 수몰 - 수치 자체) ===
-  hasLevee(c) { // 도시 반경 1.5 안에 강 타일이 있으면 제방 보유 (자체 판정)
-    if (c._lev === undefined) { c._lev = false; for (let dx = -1.5; dx <= 1.5 && !c._lev; dx += 0.3) for (let dz = -1.5; dz <= 1.5; dz += 0.3) if (isRiverAt(c.lon + dx, c.lat + dz)) { c._lev = true; break; } }
+  hasLevee(c) { // 도시 반경 0.6 안에 강 타일이 있으면 제방 보유 (자체 판정)
+    if (c._lev === undefined) { c._lev = false; for (let dx = -0.6; dx <= 0.6 && !c._lev; dx += 0.3) for (let dz = -0.6; dz <= 0.6; dz += 0.3) if (isRiverAt(c.lon + dx, c.lat + dz)) { c._lev = true; break; } }
     return c._lev;
   }
   canBreakLevee(u, c) {
     if (!u || !c || u.force < 0 || c.force == null || c.force === u.force || SHIP_TYPES.has(u.type) || (u.conf ?? 0) > 0) return '제방을 파괴할 수 없는 부대/도시';
     if (!this.hasLevee(c)) return '이 도시 근처에는 파괴할 제방이 없습니다';
     if (c.leveeBroken) return '이미 제방이 무너져 있습니다';
+    if (this.isPeace(u.force, c.force)) return '동맹·정전 중인 세력의 제방은 파괴할 수 없습니다';
+    if ((c.leveeCool ?? 0) > this.turn) return '최근 보수한 제방은 당분간 파괴할 수 없습니다';
     if (Math.hypot(u.x - c.lon, u.z - c.lat) > 2.0) return '도시에서 너무 멉니다';
     return null;
   }
   breakLevee(uid, cityId) {
     const u = this.units.find(x => x.id === uid), c = this.cityById[cityId]; const why = this.canBreakLevee(u, c); if (why) { this.lastFieldWhy = why; return false; }
-    c.leveeBroken = true; c.flood = 2; const dh = Math.round(c.maxhp * 0.15), dt = Math.round(c.troops * 0.10);
+    c.leveeBroken = true; c.flood = 2; c._floodOwner = c.force; const dh = Math.round(c.maxhp * 0.15), dt = Math.round(c.troops * 0.10);
     c.hp = Math.max(1, c.hp - dh); c.troops = Math.max(0, c.troops - dt);
     this.log(`【수공】${josa(u.label, ['이','가'])} ${c.name_ko}의 제방을 무너뜨렸습니다! 내구 -${dh}, 병사 -${dt} (이후 2턴 침수)`, u.force === this.playerForce || c.force === this.playerForce);
     return true;
   }
   repairLevee(cityId) { // 금 300으로 복구 (소유 세력)
     const c = this.cityById[cityId]; if (!c || c.force == null || !c.leveeBroken || c.gold < 300) return false;
-    c.gold -= 300; c.leveeBroken = false; c.flood = 0; this.log(`【수공】${c.name_ko} 제방 보수 완료 (금 300)`, c.force === this.playerForce); return true;
+    c.gold -= 300; c.leveeBroken = false; c.flood = 0; c.leveeCool = this.turn + 12; this.log(`【수공】${c.name_ko} 제방 보수 완료 (금 300)`, c.force === this.playerForce); return true;
   }
-  floodTurn() { for (const c of this.cities) if ((c.flood ?? 0) > 0) { c.flood--; const d = Math.round(c.troops * 0.03); c.troops = Math.max(0, c.troops - d); this.log(`【수공】${josa(c.name_ko, ['이','가'])} 침수 중 — 병사 ${d} 감소`, c.force === this.playerForce); } }
+  floodTurn() { for (const c of this.cities) if ((c.flood ?? 0) > 0) { if (c._floodOwner !== undefined && c._floodOwner !== c.force) { c.flood = 0; continue; } /* 점령되면 침수 종료(새 소유자에게 이어지지 않음) */ c.flood--; const d = Math.round(c.troops * 0.03); c.troops = Math.max(0, c.troops - d); this.log(`【수공】${josa(c.name_ko, ['이','가'])} 침수 중 — 병사 ${d} 감소`, c.force === this.playerForce); } }
   fieldSlow(u) { // 토루 통행 방해 배율
     if (u.slowT > 0) { u.slowT--; return 0.5; } // R28: 낙석
     for (const f of this.fieldFacs ?? []) if (f.type === '토루' && f.left <= 0 && f.force !== u.force && Math.hypot(u.x - f.x, u.z - f.z) <= FIELD_FACS['토루'].r) return 0.4;
