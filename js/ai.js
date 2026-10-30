@@ -177,6 +177,7 @@ export function aiThink(game, fid, legion = null) { // legion 지정 시 그 군
     const burning = game.units.find(x => x.force === u.force && (x.burn ?? 0) > 0 && inR(x.x, x.z));
     if (burning && caster.int >= 60 && (u.qi ?? 100) >= 10 && game.fireStrat(u.id, 'douse', { type: 'unit', id: burning.id })) continue; // R32 소화
     const tgt = game.units.find(x => x.force !== u.force && !game.isPeace(u.force, x.force) && !game.unitHasSkill(x, '위장') && inR(x.x, x.z));
+    if ((u.qi ?? 100) >= 50 && tgt && ((u.id + game.turn) % 2 === 0) && (u.officers.some(i => game.officers[i]?.skill === '요술') ? game.fireStrat(u.id, 'sorcery', { type: 'unit', id: tgt.id }) : u.officers.some(i => game.officers[i]?.skill === '낙뢰') && game.fireStrat(u.id, 'thunder', { type: 'unit', id: tgt.id }))) continue; // 요술/낙뢰: 특기 보유 부대만
     const ally = game.units.find(x => x !== u && x.force === u.force && (x.conf ?? 0) > 0 && inR(x.x, x.z));
     if (ally && caster.int >= 70 && (u.qi ?? 100) >= 10) game.fireStrat(u.id, 'calm', { type: 'unit', id: ally.id }); // R18 진정: 혼란 아군 우선
     else if (tgt && caster.int >= 80 && (u.qi ?? 100) >= 15 && tgt.troops > u.troops * 1.3 && (tgt.conf ?? 0) <= 0 && (u.id + game.turn) % 2 === 0) game.fireStrat(u.id, 'rumor', { type: 'unit', id: tgt.id }); // R18 위보: 열세 시
