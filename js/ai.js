@@ -1,8 +1,9 @@
 // 세력 AI — 위임 시 플레이어 세력도 이 AI가 운영 (위임·샌드박스의 실질 주체)
-export function aiThink(game, fid) {
+export function aiThink(game, fid, legion = null) { // legion 지정 시 그 군단 소속 도시만 운영 (도독 위임)
   const f = game.forces[fid];
   if (!f || !f.alive) return;
-  const cities = game.forceCities(fid);
+  let cities = game.forceCities(fid);
+  if (legion) cities = cities.filter(c => legion.cities.includes(c.id));
   if (cities.length === 0) return;
   // 1) 내정: 여유 금이 있으면 개발
   for (const c of cities) {
@@ -32,7 +33,7 @@ export function aiThink(game, fid) {
     if (c.troops < Math.min(avgNbr, 12000) && c.gold > 500 && c.food > 3000) game.recruit(c.id);
   }
   // 2.7) 외교: 친선 사절·동맹 제의·정전 요청을 같은 조건·비용으로 사용
-  {
+  if (!legion) {
     const from = cities.filter(c => c.gold >= 500 && c.officers.length).sort((x, y) => y.gold - x.gold)[0];
     if (from) {
       // 험악 이웃에 친선 사절 (30% 확률)
@@ -79,7 +80,7 @@ export function aiThink(game, fid) {
     if (game.recruitChance(c.id, target.idx) >= 0.3) game.recruitOfficer(c.id, target.idx);
   }
   // 2.7) 기교 연구: 플레이어와 같은 비용·효과 규칙. 주력 병종 계통 우선, 없으면 방어 계통
-  {
+  if (!legion) {
     const cnt = { spear: 0, pike: 0, bow: 0, cav: 0 };
     for (const u of game.units) if (u.force === fid && cnt[u.type] != null) cnt[u.type]++;
     const mainType = Object.entries(cnt).sort((x, y) => y[1] - x[1])[0][0];
@@ -89,7 +90,13 @@ export function aiThink(game, fid) {
     }
   }
   // 3) 군사: 전방 도시(적과 인접) 병력이 충분하면 공격, 아니면 집결
-  const enemyCities = game.cities.filter(c => c.force !== fid && (c.force == null || !game.isAllied(fid, c.force))); // 동맹국 공격 회피
+  let enemyCities = game.cities.filter(c => c.force !== fid && (c.force == null || !game.isAllied(fid, c.force))); // 동맹국 공격 회피
+  if (legion?.policy === 'attack_city' && legion.target != null) {
+    const t = game.cityById[legion.target];
+    enemyCities = t && t.force !== fid ? [t] : [];
+  } else if (legion?.policy === 'attack_force' && legion.target != null) {
+    enemyCities = enemyCities.filter(c => c.force === legion.target);
+  }
   for (const c of cities) {
     if (f.ap < 40) break;
     if (c.officers.length === 0) continue;
