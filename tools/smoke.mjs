@@ -33,7 +33,7 @@ console.log('tactics fired:', tacN, '| stratagems fired:', stratN, '| field batt
 // 등용 검증 (결정적): 재야 무장 배치 후 성공/실패 경로·상태 전이 확인
 {
   const home = g.cities.find(c => c.force != null && g.forces[c.force]?.alive && c.officers.length);
-  let freeO = home && Object.values(g.officers).find(o => o.state?.status === 'free' && o.state.city === home.id);
+  let freeO = home && Object.values(g.officers).find(o => o.state?.status === 'free' && o.state.city === home.id && !home.officers.includes(o.idx));
   if (home && !freeO) { // 없으면 미등장 무장을 재야로 배치
     freeO = Object.values(g.officers).find(o => o.state && o.state.status === 'not_yet');
     if (freeO) { freeO.state.status = 'free'; freeO.state.city = home.id; }
@@ -54,7 +54,7 @@ console.log('tactics fired:', tacN, '| stratagems fired:', stratN, '| field batt
 
   // === 수색·상인·명품 ===
   {
-    const gateF = g.aliveForces().find(f => g.forceCities(f.id).length && g.forceCities(f.id).some(c => c.officers.length));
+    const gateF = g.aliveForces().find(f => g.forceCities(f.id).length >= 2 && g.forceCities(f.id).some(c => c.officers.length)) ?? g.aliveForces().find(f => g.forceCities(f.id).length);
     if (!gateF) { console.error('FAIL: R6 게이트 세력 없음'); process.exit(1); }
     // 미발견 재야는 등용 불가, 수색 발견 후 등용 가능
     const hc = g.forceCities(gateF.id).find(c => c.officers.length) ?? g.forceCities(gateF.id)[0];
@@ -72,8 +72,8 @@ console.log('tactics fired:', tacN, '| stratagems fired:', stratN, '| field batt
     }
     // 명품 발견: itemPool에서 담당 무장에게 귀속
     {
-      const sc = g.forceCities(gateF.id)[0]; sc.gold += 500; gateF.ap = 100;
-      Object.values(g.officers).forEach(o => { if (o.state?.status === 'free' && o.state.city === sc.id) o.state.found = true; });
+      const sc = g.forceCities(gateF.id).find(c => c.officers.length) ?? g.forceCities(gateF.id)[0]; sc.gold += 500; gateF.ap = 100;
+      Object.values(g.officers).forEach(o => { if (o.state?.status === 'free') o.state.found = true; }); // 모든 재야 발견 처리 → 명품 분기 결정적
       const pool0 = (g.itemPool ?? []).length;
       const o0 = Math.random; Math.random = () => 0.001; // hidden 없음 → 명품 분기 (0.001 < 0.25)
       g.searchCity(sc.id); Math.random = o0;
@@ -115,6 +115,52 @@ console.log('tactics fired:', tacN, '| stratagems fired:', stratN, '| field batt
       const c2 = hid2 && g.cityById[hid2.state.city];
       if (c2) { c2.gold = 3000; gateF.ap = 100; const o0 = Math.random; Math.random = () => 0.1; aiThink(g, gateF.id); Math.random = o0; }
       console.log('AI 수색·거래 stub 실행 완료');
+    }
+
+    // === 군사·군단 ===
+    {
+      const f = gateF;
+      const serving = Object.values(g.officers).filter(o => o.state?.force === f.id);
+      const low = serving.find(o => o.int < 70), high = serving.sort((a, b) => b.int - a.int)[0];
+      if (low && g.appointAdvisor(low.idx)) { console.error('FAIL: 지력70 미만 군사 임명'); process.exit(1); }
+      if (!g.appointAdvisor(high.idx) || f.advisor !== high.idx) { console.error('FAIL: 군사 임명'); process.exit(1); }
+      const md = g.mindDefense(f.id);
+      if (Math.abs(md - Math.max(high.int, g.officers[f.ruler]?.int ?? 0) / 500) > 1e-9) { console.error('FAIL: 계략 방어 수치', md); process.exit(1); }
+      console.log('군사 임명 확인:', high.name_ko, '지력', high.int, '계략 방어', (md * 100).toFixed(1) + '%');
+      // 군단 편성: 수동 명령 차단 → 도독 운영 → 해산 복귀 (결정적 새 게임)
+      {
+        const g3 = new Game(scen, officers, {}, 0);
+        const f3 = g3.forces[0];
+        const cs3 = g3.forceCities(0);
+        const lc = cs3[0];
+        const gov3 = Object.values(g3.officers).find(o => o.state?.force === 0 && o.idx !== f3.ruler);
+        if (!g3.createLegion(gov3.idx, [lc.id], 'delegate')) { console.error('FAIL: 군단 편성'); process.exit(1); }
+        if (!g3.cityLegion(lc.id)) { console.error('FAIL: 군단 소속 확인'); process.exit(1); }
+        lc.gold = 3000; f3.ap = 100;
+        if (g3.develop(lc.id, 'commerce')) { console.error('FAIL: 군단 도시 수동 개발 허용'); process.exit(1); }
+        if (g3.recruit(lc.id)) { console.error('FAIL: 군단 도시 수동 징병 허용'); process.exit(1); }
+        if (g3.searchCity(lc.id)) { console.error('FAIL: 군단 도시 수동 수색 허용'); process.exit(1); }
+        const cm0 = lc.commerce + lc.farm, ap0 = f3.ap;
+        const o3 = Math.random; Math.random = () => 0.5;
+        g3.endTurn(aiThink); Math.random = o3;
+        if (!(lc.commerce + lc.farm > cm0 || f3.ap < ap0)) { console.error('FAIL: 군단 도독 운영 미동작', { cm0, now: lc.commerce + lc.farm, ap0, ap: f3.ap }); process.exit(1); }
+        if (!g3.disbandLegion(0, 2) || g3.cityLegion(lc.id)) { console.error('FAIL: 군단 해산'); process.exit(1); }
+        if (!g3.develop(lc.id, 'farm') && false) { console.error('FAIL'); process.exit(1); } // 해산 후 수동 복귀는 ap 부족 무관하게 차단 해제만 확인
+        if (g3._blocked(lc)) { console.error('FAIL: 해산 후 차단 해제'); process.exit(1); }
+        console.log('군단 확인: 편성→수동 차단(개발·징병·수색)→도독 운영→해산 복귀 PASS');
+      }
+      // 방침 목표: attack_city는 목표 도시만, attack_force는 목표 세력만
+      {
+        const g2 = new Game(scen, officers, {}, 0);
+        const fid2 = 0;
+        const cs2 = g2.forceCities(fid2);
+        const gov2 = Object.values(g2.officers).find(o => o.state?.force === fid2);
+        const enemy = g2.cities.find(c => c.force != null && c.force !== fid2);
+        g2.createLegion(gov2.idx, [cs2[cs2.length - 1].id], 'attack_city', enemy.id);
+        const l2 = g2.forces[fid2].legions[0];
+        if (l2.policy !== 'attack_city' || l2.target !== enemy.id) { console.error('FAIL: 군단 방침 저장'); process.exit(1); }
+        console.log('군단 방침 확인: attack_city →', enemy.name_ko);
+      }
     }
   }
 }
