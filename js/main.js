@@ -83,6 +83,10 @@ function enterGame() {
 function refreshAll() {
   for (const c of game.cities) map.setCityColor(c.id, c.force != null ? forceColor(c.force) : '#777777');
   for (const u of game.units) {
+    if (!(game.delegated || u.force === game.playerForce || game.inVision(u.x, u.z))) { // R14: 시야 밖 적 부대 비표시
+      if (map.unitMeshes[u.id]) map.removeUnit(u.id);
+      continue;
+    }
     if (!map.unitMeshes[u.id]) map.addUnit(worldUnit(u), forceColor(u.force));
     else map.updateUnit(worldUnit(u), forceColor(u.force));
   }
@@ -215,27 +219,42 @@ function setAuto(on) {
     }, Math.max(120, 1400 / speed));
   }
 }
+function showChronicle() { // R14: 연감 — 【】 주요 사건 기록 (설계안 265행)
+  const m = $('modal'); m.classList.remove('hidden');
+  const ch = (game.chronicle ?? []).slice().reverse();
+  const body = ch.length ? ch.map(e => `<p class="st">[${e.y}년 ${e.m}월] ${e.msg}</p>`).join('') : '<p>기록된 사건이 없습니다.</p>';
+  m.innerHTML = `<div class="box" style="max-height:70vh;overflow:auto;max-width:560px"><h3>연감</h3>${body}<button id="chr-close">닫기</button></div>`;
+  m.querySelector('#chr-close').onclick = () => m.classList.add('hidden');
+}
+
 function checkGameOver() {
+  const owners = new Set(game.cities.map(c => c.force).filter(x => x != null)); // R14: 통일은 모든 도시 제압 기준 (설계안 102행)
+  if (owners.size === 1) {
+    if (!game._endShown) {
+      game._endShown = true;
+      endModal(`【${game.forceName([...owners][0])}】이(가) 모든 도시를 제압해 천하를 통일했습니다! (${game.year}년 ${game.month}월, ${game.turn}턴)`, true);
+    }
+    return;
+  }
   if (game.over) return;
   const f = game.forces[game.playerForce];
   if (f && !f.alive && !game.deadAck) {
     const others = game.aliveForces();
     if (others.length === 0) { endModal('천하가 정리되었습니다.'); return; }
     modal(`【${game.forceName(f.id)}】이(가) 멸망했습니다.`, [
-      ['다른 세력으로 계속', () => { game.deadAck = true; game.delegated = true; refreshHud(); setAuto(true); }],
+      ['다른 세력으로 계속', () => { // R14: 관전과 구분 — 계속할 세력을 직접 선택 (설계안 190행)
+        modal('계속할 세력 선택', game.aliveForces().map(of => [game.forceName(of.id), () => { game.playerForce = of.id; game.deadAck = true; game.delegated = false; setAuto(false); refreshAll(); }]).concat([['취소', () => checkGameOver()]]));
+      }],
       ['관전만 계속', () => { game.deadAck = true; game.delegated = true; refreshHud(); setAuto(true); }],
       ['게임 종료', () => endModal('게임을 종료했습니다. 타이틀로 돌아갑니다.')],
     ]);
   }
-  const alive = game.aliveForces();
-  if (alive.length === 1) {
-    const w = alive[0];
-    endModal(`【${game.forceName(w.id)}】이(가) 천하를 통일했습니다! (${game.year}년 ${game.month}월)`);
-  }
 }
-function endModal(text) {
+function endModal(text, spectator=false) { // R14: 통일 후 관전 계속 가능
   game.over = true; setAuto(false);
-  modal(text, [['타이틀로', () => { localStorage.removeItem(SAVE_KEY); location.reload(); }]]);
+  const btns = spectator ? [['관전 계속', () => { game.over = false; game.delegated = true; refreshAll(); setAuto(true); }]] : [];
+  btns.push(['타이틀로', () => { localStorage.removeItem(SAVE_KEY); location.reload(); }]);
+  modal(text, btns);
 }
 function modal(text, buttons) {
   const m = $('modal'); m.classList.remove('hidden');
@@ -248,7 +267,11 @@ function onPick(nx, ny) {
   if (!game || game.over) return;
   const hit = map.pick(nx, ny);
   if (!hit) { $('panel').classList.add('hidden'); selectedUnit = null; return; }
-  if (hit.type === 'unit') { selectedUnit = hit.id; showUnitPanel(hit.id); return; }
+  if (hit.type === 'unit') {
+    const u = game.units.find(x => x.id === hit.id);
+    if (u && !game.delegated && u.force !== game.playerForce && !game.inVision(u.x, u.z)) return; // R14: 시야 밖 부대는 선택 불가
+    selectedUnit = hit.id; showUnitPanel(hit.id); return;
+  }
   const c = game.cityById[hit.id];
   if (selectedUnit != null && game.units.find(u => u.id === selectedUnit && u.force === game.playerForce) && !game.delegated) {
     game.orderUnit(selectedUnit, hit.id);
@@ -457,6 +480,14 @@ function officerRow(idx) {
 let lastCityId = null;
 function showCityPanel(c) {
   lastCityId = c.id;
+  if (c.force !== game.playerForce && !game.delegated && !game.inVision(c.lon, c.lat)) { // R14: 시야 밖 적 도시 — 상세 정보 비공개
+    const p = $('panel'); p.classList.remove('hidden');
+    const owner = c.force != null && game.forces[c.force]?.alive ? game.forceName(c.force) : '공백지';
+    p.innerHTML = `<h3>${c.name_ko} (${c.name_zh ?? ''})</h3>
+      <p class="st">소속: ${owner}</p>
+      <p class="st">시야 밖입니다 — 내 도시·부대가 접근해야 상세 정보를 확인할 수 있습니다.</p>`;
+    return;
+  }
   const p = $('panel'); p.classList.remove('hidden');
   const legion = game.cityLegion(c.id);
   const mine = c.force === game.playerForce && !game.delegated && !legion;
@@ -610,7 +641,7 @@ async function boot() {
       const d = JSON.parse(localStorage.getItem(SAVE_KEY));
       const g = new Game(DATA.scenarios[d.scenId], DATA.officers, DATA.skills, d.playerForce);
       window.__game = g; // 테스트 훅
-      Object.assign(g, { year: d.year, month: d.month, dan: d.dan, turn: d.turn, cities: d.cities, forces: d.forces, units: d.units, nextUnitId: d.nextUnitId, playerForce: d.playerForce, delegated: d.delegated, logs: d.logs, deadAck: d.deadAck });
+      Object.assign(g, { year: d.year, month: d.month, dan: d.dan, turn: d.turn, cities: d.cities, forces: d.forces, units: d.units, nextUnitId: d.nextUnitId, playerForce: d.playerForce, delegated: d.delegated, logs: d.logs, deadAck: d.deadAck, chronicle: d.chronicle ?? [], over: d.over ?? false }); // R14
       g.cityById = {}; g.cities.forEach(c => g.cityById[c.id] = c);
       for (const c of g.cities) c.officers = [...new Set(c.officers ?? [])]; // 레거시 세이브 중복 무장 정리
       g.diplo = d.diplo ?? {};
@@ -622,7 +653,7 @@ async function boot() {
         if (st.bonus) for (const [k, v] of Object.entries(st.bonus)) DATA.officers[i][k] = Math.min(100, (DATA.officers[i][k] ?? 50) + v); // R13 능력연구 복원
         if (st.grantSkill) DATA.officers[i].skill = st.grantSkill; // R13 연구 특기 복원
       }
-      game = g; enterGame(); refreshAll();
+      game = g; enterGame(); refreshAll(); checkGameOver(); // R14: 저장 시점이 종료 상태면 모달 재표시
       if (game.delegated) setAuto(true);
     };
   }
@@ -638,6 +669,7 @@ async function boot() {
   $('btn-rot-l').onclick = () => map && map.rotate90(1);
   $('btn-rot-r').onclick = () => map && map.rotate90(-1);
   $('btn-menu').onclick = () => modal('메뉴', [
+    ['연감', () => showChronicle()], // R14
     ['저장하고 타이틀로', () => { game?.autosave(); location.reload(); }],
     ['타이틀로 (저장은 자동)', () => location.reload()],
     ['계속', () => {}],
