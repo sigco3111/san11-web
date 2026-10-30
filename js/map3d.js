@@ -1,6 +1,6 @@
 // 3D 저폴리 지도 엔진 (Three.js) - 고정 등각 아이소메트릭 + 계단식 지형 + 성곽/숲
 import * as THREE from 'three';
-import { loadGLBAssets, applyEnvironment } from './assets-3d.js?v=r33';
+import { loadGLBAssets, applyEnvironment } from './assets-3d.js?v=r34';
 
 const LON0 = 100, LON1 = 126.5, LAT0 = 21.5, LAT1 = 43;
 export function toWorld(lon, lat) {
@@ -300,7 +300,8 @@ export class Map3D {
   buildCastles() {
     this.castleGroup.clear();
     const A = this.assets, S = CASTLE_SCALE, C = CASTLE_CELL;
-    const walls = [], towers = [], keeps = [], flags = [];
+    const walls = [], towers = [], keeps = [], flags = [], roofs = [], eaves = [], gates = [];
+    const sc = (x, y, z, sx, sy, sz, ry) => new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0), ry), new THREE.Vector3(sx, sy, sz));
     for (const c of this.cityList) {
       const [x, z] = toWorld(c.lon, c.lat);
       const y = STEP; // 도시 평탄화 레벨 1
@@ -312,6 +313,12 @@ export class Map3D {
         if (Math.abs(dx) === 1 && Math.abs(dz) === 1) towers.push(p); else walls.push(p);
       }
       keeps.push(placement(x, y, z, S*1.3, Math.PI/4));
+      // 동양풍 지붕·문루 (자체 제작 저폴리: 4각 추형, 기와색) — 본성 2층 지붕, 모서리 망루 지붕, 남문 문루
+      const ky = y + 10.2 * S;
+      eaves.push(sc(x, ky, z, 1.15, 0.12, 1.15, Math.PI/4)); roofs.push(sc(x, ky + 0.02, z, 0.82, 0.42, 0.82, Math.PI/4));
+      eaves.push(sc(x, ky + 0.34, z, 0.62, 0.1, 0.62, Math.PI/4)); roofs.push(sc(x, ky + 0.36, z, 0.46, 0.34, 0.46, Math.PI/4));
+      for (const [tx, tz] of [[-1,-1],[1,-1],[-1,1],[1,1]]) { eaves.push(sc(x + tx*C, y + 12.2*S, z + tz*C, 0.42, 0.07, 0.42, Math.PI/4)); roofs.push(sc(x + tx*C, y + 12.25*S, z + tz*C, 0.3, 0.26, 0.3, Math.PI/4)); }
+      gates.push(sc(x - 0.2, y, z + C, 0.07, 0.62, 0.07, 0), sc(x + 0.2, y, z + C, 0.07, 0.62, 0.07, 0), sc(x, y + 0.6, z + C, 0.62, 0.07, 0.12, 0), sc(x, y + 0.7, z + C, 0.8, 0.05, 0.2, 0));
       const fy = y + 13.1 * S;
       flags.push(placement(x, y + 10.7*S, z, S*1.5, 0));
       flags.push(placement(x - C, fy, z + C, S*1.1, 0));
@@ -321,6 +328,12 @@ export class Map3D {
     if (towers.length) this.castleGroup.add(instancedFromScene(A.towerSquareBaseColor, towers));
     if (keeps.length) this.castleGroup.add(instancedFromScene(A.towerSquareBaseColor, keeps));
     if (flags.length) this.castleGroup.add(instancedFromScene(A.flagBlueWide, flags));
+    const addInst = (geo, mat, list) => { if (!list.length) return; const im = new THREE.InstancedMesh(geo, mat, list.length); list.forEach((m, i) => im.setMatrixAt(i, m)); im.castShadow = true; im.receiveShadow = true; this.castleGroup.add(im); };
+    const pyr = new THREE.ConeGeometry(1, 1, 4, 1); pyr.translate(0, 0.5, 0); // 밑면 y=0, 4각 추
+    const box = new THREE.BoxGeometry(1, 1, 1); box.translate(0, 0.5, 0);
+    addInst(pyr, new THREE.MeshLambertMaterial({ color: 0x2f4f55 }), roofs);   // 청회색 기와
+    addInst(pyr, new THREE.MeshLambertMaterial({ color: 0x8a2b24 }), eaves);   // 붉은 처마
+    addInst(box, new THREE.MeshLambertMaterial({ color: 0xa5342a }), gates);   // 붉은 문루 기둥·보
   }
 
   buildForest() {
