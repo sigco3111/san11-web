@@ -42,6 +42,8 @@ function noise(x, z) { return hash(Math.floor(x*3.1), Math.floor(z*3.1))*0.6 + h
 // ---- 격자 지형 상수 ----
 const CELL = 1.8, STEP = 0.85, WATER_Y = 0.45;
 const GX0 = -41.4, GZ0 = -41.4, GN = 47;
+const MGN = 8, GN2 = GN + 2*MGN; // 대륙 확장 링(섬처럼 보이는 문제 개선)
+const GX2 = GX0 - MGN*CELL, GZ2 = GZ0 - MGN*CELL;
 const CASTLE_SCALE = 0.075, CASTLE_CELL = 10 * CASTLE_SCALE; // Kenney 부품(10 유닛) -> 1.5 월드 유닛
 const CITY_FLAT_R = 2.3, CITY_RIVER_R = 2.4, RIVER_R = 1.35;
 
@@ -109,7 +111,7 @@ export class Map3D {
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x14293a);
+    this.scene.background = new THREE.Color(0x16374d);
     // 고정 등각 직교 카메라
     this.az = Math.PI/4;
     this.el = Math.atan(1/Math.SQRT2);
@@ -168,24 +170,29 @@ export class Map3D {
   }
   levelAtWorld(x, z) {
     if (!this.levels) return 1;
-    const ix = Math.round((x-GX0)/CELL - 0.5), iz = Math.round((z-GZ0)/CELL - 0.5);
-    if (ix < 0 || iz < 0 || ix >= GN || iz >= GN) return 0;
-    return this.levels[iz*GN+ix];
+    const ix = Math.round((x-GX2)/CELL - 0.5), iz = Math.round((z-GZ2)/CELL - 0.5);
+    if (ix < 0 || iz < 0 || ix >= GN2 || iz >= GN2) return 0;
+    return this.levels[iz*GN2+ix];
   }
 
   buildTerrain() {
     this.terrainGroup.clear();
-    const levels = new Int8Array(GN*GN);
+    const levels = new Int8Array(GN2*GN2);
     const colors = [];
     const cPlain = new THREE.Color(0x6d8f4e), cLush = new THREE.Color(0x4d7a41), cDry = new THREE.Color(0x9a8f5a),
           cMtn = new THREE.Color(0x7a7560), cSnow = new THREE.Color(0x8d8d84),
           cSand = new THREE.Color(0xc2ab72), cBed = new THREE.Color(0x3d5a4a);
     // 1패스: 레벨 산정
-    for (let iz = 0; iz < GN; iz++) for (let ix = 0; ix < GN; ix++) {
-      const x = GX0 + (ix+0.5)*CELL, z = GZ0 + (iz+0.5)*CELL;
+    for (let iz = 0; iz < GN2; iz++) for (let ix = 0; ix < GN2; ix++) {
+      const x = GX2 + (ix+0.5)*CELL, z = GZ2 + (iz+0.5)*CELL;
       const [lon, lat] = toLonLat(x, z);
       let lv = 0;
-      if (inOutline(lon, lat)) {
+      if (ix < MGN || iz < MGN || ix >= MGN+GN || iz >= MGN+GN) {
+        // 확장 링: 대륙은 맵 밖으로 이어지고, 동해/남중국해만 바다
+        if (!((lon > 124 && lat < 40.5) || (lat < 21.8 && lon > 109))) {
+          lv = noise(lon*0.4+9, lat*0.4+2) > 0.8 ? 2 : 1;
+        }
+      } else if (inOutline(lon, lat)) {
         lv = Math.min(3, Math.max(1, 1 + Math.floor((rawHeight(lon,lat)-0.25)/0.6)));
         // 강 파내기 (도시 보호 반경 제외)
         let dR = 1e9;
@@ -194,24 +201,25 @@ export class Map3D {
         // 도시 주변 평탄화
         if (lv > 1 && this.nearCity(x, z, CITY_FLAT_R)) lv = 1;
       }
-      levels[iz*GN+ix] = lv;
+      levels[iz*GN2+ix] = lv;
     }
     this.levels = levels;
     // 2패스: 인스턴스 + 색상 (해안 모래)
     const geo = new THREE.BoxGeometry(CELL*0.98, 1, CELL*0.98);
     const mat = new THREE.MeshLambertMaterial({ flatShading: true });
-    const im = new THREE.InstancedMesh(geo, mat, GN*GN);
+    const im = new THREE.InstancedMesh(geo, mat, GN2*GN2);
     const m4 = new THREE.Matrix4(), col = new THREE.Color();
     const nearSea = (ix, iz) => {
       for (const [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1]]) {
         const jx = ix+dx, jz = iz+dz;
-        if (jx<0||jz<0||jx>=GN||jz>=GN||levels[jz*GN+jx]===0) return true;
+        if (jx<0||jz<0||jx>=GN2||jz>=GN2) continue; // 링 바깥은 대륙 연장으로 간주
+        if (levels[jz*GN2+jx]===0) return true;
       }
       return false;
     };
-    for (let iz = 0; iz < GN; iz++) for (let ix = 0; ix < GN; ix++) {
-      const i = iz*GN+ix, lv = levels[i];
-      const x = GX0 + (ix+0.5)*CELL, z = GZ0 + (iz+0.5)*CELL;
+    for (let iz = 0; iz < GN2; iz++) for (let ix = 0; ix < GN2; ix++) {
+      const i = iz*GN2+ix, lv = levels[i];
+      const x = GX2 + (ix+0.5)*CELL, z = GZ2 + (iz+0.5)*CELL;
       const [lon, lat] = toLonLat(x, z);
       const top = lv === 0 ? 0.1 : lv*STEP;
       const h = top + 0.6;
@@ -232,7 +240,7 @@ export class Map3D {
   }
 
   buildWater() {
-    const w = (LON1-LON0)*3.1 + 8, d = (LAT1-LAT0)*3.7 + 8;
+    const w = GN2*CELL + 8, d = GN2*CELL + 8;
     this.water = new THREE.Mesh(new THREE.PlaneGeometry(w, d),
       new THREE.MeshPhongMaterial({ color: 0x2e6f9e, transparent: true, opacity: 0.82, shininess: 140, specular: 0x99ccee }));
     this.water.rotation.x = -Math.PI/2; this.water.position.y = WATER_Y;
@@ -273,47 +281,48 @@ export class Map3D {
     this.forestGroup.clear();
     const A = this.assets;
     const per = { tree_default: [], tree_cone_dark: [], tree_detailed_dark: [], plant_bush: [], grass_large: [], stone_tallE: [] };
-    const isForest = new Uint8Array(GN*GN);
+    const isForest = new Uint8Array(GN2*GN2);
     const nearSeaCell = (ix, iz) => {
       for (const [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1],[1,1],[-1,-1],[1,-1],[-1,1]]) {
         const jx = ix+dx, jz = iz+dz;
-        if (jx<0||jz<0||jx>=GN||jz>=GN||this.levels[jz*GN+jx]===0) return true;
+        if (jx<0||jz<0||jx>=GN2||jz>=GN2) continue;
+        if (this.levels[jz*GN2+jx]===0) return true;
       }
       return false;
     };
     const eligible = (ix, iz) => {
-      if (ix<1||iz<1||ix>=GN-1||iz>=GN-1) return false;
-      if (this.levels[iz*GN+ix] !== 1) return false;
-      const x = GX0 + (ix+0.5)*CELL, z = GZ0 + (iz+0.5)*CELL;
+      if (ix<MGN+1||iz<MGN+1||ix>=MGN+GN-1||iz>=MGN+GN-1) return false;
+      if (this.levels[iz*GN2+ix] !== 1) return false;
+      const x = GX2 + (ix+0.5)*CELL, z = GZ2 + (iz+0.5)*CELL;
       if (this.nearCity(x, z, CITY_FLAT_R + 0.6)) return false;
       if (nearSeaCell(ix, iz)) return false;
       return true;
     };
     // 1) 클러스터 시드: 넓은 스케일 노이즈가 높은 셀
-    for (let iz = 1; iz < GN-1; iz++) for (let ix = 1; ix < GN-1; ix++) {
+    for (let iz = MGN+1; iz < MGN+GN-1; iz++) for (let ix = MGN+1; ix < MGN+GN-1; ix++) {
       if (!eligible(ix, iz)) continue;
-      const x = GX0 + (ix+0.5)*CELL, z = GZ0 + (iz+0.5)*CELL;
+      const x = GX2 + (ix+0.5)*CELL, z = GZ2 + (iz+0.5)*CELL;
       const [lon, lat] = toLonLat(x, z);
       const cf = 0.65*noise(lon*0.2+31, lat*0.2+17) + 0.35*noise(lon*0.45+3, lat*0.45+5);
-      if (cf > 0.60) isForest[iz*GN+ix] = 1;
+      if (cf > 0.60) isForest[iz*GN2+ix] = 1;
     }
     // 2) 시드 주변 블롭 확장 (한 번의 성장 패스)
     const grown = new Uint8Array(isForest);
-    for (let iz = 1; iz < GN-1; iz++) for (let ix = 1; ix < GN-1; ix++) {
-      if (isForest[iz*GN+ix]) continue;
+    for (let iz = MGN+1; iz < MGN+GN-1; iz++) for (let ix = MGN+1; ix < MGN+GN-1; ix++) {
+      if (isForest[iz*GN2+ix]) continue;
       if (!eligible(ix, iz)) continue;
       let adj = 0;
-      for (const [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1],[1,1],[-1,-1],[1,-1],[-1,1]]) adj += isForest[(iz+dz)*GN+(ix+dx)];
-      const x = GX0 + (ix+0.5)*CELL, z = GZ0 + (iz+0.5)*CELL;
+      for (const [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1],[1,1],[-1,-1],[1,-1],[-1,1]]) adj += isForest[(iz+dz)*GN2+(ix+dx)];
+      const x = GX2 + (ix+0.5)*CELL, z = GZ2 + (iz+0.5)*CELL;
       const [lon, lat] = toLonLat(x, z);
-      if (adj >= 1 && noise(lon*0.3+11, lat*0.3+23) > 0.38) grown[iz*GN+ix] = 1;
+      if (adj >= 1 && noise(lon*0.3+11, lat*0.3+23) > 0.38) grown[iz*GN2+ix] = 1;
     }
     // 3) 배치: 숲 셀당 2~4그루 + 군집 밖 드문 고목/관목
-    for (let iz = 1; iz < GN-1; iz++) for (let ix = 1; ix < GN-1; ix++) {
-      const lv = this.levels[iz*GN+ix];
-      const x = GX0 + (ix+0.5)*CELL, z = GZ0 + (iz+0.5)*CELL;
+    for (let iz = MGN+1; iz < MGN+GN-1; iz++) for (let ix = MGN+1; ix < MGN+GN-1; ix++) {
+      const lv = this.levels[iz*GN2+ix];
+      const x = GX2 + (ix+0.5)*CELL, z = GZ2 + (iz+0.5)*CELL;
       const top = lv*STEP;
-      if (grown[iz*GN+ix]) {
+      if (grown[iz*GN2+ix]) {
         const n = 2 + Math.floor(hash(ix*7, iz*3)*3);
         for (let k = 0; k < n; k++) {
           const kinds = ['tree_default','tree_default','tree_cone_dark','tree_detailed_dark'];
