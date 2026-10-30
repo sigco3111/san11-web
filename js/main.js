@@ -170,6 +170,42 @@ function onPick(nx, ny) {
   selectedUnit = null;
   showCityPanel(c);
 }
+function showDiplomacy(c) {
+  const p = $('panel'); p.classList.remove('hidden');
+  const myF = game.forces[c.force];
+  const others = Object.values(game.forces).filter(f => f.alive && f.id !== c.force);
+  let html = `<h3>${c.name_ko} 외교 <small>(사절: 이 도시에서 파견)</small></h3>`;
+  if (!others.length) html += '<p>다른 생존 세력이 없습니다.</p>';
+  for (const t of others) {
+    const v = game.relation(c.force, t.id);
+    const stage = game.relStage(v);
+    const allied = game.isAllied(c.force, t.id);
+    const d = game.diploOf(c.force, t.id);
+    const tCities = game.cities.filter(x => x.force === t.id).length;
+    const aidCool = game.turn - (d.aidTurn ?? -99);
+    html += `<div class="officer"><div><div class="nm">${game.forceName(t.id)} <span class="st">${v} ${stage}${allied ? ` · 동맹(${d.allianceUntil - game.turn}턴 남음)` : ''}</span></div>`;
+    html += `<div class="st">`;
+    html += `<button class="cmd dip-act" data-a="envoy" data-t="${t.id}" ${myF.ap < 20 || c.gold < 500 ? 'disabled' : ''}>친선사절(금500)</button> `;
+    if (!allied && v >= 60) html += `<button class="cmd dip-act" data-a="ally" data-t="${t.id}" ${myF.ap < 30 || c.gold < 1000 ? 'disabled' : ''}>동맹 제의(금1000)</button> `;
+    if (v <= 39) html += `<button class="cmd dip-act" data-a="truce" data-t="${t.id}" ${myF.ap < 30 || c.gold < 2000 ? 'disabled' : ''}>정전 요청(금2000)</button> `;
+    if (tCities <= 2) html += `<button class="cmd dip-act" data-a="surrender" data-t="${t.id}" ${myF.ap < 30 || c.gold < 1000 ? 'disabled' : ''}>항복 권고(금1000)</button> `;
+    if (allied) {
+      html += `<button class="cmd dip-act" data-a="aid" data-t="${t.id}" ${aidCool < 18 ? 'disabled' : ''}>원군 요청${aidCool < 18 ? `(${18 - aidCool}턴)` : ''}</button> `;
+      html += `<button class="cmd dip-act" data-a="break" data-t="${t.id}">동맹 파기</button> `;
+    }
+    html += `</div></div></div>`;
+  }
+  html += `<p class="st">관계: 80+ 친밀 · 60+ 호의 · 40+ 중립 · 20+ 불화 · 미만 험악 — 매달 중립으로 서서히 회귀. 동맹국은 서로 공격하지 않습니다. 설전(협상 연출)은 R11에서 구현되며 지금은 특기 논객이 성공률을 보정합니다.</p>`;
+  html += `<button class="cmd" id="cmd-diplo-back">← 도시 패널로</button>`;
+  p.innerHTML = html;
+  p.querySelectorAll('.dip-act').forEach(btn => btn.onclick = () => {
+    const tid = Number(btn.dataset.t);
+    const act = { envoy: 'envoy', ally: 'proposeAlliance', truce: 'requestTruce', surrender: 'demandSurrender', aid: 'requestAid', break: 'breakAlliance' }[btn.dataset.a];
+    const r = act === 'breakAlliance' ? game.breakAlliance(c.force, tid) : game[act](c.force, tid, c.id);
+    refreshAll(); showDiplomacy(c);
+  });
+  $('cmd-diplo-back').onclick = () => showCityPanel(c);
+}
 function showFacilities(c) {
   const p = $('panel'); p.classList.remove('hidden');
   c.facilities = c.facilities ?? [];
@@ -245,6 +281,7 @@ function showCityPanel(c) {
       <button class="cmd" id="cmd-move">무장 이동</button>
       <button class="cmd" id="cmd-tech">기교 연구</button>
       <button class="cmd" id="cmd-fac">시설 건설</button>
+      <button class="cmd" id="cmd-diplo">외교</button>
     </div>`;
   }
   html += `<h3 style="margin-top:10px">주둔 무장 (${c.officers.length})</h3>`;
@@ -266,6 +303,7 @@ function showCityPanel(c) {
     $('cmd-move').onclick = () => showMove(c);
     $('cmd-tech').onclick = () => showTech();
     $('cmd-fac').onclick = () => showFacilities(c);
+    $('cmd-diplo').onclick = () => showDiplomacy(c);
     p.querySelectorAll('.cmd-rec').forEach(b => b.onclick = () => { game.recruitOfficer(c.id, Number(b.dataset.i)); refreshAll(); showCityPanel(c); });
   }
   const join = $('cmd-join');
@@ -339,6 +377,7 @@ async function boot() {
       Object.assign(g, { year: d.year, month: d.month, dan: d.dan, turn: d.turn, cities: d.cities, forces: d.forces, units: d.units, nextUnitId: d.nextUnitId, playerForce: d.playerForce, delegated: d.delegated, logs: d.logs, deadAck: d.deadAck });
       g.cityById = {}; g.cities.forEach(c => g.cityById[c.id] = c);
       for (const c of g.cities) c.officers = [...new Set(c.officers ?? [])]; // 레거시 세이브 중복 무장 정리
+      g.diplo = d.diplo ?? {}; // 외교 상태 복원 (레거시 세이브는 공백)
       for (const [i, st] of Object.entries(d.officerStates)) if (DATA.officers[i]) DATA.officers[i].state = st;
       game = g; enterGame(); refreshAll();
       if (game.delegated) setAuto(true);
