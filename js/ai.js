@@ -165,7 +165,7 @@ export function aiThink(game, fid, legion = null) { // legion 지정 시 그 군
     const ec = game.cities.find(c => c.force != null && c.force !== u.force && !game.isPeace(u.force, c.force) && inR(c.lon, c.lat));
     if (game.tacticInfo(u)) { // 전법: 부대 우선, 없으면 도시
       if (eu) { // R18: 추가 전법 선택 - 혼란 미부여 대상엔 혼란형, 주변 적 2부대 이상이면 광역·관통형, 아니면 가장 높은 단계
-        const info = game.tacticInfo(u); const pick = game.pickTactic(u, eu); // 자동 전투와 같은 선택 규칙
+        const info = game.tacticInfo(u); const pick = typeof game.pickTactic === 'function' ? game.pickTactic(u, eu) : legacyPick(game, u, eu, info); // 자동 전투와 같은 선택 규칙 (구버전 game.js와 섞여 로드돼도 AI 턴이 중단되지 않게 하는 호환 경로)
         game.fireTactic(u.id, { type: 'unit', id: eu.id }, pick ? pick.id : (info.opts.some(o => o.id === 'base') ? 'base' : null));
       }
       else if (ec) { game.fireTactic(u.id, { type: 'city', id: ec.id }); }
@@ -184,4 +184,11 @@ export function aiThink(game, fid, legion = null) { // legion 지정 시 그 군
     else if (tgt && caster.int >= 75 && (u.qi ?? 100) >= 30) game.fireStrat(u.id, 'fire', { type: 'unit', id: tgt.id });
     else if (!tgt && ec && caster.int >= 75 && (u.qi ?? 100) >= 30) game.fireStrat(u.id, 'fire', { type: 'city', id: ec.id });
   }
+}
+
+// 구버전 game.js(pickTactic 없음)와 함께 로드된 경우의 같은 선택 규칙
+function legacyPick(game, u, eu, info) {
+  const ex = info.opts.filter(o => o.id !== 'base'); if (!ex.length) return null;
+  const near = game.units.filter(x => x !== eu && x.force !== u.force && !game.isPeace(u.force, x.force) && Math.hypot(x.x - eu.x, x.z - eu.z) < 1.6).length;
+  return ex.find(o => o.eff === 'conf' && (eu.conf ?? 0) <= 0) || (near >= 1 ? ex.find(o => ['whirl', 'volley', 'side', 'pierce'].includes(o.eff)) : null) || ex.slice().sort((x, y) => y.qi - x.qi)[0];
 }
