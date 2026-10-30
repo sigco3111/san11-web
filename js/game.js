@@ -9,10 +9,24 @@ export const UNIT_TYPES = {
   pike:  { name: '극병', atk: 0.9, def: 1.2, move: 1.0, cost: { pikes: 1 } },
   bow:   { name: '노병', atk: 0.8, def: 0.7, move: 1.0, cost: { bows: 1 } },
   cav:   { name: '기병', atk: 1.2, def: 0.9, move: 1.6, cost: { horses: 1 } },
+  // 병기 (공방 생산, 자체 수치) — siege: 대도시 피해 배율, burn: 화염 추가 피해
+  ram:      { name: '충거',   atk: 0.6, def: 0.9, move: 0.7, cost: { rams: 1 }, perUnit: true,      siege: 3.0 },
+  tower:    { name: '정란',   atk: 0.9, def: 0.8, move: 0.7, cost: { towers: 1 }, perUnit: true,    siege: 1.2 },
+  beast:    { name: '목수',   atk: 1.0, def: 0.7, move: 0.7, cost: { beasts: 1 }, perUnit: true,    siege: 1.5, burn: true },
+  catapult: { name: '투석기', atk: 0.7, def: 0.6, move: 0.6, cost: { catapults: 1 }, perUnit: true, siege: 2.4 },
+  // 수군 (조선소 건조, 자체 수치) — ship: 강·바다에서만 기동
+  junk: { name: '주가', atk: 0.7, def: 0.7, move: 1.2, cost: { junks: 1 }, perUnit: true, ship: true },
+  lou:  { name: '누선', atk: 0.9, def: 0.9, move: 1.1, cost: { lous: 1 }, perUnit: true,  ship: true },
+  dou:  { name: '투함', atk: 1.1, def: 1.0, move: 1.0, cost: { dous: 1 }, perUnit: true,  ship: true },
 };
+export const SIEGE_TYPES = new Set(['ram', 'tower', 'beast', 'catapult']);
+export const SHIP_TYPES = new Set(['junk', 'lou', 'dou']);
+// 병기 생산·선박 건조 (자체 비용). 특색 도시는 25% 할인 (설계안: 특색 병장 생산 비용 감소, 병기·배는 자동 생산 제외)
+export const SIEGE_BUILD = { ram: { name: '충거', gold: 600, store: 'rams' }, tower: { name: '정란', gold: 500, store: 'towers' }, beast: { name: '목수', gold: 800, store: 'beasts' }, catapult: { name: '투석기', gold: 1000, store: 'catapults' } };
+export const SHIP_BUILD = { junk: { name: '주가', gold: 400, store: 'junks' }, lou: { name: '누선', gold: 700, store: 'lous' }, dou: { name: '투함', gold: 1100, store: 'dous' } };
 
 // === 전법·계략·기력 (자체 명명·자체 수치 — 원작 수치 미참조) ===
-const APT_IDX = { spear: 0, pike: 1, bow: 2, cav: 3 }; // data apt 순서: 창 극 노 기 병기 수군 (검병은 적성 없음)
+const APT_IDX = { spear: 0, pike: 1, bow: 2, cav: 3, ram: 4, tower: 4, beast: 4, catapult: 4, junk: 5, lou: 5, dou: 5 }; // data apt 순서: 창 극 노 기 병기 수군 (검병은 적성 없음)
 const APT_LV = g => ({ S: 3, A: 2, B: 1 })[g] ?? 0;
 export const TACTICS = {
   sword: { name: '분전', qi: 20, mult: 1.5 },
@@ -20,6 +34,13 @@ export const TACTICS = {
   pike:  { name: '철벽', qi: 20, mult: 1.3, guard: 0.5 },
   bow:   { name: '연사', qi: 20, mult: 1.6 },
   cav:   { name: '돌격', qi: 25, mult: 2.0 },
+  ram:      { name: '파쇄',   qi: 20, mult: 2.4 },                    // 충거: 거점 대데미지
+  tower:    { name: '불화살', qi: 15, mult: 1.7 },                    // 정란: 병사 살상
+  beast:    { name: '방사',   qi: 20, mult: 1.6, burn: true },        // 목수: 화염 공격
+  catapult: { name: '투석',   qi: 25, mult: 2.4 },                    // 투석기: 대데미지
+  junk: { name: '불화살', qi: 15, mult: 1.7 },                  // 수군 공통 (B 이상)
+  lou:  { name: '격돌',   qi: 20, mult: 2.0, minApt: 2 },       // 누선 (A 이상)
+  dou:  { name: '투석',   qi: 25, mult: 2.5, minApt: 3 },       // 투함 (S)
 };
 export const STRATS = {
   fire:    { name: '화계', qi: 30, minInt: 75 },            // 공격측: 수비 병력 추가 소각
@@ -47,9 +68,66 @@ export const FACILITIES = {
   '병영':   { cost: 300, turns: 3, desc: '징병량 +30%' },
   '대장간': { cost: 300, turns: 3, desc: '매월 창·극·노 자동 생산 (특색 병장은 대량)' },
   '마구간': { cost: 400, turns: 3, desc: '매월 군마 자동 생산 (특색 군마는 대량)' },
-  '공방':   { cost: 300, turns: 3, desc: '병기 생산 (병기 라운드에서 활성)' },
-  '조선소': { cost: 300, turns: 3, desc: '선박 생산 (수군 라운드에서 활성)' },
+  '공방':   { cost: 300, turns: 3, desc: '병기 생산: 충거·정란·목수·투석기 (특색 병기 도시 할인)' },
+  '조선소': { cost: 300, turns: 3, desc: '선박 건조: 주가·누선·투함 (특색 선박 도시 할인)' },
 };
+
+
+// === 수상 판정 (map3d의 윤곽·강 데이터와 동일 좌표, 게임 규칙용 자체 구현) ===
+const W_OUTLINE = [
+[101,28],[101.5,31],[103,33.5],[104,36],[105.5,37.5],[107,39],[109,40.2],[111,40.8],[114,41.2],[117,41.2],[120,41.8],[123,42.3],[125.5,41.5],[125,40.3],[124,39.7],[122.5,38.7],[121.5,38.8],[119,38.3],[117.8,38.5],[117.5,37.7],[118.5,37.3],[119.5,36.8],[120.8,36.5],[121,35.3],[120.2,34.4],[120.3,33],[120.8,31.8],[121.6,31.1],[121.6,29.8],[120.8,28.3],[119.8,27],[118.7,25.8],[117.5,24.6],[115.8,23.3],[113.8,22.6],[111.5,21.9],[109.8,21.8],[108.2,22.3],[106.5,23.2],[104.5,23.8],[102.5,24.8],[101.2,26.2]];
+const W_RIVERS = [
+  [[102.5,36.5],[105,36.8],[106.5,38.5],[108.5,40.1],[110.5,40.1],[111.8,39.2],[112.3,37.8],[111.3,36],[110.6,34.7],[111.8,34.6],[113.5,34.9],[115,35.4],[116.5,36.6],[118,37.4],[118.9,37.7]],
+  [[104.1,28.8],[105.5,29.2],[106.6,29.6],[107.8,30.3],[109.3,31],[110.5,30.8],[111.5,30.2],[112.6,29.9],[114.3,30.5],[115.8,29.7],[117,30.6],[118.2,31.4],[119.3,32.1],[120.6,32.1],[121.4,31.5]],
+  [[110.5,26],[112,26.8],[113,28.2],[112.9,29.3]],
+];
+function wInOutline(lon, lat) {
+  let inside = false;
+  for (let i = 0, j = W_OUTLINE.length-1; i < W_OUTLINE.length; j = i++) {
+    const [xi,yi] = W_OUTLINE[i], [xj,yj] = W_OUTLINE[j];
+    if (((yi>lat)!==(yj>lat)) && (lon < (xj-xi)*(lat-yi)/(yj-yi)+xi)) inside = !inside;
+  }
+  return inside;
+}
+const W_EAST_COAST = W_OUTLINE.slice(12, 38);
+const W_SOUTH_COAST = W_OUTLINE.slice(37, 43);
+function wChainLonAtLat(chain, lat) {
+  for (let i = 0; i < chain.length-1; i++) {
+    const [x1,y1] = chain[i], [x2,y2] = chain[i+1];
+    if ((y1 >= lat && y2 <= lat) || (y2 >= lat && y1 <= lat)) return y1 === y2 ? Math.max(x1,x2) : x1 + (x2-x1)*(lat-y1)/(y2-y1);
+  }
+  return chain[chain.length-1][0];
+}
+function wChainLatAtLon(chain, lon) {
+  for (let i = 0; i < chain.length-1; i++) {
+    const [x1,y1] = chain[i], [x2,y2] = chain[i+1];
+    if ((x1 <= lon && x2 >= lon) || (x2 <= lon && x1 >= lon)) return x1 === x2 ? Math.max(y1,y2) : y1 + (y2-y1)*(lon-x1)/(x2-x1);
+  }
+  return chain[0][1];
+}
+export function isSeaAt(lon, lat) {
+  if (wInOutline(lon, lat)) return false;
+  if (lat <= W_EAST_COAST[0][1]) {
+    const coastLon = lat <= 21.8 ? 109.8 : wChainLonAtLat(W_EAST_COAST, lat);
+    if (lon > coastLon) return true;
+  }
+  if (lon >= W_SOUTH_COAST[W_SOUTH_COAST.length-1][0] && lon <= W_SOUTH_COAST[0][0]) {
+    if (lat < wChainLatAtLon(W_SOUTH_COAST, lon)) return true;
+  }
+  return false;
+}
+function wDistToSeg(px, py, x1, y1, x2, y2) {
+  const dx = x2-x1, dy = y2-y1, l2 = dx*dx + dy*dy;
+  const t = l2 === 0 ? 0 : Math.max(0, Math.min(1, ((px-x1)*dx + (py-y1)*dy) / l2));
+  return Math.hypot(px - (x1 + t*dx), py - (y1 + t*dy));
+}
+export function isRiverAt(lon, lat) {
+  for (const line of W_RIVERS)
+    for (let i = 0; i < line.length-1; i++)
+      if (wDistToSeg(lon, lat, line[i][0], line[i][1], line[i+1][0], line[i+1][1]) < 0.55) return true;
+  return false;
+}
+export function isWaterAt(lon, lat) { return isSeaAt(lon, lat) || isRiverAt(lon, lat); }
 
 // === 명품 (설계안 분류: 명마·활·검·서적·장병·옥새, 명칭·수치 자체) ===
 export const ITEMS = [
@@ -437,17 +515,41 @@ export class Game {
     this.log(`${a.name_ko} → ${b.name_ko} 무장 ${idxs.length}명 이동`, a.force === this.playerForce);
     return true;
   }
+  produceSiege(cityId, kind) { // 공방에서 병기 생산, AP 10 (자체 비용, 특색 병기 도시 25% 할인)
+    const c = this.cityById[cityId], f = this.forces[c.force];
+    if (this._blocked(c)) return false; // 군단 소속
+    const spec = SIEGE_BUILD[kind];
+    if (!spec || !this.cityFac(c, '공방').length) return false;
+    const cost = Math.round(spec.gold * ((c.specialty ?? []).includes('병기') ? 0.75 : 1));
+    if (f.ap < 10 || c.gold < cost) return false;
+    c.gold -= cost; f.ap -= 10;
+    c[spec.store] = (c[spec.store] ?? 0) + 1;
+    this.log(`${c.name_ko}에서 ${spec.name} 생산 (금 ${cost})`, c.force === this.playerForce);
+    return true;
+  }
+  produceShip(cityId, kind) { // 조선소에서 선박 건조, AP 10 (자체 비용, 특색 선박 도시 25% 할인)
+    const c = this.cityById[cityId], f = this.forces[c.force];
+    if (this._blocked(c)) return false; // 군단 소속
+    const spec = SHIP_BUILD[kind];
+    if (!spec || !this.cityFac(c, '조선소').length) return false;
+    const cost = Math.round(spec.gold * ((c.specialty ?? []).includes('선박') ? 0.75 : 1));
+    if (f.ap < 10 || c.gold < cost) return false;
+    c.gold -= cost; f.ap -= 10;
+    c[spec.store] = (c[spec.store] ?? 0) + 1;
+    this.log(`${c.name_ko}에서 ${spec.name} 건조 (금 ${cost})`, c.force === this.playerForce);
+    return true;
+  }
   dispatch(cityId, officerIdxs, troops, type) { // 부대 출진, AP 40
     officerIdxs = [...new Set(officerIdxs)];
     const c = this.cityById[cityId], f = this.forces[c.force];
     if (this._blocked(c)) return false; // 군단 소속
     if (f.ap < 40 || c.troops < troops || officerIdxs.length === 0) return false;
     const ut = UNIT_TYPES[type];
-    for (const [k, per] of Object.entries(ut.cost)) {
-      const need = per * troops;
+    for (const [k, per] of Object.entries(ut.cost)) { // 병기·선박은 부대당 1대 (perUnit), 병장은 병사당 1개
+      const need = ut.perUnit ? per : per * troops;
       if ((c[k] ?? 0) < need) return false;
     }
-    for (const [k, per] of Object.entries(ut.cost)) c[k] -= per * troops;
+    for (const [k, per] of Object.entries(ut.cost)) c[k] -= ut.perUnit ? per : per * troops;
     c.troops -= troops; f.ap -= 40;
     c.officers = c.officers.filter(i => !officerIdxs.includes(i));
     for (const i of officerIdxs) this.officers[i].state.city = null;
@@ -604,7 +706,15 @@ export class Game {
     const speed = 0.55 * ut.move * (this.unitHasSkill(u, '질풍') ? 1.25 : 1);
     const dx = u.tx - u.x, dz = u.tz - u.z;
     const d = Math.hypot(dx, dz);
-    if (d > 1.2) { u.x += dx/d*speed; u.z += dz/d*speed; return; }
+    if (d > 1.2) {
+      const nx = u.x + dx/d*speed, nz = u.z + dz/d*speed;
+      if (SHIP_TYPES.has(u.type) && !isWaterAt(nx, nz)) { // 수군: 강·바다에서만 기동
+        if (!u._landWarn) { u._landWarn = true; this.log(`${u.label}이(가) 수로를 벗어나 더 이상 나아갈 수 없습니다`, u.force === this.playerForce); }
+        return;
+      }
+      u._landWarn = false;
+      u.x = nx; u.z = nz; return;
+    }
     // 도착: 도시 처리
     const c = this.cityById[u.targetCity];
     if (!c) { u.tx = null; return; }
@@ -620,13 +730,17 @@ export class Game {
       return;
     }
     // 공성: 도시 내구/병사 공격
+    if (SIEGE_TYPES.has(u.type) && (u.qi ?? 100) <= 0) { // 병기: 기력 0이면 공격 불가 (설계안)
+      this.log(`${u.label}의 병기가 기력 부족으로 공격하지 못합니다`, u.force === this.playerForce);
+      return;
+    }
     const lead = this.officers[u.officers[0]];
     let dmg = Math.round(u.troops * 0.12 * ut.atk * (0.7 + lead.war/150) * this.aptMult(u) * this.unitDmgMult(u, true) * this.unitItemAtk(u) * this.unitTechAtk(u) * (1 + 0.1 * this.techLv(u.force, '발명')));
     let loss = Math.round(c.troops * 0.06 / ut.def + 150);
     // 전법: 병종 적성 B 이상 + 기력 소모, 무력이 높을수록 발동 잘됨
     const tac = TACTICS[u.type];
     const aptLv = u.type === 'sword' ? 1 : APT_LV(lead.apt?.[APT_IDX[u.type]]);
-    if (aptLv >= 1 && u.qi >= tac.qi && Math.random() < Math.min(0.55, 0.15 + lead.war/250)) {
+    if (aptLv >= (tac.minApt ?? 1) && u.qi >= tac.qi && Math.random() < Math.min(0.55, 0.15 + lead.war/250)) {
       u.qi -= tac.qi;
       this.gainMerit(u.officers[0], MERIT.tactic);
       dmg = Math.round(dmg * tac.mult);
@@ -652,6 +766,8 @@ export class Game {
         this.log(`【계략】${def.name_ko}의 혼란! ${u.label}이(가) ${STRATS.confuse.turns}턴간 움직이지 못합니다`, c.force === this.playerForce);
       }
     }
+    if (ut.siege) dmg = Math.round(dmg * ut.siege); // 병기: 대도시 피해 배율 (자체 수치)
+    if (ut.burn) { const ex = Math.round(c.troops * 0.03); c.troops = Math.max(0, c.troops - ex); c.hp = Math.max(0, c.hp - Math.round(ex*0.5)); this.log(`${u.label}의 목수가 화염을 뿜어 추가 피해 -${ex}`, u.force === this.playerForce); }
     if (this.cityHasSkill(c, '수성')) dmg = Math.round(dmg * 0.85); // 수성: 주둔 도시 방어 보정
     if (c.force != null) dmg = Math.round(dmg * (1 - 0.05 * this.techLv(c.force, '방위'))); // 방위 기교: 도시 방어
     c.troops = Math.max(0, c.troops - dmg);
@@ -686,13 +802,15 @@ export class Game {
   fieldBattle(a, b) {
     const strike = (att, def) => { // 공격측 1회 타격분 산출 (전법·계략 포함), 피해는 나중에 동시 적용
       if ((att.conf ?? 0) > 0) return 0; // 혼란은 stepUnit에서 감소 처리됨
+      if (SIEGE_TYPES.has(att.type) && (att.qi ?? 100) <= 0) return 0; // 병기: 기력 0 공격 불가
       const utA = UNIT_TYPES[att.type], utD = UNIT_TYPES[def.type];
       const lead = this.officers[att.officers[0]];
       let dmg = Math.round(att.troops * 0.05 * utA.atk * (0.7 + lead.war/150) / utD.def * this.aptMult(att) * this.unitDmgMult(att) * this.unitItemAtk(att) * this.unitDefMult(def) * this.unitTechAtk(att) * (1 - 0.03 * this.techLv(def.force, '연병')));
+      if (isWaterAt(att.x, att.z)) dmg = Math.round(dmg * (utA.ship ? 1.3 : 0.7)); // 수전: 수군 우세, 육군 페널티 (자체 수치)
       // 전법 (공성과 같은 규칙)
       const tac = TACTICS[att.type];
       const aptLv = att.type === 'sword' ? 1 : APT_LV(lead.apt?.[APT_IDX[att.type]]);
-      if (aptLv >= 1 && (att.qi ?? 100) >= tac.qi && Math.random() < Math.min(0.55, 0.15 + lead.war/250)) {
+      if (aptLv >= (tac.minApt ?? 1) && (att.qi ?? 100) >= tac.qi && Math.random() < Math.min(0.55, 0.15 + lead.war/250)) {
         att.qi -= tac.qi; dmg = Math.round(dmg * tac.mult);
         if (tac.guard) att._guard = true;
         this.log(`【전법】${lead.name_ko}의 ${tac.name}! 야전에서 ${def.label}에 큰 피해`, att.force === this.playerForce);
