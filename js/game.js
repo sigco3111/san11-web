@@ -31,10 +31,9 @@ export const SHIP_BUILD = { junk: { name: '주가', gold: 400, store: 'junks' },
 const APT_IDX = { spear: 0, pike: 1, bow: 2, cav: 3, ram: 4, tower: 4, beast: 4, catapult: 4, junk: 5, lou: 5, dou: 5 }; // data apt 순서: 창 극 노 기 병기 수군 (검병은 적성 없음)
 const APT_LV = g => ({ S: 3, A: 2, B: 1 })[g] ?? 0;
 export const TACTICS = {
-  sword: { name: '분전', qi: 20, mult: 1.5 },
   spear: { name: '창격', qi: 20, mult: 1.8 },
   pike:  { name: '철벽', qi: 20, mult: 1.3, guard: 0.5 },
-  bow:   { name: '연사', qi: 20, mult: 1.6 },
+  bow:   { name: '불화살', qi: 15, mult: 1.6 }, // 설계 노병 불화살(기력 15는 설계에서도 확인 필요 표기 - 이 게임의 잠정값). 연사(기력 20)는 설계 밖 자체 전법이어서 대체
   cav:   { name: '돌격', qi: 25, mult: 2.0 },
   ram:      { name: '파쇄',   qi: 20, mult: 2.4 },                    // 충거: 거점 대데미지
   tower:    { name: '불화살', qi: 15, mult: 1.7 },                    // 정란: 병사 살상
@@ -1125,9 +1124,9 @@ export class Game {
     let dmg = Math.round(u.troops * 0.12 * ut.atk * (0.7 + lead.war/150) * this.aptMult(u) * this.unitDmgMult(u, true) * this.unitItemAtk(u) * this.unitTechAtk(u) * this.unitRelMult(u) * (1 + 0.1 * this.techLv(u.force, '발명'))); // R12: 의형제·부부 같은 부대 공격 상승
     let loss = Math.round(c.troops * 0.06 / ut.def + 150);
     // 전법: 병종 적성 B 이상 + 기력 소모, 무력이 높을수록 발동 잘됨
-    const tac = TACTICS[u.type];
+    const tac = TACTICS[u.type]; // 검병은 전법 없음(설계 58행)
     const aptLv = u.type === 'sword' ? 1 : APT_LV(lead.apt?.[APT_IDX[u.type]]);
-    if ((!RULES.cityTacticSiegeOnly || SIEGE_TYPES.has(u.type)) && (u._tacTurn ?? -1) !== this.turn && aptLv >= (tac.minApt ?? 1) && u.qi >= tac.qi && Math.random() < Math.min(0.55, 0.15 + lead.war/250)) {
+    if (tac && (!RULES.cityTacticSiegeOnly || SIEGE_TYPES.has(u.type)) && (u._tacTurn ?? -1) !== this.turn && aptLv >= (tac.minApt ?? 1) && u.qi >= tac.qi && Math.random() < Math.min(0.55, 0.15 + lead.war/250)) {
       u.qi -= tac.qi;
       this.gainMerit(u.officers[0], MERIT.tactic);
       dmg = Math.round(dmg * tac.mult);
@@ -1197,7 +1196,7 @@ export class Game {
       // 전법 (공성과 같은 규칙)
       const tac = TACTICS[att.type];
       const aptLv = att.type === 'sword' ? 1 : APT_LV(lead.apt?.[APT_IDX[att.type]]);
-      if (att.type !== 'sword' && (att._tacTurn ?? -1) !== this.turn && aptLv >= (tac.minApt ?? 1) && (att.qi ?? 100) >= tac.qi && Math.random() < Math.min(0.55, 0.15 + lead.war/250)) {
+      if (tac && att.type !== 'sword' && (att._tacTurn ?? -1) !== this.turn && aptLv >= (tac.minApt ?? 1) && (att.qi ?? 100) >= tac.qi && Math.random() < Math.min(0.55, 0.15 + lead.war/250)) {
         att.qi -= tac.qi; dmg = Math.round(dmg * tac.mult);
         if (tac.guard) att._guard = true;
         if (att.type === 'cav') att._cavTactic = true; // R10: 기병 전법 시 일기토 발동률 상승 (설계안 110행)
