@@ -688,8 +688,14 @@ export class Game {
     const c = this.cityById[targetCityId];
     if (!u || !c) return;
     if (c.force != null && c.force !== u.force && this.isPeace(u.force, c.force)) { this.log(`${this.forceName(c.force)}은(는) 동맹·정전 중이라 공격할 수 없습니다`, u.force === this.playerForce); return; }
+    const path = this.findPath(u, c.lon, c.lat);
+    if (!path) { // R17b: 도달 불가 노선은 명령 거부 — 직선 폴백의 바다 정지·지형 관통 재발 방지. AI는 반환값으로 회복 처리
+      this.log(`${josa(u.label, ['은','는'])} ${c.name_ko}(으)로 통하는 노선이 없어 출진할 수 없습니다`, u.force === this.playerForce);
+      return false;
+    }
     u.targetCity = targetCityId; u.tx = c.lon; u.tz = c.lat;
-    u.path = this.findPath(u, c.lon, c.lat) ?? []; // R17: 경로 미탐색 시 기존 직선 이동 폴백
+    u.path = path;
+    return true;
   }
 
   // === 턴 진행 ===
@@ -900,11 +906,11 @@ export class Game {
     const ut = UNIT_TYPES[u.type];
     const spdMult = this.unitHasSkill(u, '질풍') ? 1.25 : (this.unitHasSkill(u, '신행') ? 1.15 : 1); // R17: 신행 = 이동 +15% (자체 재정의 — 야간·날씨 시스템 부재, 질풍 우선)
     let speed = 0.55 * ut.move * spdMult;
-    if (u.path?.length && Math.hypot(u.path[0][0] - u.x, u.path[0][1] - u.z) < 0.35) { u.x = u.path[0][0]; u.z = u.path[0][1]; u.path.shift(); } // R17: 경유지 통과
+    while (u.path?.length && Math.hypot(u.path[0][0] - u.x, u.path[0][1] - u.z) < 0.35) { if (u.path.length > 1) { u.x = u.path[0][0]; u.z = u.path[0][1]; } u.path.shift(); } // R17: 경유지 통과 (연속 근접 경유지 모두 소비, 마지막 경유지=목표는 위치 스냅 없이 제거 → d=0 NaN 방지)
     const aimX = u.path?.length ? u.path[0][0] : u.tx, aimZ = u.path?.length ? u.path[0][1] : u.tz;
     const dx = aimX - u.x, dz = aimZ - u.z;
     const d = Math.hypot(dx, dz);
-    if (u.path?.length || d > 1.2) {
+    if ((u.path?.length || d > 1.2) && d > 1e-6) {
       if (!SHIP_TYPES.has(u.type) && isRiverAt(u.x, u.z)) speed *= 0.5; // R17: 육군 강 도하 감속 (자체 수치)
       const nx = u.x + dx/d*speed, nz = u.z + dz/d*speed;
       if (SHIP_TYPES.has(u.type) && !isWaterAt(nx, nz)) { // 수군: 강·바다에서만 기동
@@ -1060,7 +1066,8 @@ export class Game {
       } else if (u.troops < (this.unitHasSkill(u, '완강') ? 600 : 1200)) { // 퇴각: 가장 가까운 아군 도시로 (완강 특기는 기준 절반)
         const home = this.forceCities(u.force).sort((pp, qq) => Math.hypot(pp.lon-u.x, pp.lat-u.z) - Math.hypot(qq.lon-u.x, qq.lat-u.z))[0];
         if (home) {
-          u.targetCity = home.id; u.tx = home.lon; u.tz = home.lat;
+          const rp = this.findPath(u, home.lon, home.lat);
+          if (rp) { u.targetCity = home.id; u.tx = home.lon; u.tz = home.lat; u.path = rp; } // R17b: 퇴각도 경로 탐색, 실패 시 제자리 대기(직선 폴백 금지)
           this.log(`${josa(u.label, ['이','가'])} ${josa(home.name_ko, ['으로','로'])} 퇴각합니다`, u.force === this.playerForce);
         }
       }
@@ -1422,7 +1429,7 @@ export class Game {
     } else if (result === 'flee') {
       const f = d[d.fled];
       const home = this.forceCities(f.u.force).sort((p, q) => Math.hypot(p.lon - f.u.x, p.lat - f.u.z) - Math.hypot(q.lon - f.u.x, q.lat - f.u.z))[0];
-      if (home) { f.u.targetCity = home.id; f.u.tx = home.lon; f.u.tz = home.lat; }
+      if (home) { const rp = this.findPath(f.u, home.lon, home.lat); if (rp) { f.u.targetCity = home.id; f.u.tx = home.lon; f.u.tz = home.lat; f.u.path = rp; } } // R17b
       this.log(`【일기토】${this.officers[f.offs[f.cur]].name_ko}이(가) 물러났습니다`, f.u.force === this.playerForce);
     } else {
       this.log(`【일기토】${d.bout}합 무승부로 끝났습니다`, true);
