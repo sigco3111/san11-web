@@ -11,6 +11,21 @@ export const UNIT_TYPES = {
   cav:   { name: '기병', atk: 1.2, def: 0.9, move: 1.6, cost: { horses: 1 } },
 };
 
+// === 전법·계략·기력 (자체 명명·자체 수치 — 원작 수치 미참조) ===
+const APT_IDX = { spear: 0, pike: 1, bow: 2, cav: 3 }; // data apt 순서: 창 극 노 기 병기 수군 (검병은 적성 없음)
+const APT_LV = g => ({ S: 3, A: 2, B: 1 })[g] ?? 0;
+export const TACTICS = {
+  sword: { name: '분전', qi: 20, mult: 1.5 },
+  spear: { name: '창격', qi: 20, mult: 1.8 },
+  pike:  { name: '철벽', qi: 20, mult: 1.3, guard: 0.5 },
+  bow:   { name: '연사', qi: 20, mult: 1.6 },
+  cav:   { name: '돌격', qi: 25, mult: 2.0 },
+};
+export const STRATS = {
+  fire:    { name: '화계', qi: 30, minInt: 75 },            // 공격측: 수비 병력 추가 소각
+  confuse: { name: '혼란', cooldown: 3, minInt: 80, turns: 2 }, // 수비측: 공격 부대 행동 정지
+};
+
 export class Game {
   constructor(scen, officers, skills, playerForceId) {
     this.officers = officers; // by idx
@@ -87,7 +102,7 @@ export class Game {
     c.officers = c.officers.filter(i => !officerIdxs.includes(i));
     for (const i of officerIdxs) this.officers[i].state.city = null;
     const unit = { id: this.nextUnitId++, force: c.force, officers: officerIdxs, troops, type,
-      x: c.lon, z: c.lat, path: [], tx: null, tz: null, targetCity: null, label: '' };
+      x: c.lon, z: c.lat, path: [], tx: null, tz: null, targetCity: null, label: '', qi: 100, conf: 0 };
     unit.label = `${this.officers[officerIdxs[0]].name_ko} ${Math.round(troops/1000)}k`;
     this.units.push(unit);
     this.log(`${c.name_ko}에서 ${this.officers[officerIdxs[0]].name_ko}의 ${ut.name} ${troops} 출진`, c.force === this.playerForce);
@@ -168,8 +183,41 @@ export class Game {
     }
     // 공성: 도시 내구/병사 공격
     const lead = this.officers[u.officers[0]];
-    const dmg = Math.round(u.troops * 0.12 * ut.atk * (0.7 + lead.war/150));
-    const loss = Math.round(c.troops * 0.06 / ut.def + 150);
+    u.qi = Math.min(100, (u.qi ?? 100) + 10); // 기력 회복
+    if ((u.conf ?? 0) > 0) { // 혼란: 행동 불가
+      u.conf--;
+      this.log(`${u.label}이(가) 혼란에 빠져 공격하지 못합니다`, u.force === this.playerForce);
+      return;
+    }
+    let dmg = Math.round(u.troops * 0.12 * ut.atk * (0.7 + lead.war/150));
+    let loss = Math.round(c.troops * 0.06 / ut.def + 150);
+    // 전법: 병종 적성 B 이상 + 기력 소모, 무력이 높을수록 발동 잘됨
+    const tac = TACTICS[u.type];
+    const aptLv = u.type === 'sword' ? 1 : APT_LV(lead.apt?.[APT_IDX[u.type]]);
+    if (aptLv >= 1 && u.qi >= tac.qi && Math.random() < Math.min(0.55, 0.15 + lead.war/250)) {
+      u.qi -= tac.qi;
+      dmg = Math.round(dmg * tac.mult);
+      if (tac.guard) loss = Math.round(loss * tac.guard);
+      this.log(`【전법】${lead.name_ko}의 ${tac.name}! ${c.name_ko}에 큰 피해`, u.force === this.playerForce);
+    }
+    // 계략(공격측): 화계 — 부대 내 최고 지력 무장
+    const caster = u.officers.map(i => this.officers[i]).sort((a, b) => b.int - a.int)[0];
+    if (caster && caster.int >= STRATS.fire.minInt && u.qi >= STRATS.fire.qi && Math.random() < Math.min(0.5, 0.1 + caster.int/300)) {
+      u.qi -= STRATS.fire.qi;
+      const burn = Math.round(c.troops * 0.08);
+      c.troops = Math.max(0, c.troops - burn);
+      c.hp = Math.max(0, c.hp - Math.round(burn * 0.5));
+      this.log(`【계략】${caster.name_ko}의 화계! ${c.name_ko} 수비병 -${burn}`, u.force === this.playerForce);
+    }
+    // 계략(수비측): 혼란 — 수비 도시 최고 지력 무장, 쿨다운 적용
+    if (c.officers.length && (c.lastStrat ?? 0) + STRATS.confuse.cooldown <= this.turn) {
+      const def = c.officers.map(i => this.officers[i]).sort((a, b) => b.int - a.int)[0];
+      const p = Math.max(0.05, Math.min(0.45, 0.15 + (def.int - lead.int)/250));
+      if (def.int >= STRATS.confuse.minInt && Math.random() < p) {
+        c.lastStrat = this.turn; u.conf = STRATS.confuse.turns;
+        this.log(`【계략】${def.name_ko}의 혼란! ${u.label}이(가) ${STRATS.confuse.turns}턴간 움직이지 못합니다`, c.force === this.playerForce);
+      }
+    }
     c.troops = Math.max(0, c.troops - dmg);
     c.hp = Math.max(0, c.hp - Math.round(dmg*0.5));
     u.troops = Math.max(0, u.troops - loss);
@@ -200,4 +248,4 @@ export function josa(name, pair) { // [을,를] 형태
   const code = name.charCodeAt(name.length-1);
   const jong = (code >= 0xAC00 && code <= 0xD7A3) ? (code-0xAC00)%28 : 0;
   return name + (jong ? pair[0] : pair[1]);
-  }
+}
