@@ -80,6 +80,8 @@ export const ARTS = {
   '난소행군': { p: 800, gold: 2000, desc: '강·여울 도하 감속 완화 (깊은 강 이동 0.35→0.8, 여울 0.6→0.8, 경로 비용 완화)' },
   '석벽술':   { p: 600, gold: 1500, desc: '야전 시설 「석벽」을 지을 수 있음 (적 육군 통행을 크게 방해)' },
   '정예창병': { p: 700, gold: 1800, desc: '창병·극병 공격력 +8%' },
+  '창병단련': { p: 500, gold: 1200, desc: '창병·극병 전법 위력 +15% (설계 106행 예시, 수치 자체)' },
+  '신화계':   { p: 800, gold: 2000, desc: '화계 성공 시 대상 주변 3칸 안 다른 적 부대에도 불이 번짐 (설계 106행 예시, 수치 자체)' },
   '군제개혁': { p: 900, gold: 2500, desc: '군사 커맨드(출진·징병·병기·선박 생산) 행동력 15% 절감' },
 };
 export const TECH_BRANCHES = ['창병','극병','노병','기병','연병','발명','방위','화공'];
@@ -396,6 +398,12 @@ export class Game {
   }
   // === 기교 (자체 수치) ===
   techLv(fid, b) { return this.forces[fid]?.techs?.[b] ?? 0; }
+  tacMult(u, m) { return m > 1 && (u.type === 'spear' || u.type === 'pike') && this.forces[u.force]?.arts?.['창병단련'] ? m * 1.15 : m; } // 개별 기교 창병단련: 창병·극병 전법 위력 +15% (자체 잠정값)
+  fireSpread(att, d) { // 개별 기교 신화계: 화계가 성공하면 대상 주변 3칸(2.7) 안 다른 적 부대에도 번짐 (자체 잠정값: 병력 -6%·불 3턴)
+    if (!this.forces[att.force]?.arts?.['신화계']) return 0; let n = 0;
+    for (const x of [...this.units]) { if (x === d || x.force === att.force || this.isPeace(att.force, x.force) || Math.hypot(x.x - d.x, x.z - d.z) > 2.7) continue; const l = Math.round(x.troops * 0.06 * (1 + 0.15 * this.techLv(att.force, '화공'))); x.troops = Math.max(0, x.troops - l); x.burn = 3; n++; if (x.troops <= 0) { this.units = this.units.filter(y => y !== x); this.log(`${x.label} 부대가 전멸했습니다`, false); } }
+    if (n) this.log(`【기교】신화계로 불이 주변 적 부대 ${n}개로 번졌습니다`, att.force === this.playerForce); return n;
+  }
   unitTechAtk(u) { const b = TYPE2TECH[u.type]; return (b ? 1 + 0.05 * this.techLv(u.force, b) : 1) * ((u.type === 'spear' || u.type === 'pike') && this.forces[u.force]?.arts?.['정예창병'] ? 1.08 : 1); }
   gainTechP(fid, n) { const f = this.forces[fid]; if (f?.alive) f.techP = (f.techP ?? 0) + n; }
   riverMult(u) { if (this.forces[u.force]?.arts?.['난소행군']) return 0.8; return isFordAt(u.x, u.z) ? 0.6 : 0.35; }
@@ -1130,7 +1138,7 @@ export class Game {
     if (tac && (!RULES.cityTacticSiegeOnly || SIEGE_TYPES.has(u.type)) && (u._tacTurn ?? -1) !== this.turn && aptLv >= (tac.minApt ?? 1) && u.qi >= tac.qi && Math.random() < Math.min(0.55, 0.15 + lead.war/250)) {
       u.qi -= tac.qi;
       this.gainMerit(u.officers[0], MERIT.tactic);
-      dmg = Math.round(dmg * tac.mult);
+      dmg = Math.round(dmg * this.tacMult(u, tac.mult));
       if (tac.guard) loss = Math.round(loss * tac.guard);
       this.log(`【전법】${lead.name_ko}의 ${tac.name}! ${c.name_ko}에 큰 피해`, u.force === this.playerForce);
     }
@@ -1201,7 +1209,7 @@ export class Game {
       if (att.type !== 'sword' && (att._tacTurn ?? -1) < this.turn && Math.random() < Math.min(0.55, 0.15 + lead.war/250)) { // 한 타격당 전법 기회 1회. 적성·기력·턴 1회·혼란 제한은 tacticInfo(직접 발동과 공통), 선택은 pickTactic(AI와 공통)
         const opt = this.pickTactic(att, def);
         if (opt) {
-          att.qi -= opt.qi; att._tacTurn = this.turn; dmg = Math.round(dmg * opt.mult);
+          att.qi -= opt.qi; att._tacTurn = this.turn; dmg = Math.round(dmg * this.tacMult(att, opt.mult));
           this.gainMerit(att.officers[0], MERIT.tactic);
           if (opt.guard) att._guard = true;
           if (att.type === 'cav') att._cavTactic = true; // R10: 기병 전법 시 일기토 발동률 상승 (설계안 110행)
@@ -1219,7 +1227,7 @@ export class Game {
       if (caster && (att._stratTurn ?? -1) !== this.turn && caster.int >= STRATS.fire.minInt && !this.unitHasSkill(def, '위장') && (att.qi ?? 100) >= STRATS.fire.qi && Math.random() < Math.min(0.5, 0.1 + caster.int/300 + (this.unitHasSkill(att, '풍계') ? 0.15 : 0)) * (1 - this.mindDefense(def.force))) {
         att.qi -= STRATS.fire.qi; att._stratTurn = this.turn; // 한 부대 턴당 계략 1회(직접·자동 공통)
         const burn = Math.round(def.troops * 0.06 * (1 + 0.15 * this.techLv(att.force, '화공')));
-        def.troops = Math.max(0, def.troops - burn); def.burn = 3;
+        def.troops = Math.max(0, def.troops - burn); def.burn = 3; this.fireSpread(att, def);
         this.log(`【계략】${caster.name_ko}의 화계! ${def.label} 병력 -${burn} (불이 번져 3턴간 계속 탑니다)`, att.force === this.playerForce);
       }
       return dmg;
@@ -1343,7 +1351,7 @@ export class Game {
       const utA = UNIT_TYPES[u.type], utD = UNIT_TYPES[d.type];
       let dmg = Math.round(u.troops * 0.05 * utA.atk * (0.7 + lead.war/150) / utD.def * this.aptMult(u) * this.unitDmgMult(u) * this.unitItemAtk(u) * this.unitDefMult(d) * this.unitTechAtk(u) * this.unitRelMult(u) / this.unitRelMult(d) * (1 - 0.03 * this.techLv(d.force, '연병'))); // 야전 산식과 동일
       if (isWaterAt(u.x, u.z)) dmg = Math.round(dmg * (utA.ship ? 1.3 : 0.7) * (this.unitHasSkill(u, '수완') ? 1.15 : 1));
-      dmg = Math.round(dmg * tac.mult);
+      dmg = Math.round(dmg * this.tacMult(u, tac.mult));
       u.qi -= tac.qi; u._tacTurn = this.turn;
       this.gainMerit(u.officers[0], MERIT.tactic);
       d.troops = Math.max(0, d.troops - dmg);
@@ -1359,7 +1367,7 @@ export class Game {
       if ((RULES.cityTacticSiegeOnly && !SIEGE_TYPES.has(u.type)) || !c || c.force === u.force || (c.force != null && this.isPeace(u.force, c.force)) || !inRange(c.lon, c.lat)) return false;
       const ut = UNIT_TYPES[u.type];
       let dmg = Math.round(u.troops * 0.12 * ut.atk * (0.7 + lead.war/150) * this.aptMult(u) * this.unitDmgMult(u, true) * this.unitItemAtk(u) * this.unitTechAtk(u) * this.unitRelMult(u) * (1 + 0.1 * this.techLv(u.force, '발명'))); // 공성 산식과 동일
-      dmg = Math.round(dmg * tac.mult);
+      dmg = Math.round(dmg * this.tacMult(u, tac.mult));
       if (ut.siege) dmg = Math.round(dmg * ut.siege);
       if (ut.burn) { const ex = Math.round(c.troops * 0.03); c.troops = Math.max(0, c.troops - ex); c.hp = Math.max(0, c.hp - Math.round(ex * 0.5)); }
       if (this.cityHasSkill(c, '수성')) dmg = Math.round(dmg * 0.85);
@@ -1406,7 +1414,7 @@ export class Game {
         const burn = Math.round(d.troops * 0.06 * (1 + 0.15 * this.techLv(u.force, '화공')));
         d.troops = Math.max(0, d.troops - burn);
         this.log(`【계략】${caster.name_ko}의 화계! ${d.label} 병력 -${burn} (불이 번져 3턴간 계속 탑니다)`, u.force === this.playerForce);
-        d.burn = 3;
+        d.burn = 3; this.fireSpread(u, d);
         if (d.troops <= 0) { this.units = this.units.filter(x => x !== d); this.log(`${d.label} 부대가 전멸했습니다`, false); }
         this.autosave();
         return true;
