@@ -17,6 +17,18 @@ export function aiThink(game, fid) {
     const avgNbr = cities.reduce((s,x) => s + x.troops, 0) / cities.length;
     if (c.troops < Math.min(avgNbr, 12000) && c.gold > 500 && c.food > 3000) game.recruit(c.id);
   }
+  // 2.6) 시설 건설: 개발지가 남고 금이 넉넉하면 시장·농장 우선, 이후 병영
+  for (const c of cities) {
+    if (f.ap < 20) break;
+    c.facilities = c.facilities ?? [];
+    if (c.facilities.length >= game.facSlots(c) || c.gold < 900) continue;
+    const have = t => c.facilities.some(x => x.type === t);
+    const pick = !have('시장') ? '시장' : !have('농장') ? '농장' : !have('병영') && c.gold > 2000 ? '병영' : null;
+    if (pick) {
+      const builders = [...c.officers].sort((x, y) => (game.officers[y]?.pol ?? 0) - (game.officers[x]?.pol ?? 0)).slice(0, 3);
+      game.buildFacility(c.id, pick, builders);
+    }
+  }
   // 2.5) 인재 등용: 도시의 재야 무장을 같은 규칙으로 영입
   for (const c of cities) {
     if (f.ap < 20 || c.gold < 300 || !c.officers.length) continue;
