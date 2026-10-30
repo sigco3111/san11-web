@@ -70,6 +70,7 @@ export const STRATS = {
   confuse: { name: '혼란', cooldown: 3, minInt: 80, turns: 2 }, // 수비측: 공격 부대 행동 정지
   rumor:   { name: '위보', qi: 15, minInt: 80 },            // R18: 적 부대를 가까운 자기 도시로 퇴각 (설계 15, 확률 자체)
   calm:    { name: '진정', qi: 10, minInt: 70 },
+  ambush:  { name: '복병', qi: 10, minInt: 60 },          // R33: 숲에서 인접 적 기습, 기병·병기 불가 (자체 수치)
   douse:   { name: '소화', qi: 10, minInt: 60 },           // R32: 화계로 붙은 불(3턴, 턴당 병력 -4%) 끄기 (자체 수치)            // R18: 아군 부대 혼란 해제·기력 +20 (자체 수치)
 };
 
@@ -1203,15 +1204,15 @@ export class Game {
       // 계략: 혼란
       const caster = att.officers.map(i => this.officers[i]).sort((x, y) => y.int - x.int)[0];
       if (caster && (att._stratTurn ?? -1) !== this.turn && caster.int >= STRATS.confuse.minInt && !this.unitHasSkill(def, '위장') && (att.qi ?? 100) >= 25 && Math.random() < Math.min(0.35, 0.08 + caster.int/400) * (1 - this.mindDefense(def.force))) {
-        att.qi -= 25; def.conf = Math.max(def.conf ?? 0, STRATS.confuse.turns);
+        att.qi -= 25; att._stratTurn = this.turn; def.conf = Math.max(def.conf ?? 0, STRATS.confuse.turns);
         this.log(`【계략】${caster.name_ko}의 혼란! ${josa(def.label, ['이','가'])} ${STRATS.confuse.turns}턴간 움직이지 못합니다`, att.force === this.playerForce);
       }
       // 계략: 화계
       if (caster && (att._stratTurn ?? -1) !== this.turn && caster.int >= STRATS.fire.minInt && !this.unitHasSkill(def, '위장') && (att.qi ?? 100) >= STRATS.fire.qi && Math.random() < Math.min(0.5, 0.1 + caster.int/300 + (this.unitHasSkill(att, '풍계') ? 0.15 : 0)) * (1 - this.mindDefense(def.force))) {
-        att.qi -= STRATS.fire.qi;
+        att.qi -= STRATS.fire.qi; att._stratTurn = this.turn; // 한 부대 턴당 계략 1회(직접·자동 공통)
         const burn = Math.round(def.troops * 0.06 * (1 + 0.15 * this.techLv(att.force, '화공')));
-        def.troops = Math.max(0, def.troops - burn);
-        this.log(`【계략】${caster.name_ko}의 화계! ${def.label} 병력 -${burn}`, att.force === this.playerForce);
+        def.troops = Math.max(0, def.troops - burn); def.burn = 3;
+        this.log(`【계략】${caster.name_ko}의 화계! ${def.label} 병력 -${burn} (불이 번져 3턴간 계속 탑니다)`, att.force === this.playerForce);
       }
       return dmg;
     };
@@ -1351,6 +1352,9 @@ export class Game {
     }
     return false;
   }
+  forestAt(x, z) { return !!this.forestFn?.(x, z); } // 숲 판정: 렌더가 쓰는 셀과 동일(map3d.forestAtLL 연결, 저장 없음)
+  canAmbush(u) { const t = UNIT_TYPES[u.type]; return !!t && u.type !== 'cav' && !t.siege && !SHIP_TYPES.has(u.type) && this.forestAt(u.x, u.z); }
+  ambushTarget(u) { return this.units.find(d => d.force !== u.force && !this.isPeace(u.force, d.force) && Math.hypot(d.x - u.x, d.z - u.z) < 1.2) ?? null; }
   fireStrat(uid, kind, target) { // 직접 계략: 성공률·비용·효과는 자동 발동과 동일, 부대당 턴 1회 시도
     const u = this.units.find(x => x.id === uid);
     if (!u || (u.conf ?? 0) > 0 || (u._stratTurn ?? -1) === this.turn) return false;
@@ -1391,6 +1395,18 @@ export class Game {
         return true;
       }
       return false;
+    }
+    if (kind === 'ambush') {
+      const d = this.ambushTarget(u);
+      if (!d || !this.canAmbush(u) || caster.int < STRATS.ambush.minInt || (u.qi ?? 100) < STRATS.ambush.qi) return false;
+      u._stratTurn = this.turn; u.qi -= STRATS.ambush.qi;
+      if (Math.random() >= Math.min(0.7, 0.3 + caster.int / 250) * (1 - this.mindDefense(d.force))) { this.log(`【계략】${caster.name_ko}의 복병이 ${d.label}에 간파당했습니다`, u.force === this.playerForce); this.autosave(); return true; }
+      this.gainMerit(caster.idx, MERIT.stratagem);
+      const hit = Math.round(d.troops * 0.07); d.troops = Math.max(0, d.troops - hit); d.qi = Math.max(0, (d.qi ?? 100) - 20);
+      this.log(`【계략】${caster.name_ko}의 복병! ${d.label} 병력 -${hit}, 기력 -20`, u.force === this.playerForce);
+      if (d.troops <= 0) { this.units = this.units.filter(x => x !== d); this.log(`${d.label} 부대가 전멸했습니다`, false); }
+      this.autosave();
+      return true;
     }
     if (kind === 'douse') {
       const d = this.units.find(x => x.id === target.id);
