@@ -40,5 +40,5 @@ select { background:#3a3226; color:#e8e0d0; border:1px solid #6b5d43; font-famil
 #btn-rot-l, #btn-rot-r { padding:5px 10px !important; font-size:15px !important; line-height:1; }
 
 /* R22: 패널 닫기 버튼 - 패널이 열려 있을 때만 표시, 내부 스크롤과 무관하게 항상 접근 가능 */
-#panel-x { display:none; position:fixed; top:calc(var(--hud-h, 50px) - 2px); right:6px; z-index:12; width:30px; height:30px; padding:0; font-size:18px; line-height:28px; border-radius:15px; background:#2a2418; color:#d4af37; border:1px solid #6b5d43; }
+#panel-x { display:none; position:fixed; top:calc(var(--hud-h, 50px) - 2px); right:6px; z-index:30; width:30px; height:30px; padding:0; font-size:18px; line-height:28px; border-radius:15px; background:#3a3020; color:#ffd700; border:1px solid #d4af37; cursor:pointer; }
 #panel:not(.hidden) + #panel-x { display:block; }
