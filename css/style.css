@@ -20,7 +20,7 @@ button.big { font-size:20px; padding:14px 44px; }
 #hud-top button { padding:5px 14px; font-size:13px; }
 #hud-force { color:#ffd700; font-weight:bold; }
 #hud-speed { flex-basis:100%; display:flex; gap:10px; justify-content:center; background:rgba(60,30,10,.85); padding:6px; font-size:13px; } /* R14: hud-top 내부 흐름으로 — 좁은 화면에서 메뉴 버튼을 덮던 고정 위치 제거 */
-#panel { position:fixed; top:var(--hud-h, 50px); right:0; /* R14: HUD 실제 높이에 연동 (refreshHud가 --hud-h 갱신) */ width:min(360px,94vw); max-height:calc(100vh - 140px); overflow-y:auto; background:rgba(26,22,16,.96); border:1px solid #6b5d43; border-radius:6px 0 0 6px; padding:14px; z-index:20; font-size:14px; }
+#panel { position:fixed; top:var(--hud-h, 50px); right:0; /* R14: HUD 실제 높이에 연동 (refreshHud가 --hud-h 갱신) */ width:min(360px,94vw); max-height:calc(100vh - var(--hud-h, 50px) - 150px); max-height:calc(100dvh - var(--hud-h, 50px) - 150px); overflow-y:auto; overscroll-behavior:contain; background:rgba(26,22,16,.96); border:1px solid #6b5d43; border-radius:6px 0 0 6px; padding:14px; z-index:20; font-size:14px; }
 #panel h3 { color:#d4af37; margin-bottom:8px; }
 #panel .cmd { display:inline-block; margin:3px 4px 3px 0; font-size:13px; padding:6px 10px; }
 #panel .officer { display:flex; gap:10px; align-items:center; padding:6px 0; border-bottom:1px solid #333; }
@@ -38,3 +38,7 @@ button.big { font-size:20px; padding:14px 44px; }
 select { background:#3a3226; color:#e8e0d0; border:1px solid #6b5d43; font-family:inherit; padding:3px 6px; }
 
 #btn-rot-l, #btn-rot-r { padding:5px 10px !important; font-size:15px !important; line-height:1; }
+
+/* R22: 패널 닫기 버튼 - 패널이 열려 있을 때만 표시, 내부 스크롤과 무관하게 항상 접근 가능 */
+#panel-x { display:none; position:fixed; top:calc(var(--hud-h, 50px) - 2px); right:6px; z-index:12; width:30px; height:30px; padding:0; font-size:18px; line-height:28px; border-radius:15px; background:#2a2418; color:#d4af37; border:1px solid #6b5d43; }
+#panel:not(.hidden) + #panel-x { display:block; }
