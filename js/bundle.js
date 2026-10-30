@@ -621,6 +621,24 @@ class Game {
 
   // === 명령 (행동력 소비) ===
   canUse(fid, ap) { return this.forces[fid].ap >= ap; }
+  // === 특기·적성 보정 (자체 수치) ===
+  unitHasSkill(u, sk) { return u.officers.some(i => this.officers[i]?.skill === sk); }
+  cityHasSkill(c, sk) { return c.officers.some(i => this.officers[i]?.skill === sk); }
+  aptMult(u) { // 병종 적성 공격 보정: C 0.9 / B 1.0 / A 1.1 / S 1.2
+    if (u.type === 'sword') return 1;
+    const lead = this.officers[u.officers[0]];
+    return 0.9 + APT_LV(lead.apt?.[APT_IDX[u.type]]) * 0.1;
+  }
+  unitDmgMult(u, siege = false) { // 공격 특기 보정
+    let m = 1;
+    if (siege) { if (this.unitHasSkill(u, '파성')) m *= 1.2; return m; }
+    if ((u.type === 'spear' || u.type === 'pike') && this.unitHasSkill(u, '파진')) m *= 1.15;
+    if (u.type === 'bow' && this.unitHasSkill(u, '신궁')) m *= 1.15;
+    if (u.type === 'cav' && this.unitHasSkill(u, '맹돌')) m *= 1.2;
+    if (u.type !== 'bow' && this.unitHasSkill(u, '격전')) m *= 1.1;
+    return m;
+  }
+  unitDefMult(u) { return this.unitHasSkill(u, '강직') ? 0.85 : 1; }
   develop(cityId, kind) { // kind: 'commerce' | 'farm', 비용 금 300, AP 30
     const c = this.cityById[cityId], f = this.forces[c.force];
     if (c.gold < 300 || f.ap < 30 || c[kind] >= 100) return false;
@@ -635,7 +653,7 @@ class Game {
     const c = this.cityById[cityId], f = this.forces[c.force];
     if (c.gold < 200 || c.food < 1000 || f.ap < 30) return false;
     const best = Math.max(50, ...c.officers.map(i => this.officers[i].chr));
-    const n = Math.round(1500 + best*30);
+    const n = Math.round((1500 + best*30) * (this.cityHasSkill(c, '명성') ? 1.3 : 1));
     c.gold -= 200; c.food -= 1000; f.ap -= 30;
     const cap = c.metropolis ? 150000 : 100000;
     c.troops = Math.min(cap, c.troops + n);
@@ -652,7 +670,7 @@ class Game {
     const envoy = Math.max(...c.officers.map(i => this.officers[i].chr));
     const ruler = this.officers[this.forces[c.force].ruler]?.chr ?? 50;
     const loyal = t.state.loyal ?? 70;
-    return Math.max(0.1, Math.min(0.9, 0.45 + (envoy - t.chr)/200 + (ruler - 50)/500 - loyal/400));
+    return Math.max(0.1, Math.min(0.9, 0.45 + (envoy - t.chr)/200 + (ruler - 50)/500 - loyal/400 + (this.cityHasSkill(c, '등용') ? 0.1 : 0)));
   }
   recruitOfficer(cityId, officerIdx) { // 재야 무장 등용: 금 100, AP 20 (자체 규칙)
     const c = this.cityById[cityId], f = this.forces[c.force];
@@ -719,8 +737,8 @@ class Game {
     if (this.dan === 3) {
       for (const c of this.cities) {
         if (c.force == null || !this.forces[c.force]?.alive) continue;
-        c.gold += Math.round(50 + c.commerce * 8 * (c.metropolis ? 1.5 : 1));
-        c.food += Math.round(300 + c.farm * 80);
+        c.gold += Math.round((50 + c.commerce * 8 * (c.metropolis ? 1.5 : 1)) * (this.cityHasSkill(c, '통상') ? 1.3 : 1));
+        c.food += Math.round((300 + c.farm * 80) * (this.cityHasSkill(c, '부농') ? 1.3 : 1));
         c.hp = Math.min(c.maxhp, c.hp + 200);
       }
     }
@@ -773,7 +791,7 @@ class Game {
       if (!tgt || tgt.force !== u.force) return;
     }
     const ut = UNIT_TYPES[u.type];
-    const speed = 0.55 * ut.move;
+    const speed = 0.55 * ut.move * (this.unitHasSkill(u, '질풍') ? 1.25 : 1);
     const dx = u.tx - u.x, dz = u.tz - u.z;
     const d = Math.hypot(dx, dz);
     if (d > 1.2) { u.x += dx/d*speed; u.z += dz/d*speed; return; }
@@ -789,7 +807,7 @@ class Game {
     }
     // 공성: 도시 내구/병사 공격
     const lead = this.officers[u.officers[0]];
-    let dmg = Math.round(u.troops * 0.12 * ut.atk * (0.7 + lead.war/150));
+    let dmg = Math.round(u.troops * 0.12 * ut.atk * (0.7 + lead.war/150) * this.aptMult(u) * this.unitDmgMult(u, true));
     let loss = Math.round(c.troops * 0.06 / ut.def + 150);
     // 전법: 병종 적성 B 이상 + 기력 소모, 무력이 높을수록 발동 잘됨
     const tac = TACTICS[u.type];
@@ -802,7 +820,7 @@ class Game {
     }
     // 계략(공격측): 화계 — 부대 내 최고 지력 무장
     const caster = u.officers.map(i => this.officers[i]).sort((a, b) => b.int - a.int)[0];
-    if (caster && caster.int >= STRATS.fire.minInt && u.qi >= STRATS.fire.qi && Math.random() < Math.min(0.5, 0.1 + caster.int/300)) {
+    if (caster && caster.int >= STRATS.fire.minInt && u.qi >= STRATS.fire.qi && Math.random() < Math.min(0.5, 0.1 + caster.int/300 + (this.unitHasSkill(u, '풍계') ? 0.15 : 0))) {
       u.qi -= STRATS.fire.qi;
       const burn = Math.round(c.troops * 0.08);
       c.troops = Math.max(0, c.troops - burn);
@@ -813,11 +831,12 @@ class Game {
     if (c.officers.length && (c.lastStrat ?? 0) + STRATS.confuse.cooldown <= this.turn) {
       const def = c.officers.map(i => this.officers[i]).sort((a, b) => b.int - a.int)[0];
       const p = Math.max(0.05, Math.min(0.45, 0.15 + (def.int - lead.int)/250));
-      if (def.int >= STRATS.confuse.minInt && Math.random() < p) {
+      if (def.int >= STRATS.confuse.minInt && !this.unitHasSkill(u, '위장') && Math.random() < p) {
         c.lastStrat = this.turn; u.conf = STRATS.confuse.turns;
         this.log(`【계략】${def.name_ko}의 혼란! ${u.label}이(가) ${STRATS.confuse.turns}턴간 움직이지 못합니다`, c.force === this.playerForce);
       }
     }
+    if (this.cityHasSkill(c, '수성')) dmg = Math.round(dmg * 0.85); // 수성: 주둔 도시 방어 보정
     c.troops = Math.max(0, c.troops - dmg);
     c.hp = Math.max(0, c.hp - Math.round(dmg*0.5));
     u.troops = Math.max(0, u.troops - loss);
@@ -848,7 +867,7 @@ class Game {
       if ((att.conf ?? 0) > 0) return 0; // 혼란은 stepUnit에서 감소 처리됨
       const utA = UNIT_TYPES[att.type], utD = UNIT_TYPES[def.type];
       const lead = this.officers[att.officers[0]];
-      let dmg = Math.round(att.troops * 0.05 * utA.atk * (0.7 + lead.war/150) / utD.def);
+      let dmg = Math.round(att.troops * 0.05 * utA.atk * (0.7 + lead.war/150) / utD.def * this.aptMult(att) * this.unitDmgMult(att) * this.unitDefMult(def));
       // 전법 (공성과 같은 규칙)
       const tac = TACTICS[att.type];
       const aptLv = att.type === 'sword' ? 1 : APT_LV(lead.apt?.[APT_IDX[att.type]]);
@@ -859,12 +878,12 @@ class Game {
       }
       // 계략: 혼란
       const caster = att.officers.map(i => this.officers[i]).sort((x, y) => y.int - x.int)[0];
-      if (caster && caster.int >= STRATS.confuse.minInt && (att.qi ?? 100) >= 25 && Math.random() < Math.min(0.35, 0.08 + caster.int/400)) {
+      if (caster && caster.int >= STRATS.confuse.minInt && !this.unitHasSkill(def, '위장') && (att.qi ?? 100) >= 25 && Math.random() < Math.min(0.35, 0.08 + caster.int/400)) {
         att.qi -= 25; def.conf = Math.max(def.conf ?? 0, STRATS.confuse.turns);
         this.log(`【계략】${caster.name_ko}의 혼란! ${def.label}이(가) ${STRATS.confuse.turns}턴간 움직이지 못합니다`, att.force === this.playerForce);
       }
       // 계략: 화계
-      if (caster && caster.int >= STRATS.fire.minInt && (att.qi ?? 100) >= STRATS.fire.qi && Math.random() < Math.min(0.5, 0.1 + caster.int/300)) {
+      if (caster && caster.int >= STRATS.fire.minInt && !this.unitHasSkill(def, '위장') && (att.qi ?? 100) >= STRATS.fire.qi && Math.random() < Math.min(0.5, 0.1 + caster.int/300 + (this.unitHasSkill(att, '풍계') ? 0.15 : 0))) {
         att.qi -= STRATS.fire.qi;
         const burn = Math.round(def.troops * 0.06);
         def.troops = Math.max(0, def.troops - burn);
@@ -883,7 +902,7 @@ class Game {
       if (u.troops <= 0) {
         this.units = this.units.filter(x => x !== u);
         this.log(`${u.label} 부대가 전멸했습니다`, false);
-      } else if (u.troops < 1200) { // 퇴각: 가장 가까운 아군 도시로
+      } else if (u.troops < (this.unitHasSkill(u, '완강') ? 600 : 1200)) { // 퇴각: 가장 가까운 아군 도시로 (완강 특기는 기준 절반)
         const home = this.forceCities(u.force).sort((pp, qq) => Math.hypot(pp.lon-u.x, pp.lat-u.z) - Math.hypot(qq.lon-u.x, qq.lat-u.z))[0];
         if (home) {
           u.targetCity = home.id; u.tx = home.lon; u.tz = home.lat;
@@ -1149,7 +1168,7 @@ function onPick(nx, ny) {
 }
 function officerRow(idx) {
   const o = DATA.officers[idx];
-  return `<div class="officer"><span class="pimg" style="${portraitCss(idx)}"></span><div><div class="nm">${o.name_ko} <span class="st">${o.name_zh}</span></div><div class="st">통${o.ldr} 무${o.war} 지${o.int} 정${o.pol} 매${o.chr} · ${skillKo(o.skill)} · 충성 ${o.state?.loyal ?? '-'}</div></div></div>`;
+  return `<div class="officer"><span class="pimg" style="${portraitCss(idx)}"></span><div><div class="nm">${o.name_ko} <span class="st">${o.name_zh}</span></div><div class="st">통${o.ldr} 무${o.war} 지${o.int} 정${o.pol} 매${o.chr} · ${o.skill ? o.skill + ' — ' + (DATA.skills[o.skill] || '') : '특기 없음'} · 충성 ${o.state?.loyal ?? '-'}</div></div></div>`;
 }
 function showCityPanel(c) {
   const p = $('panel'); p.classList.remove('hidden');
