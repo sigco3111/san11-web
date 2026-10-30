@@ -86,7 +86,7 @@ for (let y=0; y<N; y++) for (let x=0; x<N; x++){
   const dCity = Math.hypot(x-CX, y-CY);
   if (dCity < 3.4) h = 2;                                                    // 도시 대지 평탄
   else if (dCity < 4.6) h = Math.max(1, Math.min(h, 2));
-  if (Math.abs(x - riverX(y)) < 1.15) h = 0;                                 // 강바닥
+  if (dCity > 5.5 && Math.abs(x - riverX(y)) < 1.15) h = 0;                 // 강바닥 (도시 주변 제외)
   H[i] = h;
   if (h>=2 && dCity>5 && smooth(x*0.3+40, y*0.3+17) > 0.62) FOREST[i]=1;
 }
@@ -152,7 +152,7 @@ const wx = x => (x-CX)*CELL, wz = y => (y-CY)*CELL;
 
 // ---------- 숲 ----------
 async function buildForest(){
-  const names = ["tree_default","tree_cone_dark","tree_detailed_dark"];
+  const names = ["tree_default","tree_default","tree_detailed_dark","tree_cone_dark"];
   const nodes = await Promise.all(names.map(loadGlb));
   const bush = await loadGlb("plant_bush"), grass = await loadGlb("grass_large"), stone = await loadGlb("stone_tallE");
   for (let y=1; y<N-1; y++) for (let x=1; x<N-1; x++){
@@ -160,7 +160,7 @@ async function buildForest(){
     if (!FOREST[i]) continue;
     const n = 2 + Math.floor(hash(x*7,y*3)*3);
     for (let k=0;k<n;k++){
-      const t = nodes[Math.floor(hash(x*5+k, y*11)*3)];
+      const t = nodes[Math.floor(hash(x*5+k, y*11)*nodes.length)];
       place(t, wx(x)+(hash(x+k*9,y)-0.5)*CELL*0.8, cellTop(x,y), wz(y)+(hash(x,y+k*13)-0.5)*CELL*0.8,
             6.4+hash(x*17+k,y*5)*2.2, hash(x+k,y*7+k)*6.28);
     }
