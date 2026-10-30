@@ -1,4 +1,4 @@
-import { Game, UNIT_TYPES, ITEMS, FACILITIES, AB_BRANCHES, AB_P, AB_SKILL, isWaterAt, isSeaAt, isRiverAt, isFordAt, ARTS, FIELD_FACS } from '../js/game.js';
+import { RULES, Game, UNIT_TYPES, ITEMS, FACILITIES, AB_BRANCHES, AB_P, AB_SKILL, isWaterAt, isSeaAt, isRiverAt, isFordAt, ARTS, FIELD_FACS } from '../js/game.js';
 import { aiThink } from '../js/ai.js';
 import { readFileSync } from 'fs';
 const officers = {}; for (const o of JSON.parse(readFileSync('data/officers670.json'))) officers[o.idx] = o;
@@ -1090,10 +1090,12 @@ if (g.units.find(u => u.id === 9999) && g.units.find(u => u.id === 9999).qi === 
   const ec = g21.cities.find(c => c.force === ef);
   me._tacTurn = -1; me.x = ec.lon - 1; me.z = ec.lat;
   const ct0 = ec.troops, ch0 = ec.hp;
+  if (g21.fireTactic(me.id, { type: 'city', id: ec.id }) || ec.troops !== ct0) { console.log('FAIL: R15 R34 규칙: 비병기 도시 전법 차단'); process.exit(1); } // R34: 도시 대상 전법은 병기만
+  { const ld = g21.officers[me.officers[0]]; ld.apt = ld.apt ?? {}; for (let k = 0; k < 12; k++) ld.apt[k] = 'S'; me.type = 'catapult'; me.qi = 100; me._tacTurn = -1; }
   if (!g21.fireTactic(me.id, { type: 'city', id: ec.id }) || ec.troops >= ct0 || ec.hp >= ch0) { console.log('FAIL: R15 도시 전법', ct0, ec.troops, ch0, ec.hp); process.exit(1); }
   // 함락: 잔여 병력·내구 소진 → 점령
-  me._tacTurn = -1; ec.troops = 100; ec.hp = 10;
-  if (!g21.fireTactic(me.id, { type: 'city', id: ec.id }) || ec.force !== pf) { console.log('FAIL: R15 직접 전법 함락', ec.force); process.exit(1); }
+  me._tacTurn = -1; me.qi = 100; ec.force = ef; ec.troops = 100; ec.hp = 10;
+  const fr = g21.fireTactic(me.id, { type: 'city', id: ec.id }); if (!fr || ec.force !== pf) { console.log('FAIL: R15 직접 전법 함락', ec.force, fr, me.qi, me.type, pf, me.force, ec.troops, ec.hp); process.exit(1); }
   // 화계: 성공(확률 스텁 0) — 기력 -30, 병력 6% 소각
   const rand0 = Math.random;
   const intIdx = Object.values(g21.officers).find(o => o.state?.force === pf && o.int >= 90)?.idx ?? leadIdx;
@@ -1797,5 +1799,27 @@ if (g.units.find(u => u.id === 9999) && g.units.find(u => u.id === 9999).qi === 
   for (let i = 0; i < 40 && !aiHit; i++) { y.qi = 100; y._stratTurn = -1; y.troops = 5000; a2.troops = 5000; aiThink(g, e0); aiHit = a2.troops < 5000 && y.qi <= 90; }
   if (!aiHit) fail('AI 복병 미사용 (a2.troops=' + a2.troops + ', y.qi=' + y.qi + ')');
   console.log('R33 복병 게이트 PASS (숲/병종 조건, 7% 피해+기력 -20, 기력 10, 턴당 1회, 기병·병기·숲 밖 불가, AI 복병 사용)');
+}
+// === R34: 기본 공격/전법 분리(도시 대상 전법은 병기만) 게이트 ===
+{
+  const fail = m => { console.log('FAIL: R34 ' + m); process.exit(1); };
+  if (RULES.cityTacticSiegeOnly !== true) fail('규칙 기본값');
+  const mkg = () => { const g = new Game(JSON.parse(JSON.stringify(scen)), JSON.parse(JSON.stringify(officers)), {}, 0); g.units = []; return g; };
+  const run = (type, n) => {
+    let tacLogs = 0, direct = 0;
+    for (let i = 0; i < n; i++) {
+      const g = mkg(); const f0 = g.playerForce; const c = g.cities.find(c => c.force != null && c.force !== f0); const oi = g.forceCities(f0)[0].officers[0];
+      const lead = g.officers[oi]; lead.war = 100; lead.apt = {}; for (let k = 0; k < 12; k++) lead.apt[k] = 'S'; c.troops = 60000; c.hp = c.maxhp = 100000;
+      const u = { id: 1, force: f0, officers: [oi], troops: 5000, type, x: c.lon, z: c.lat, path: [], tx: c.lon, tz: c.lat, targetCity: c.id, label: 'M', qi: 100, conf: 0 };
+      g.units.push(u); g.log = (m) => { if (m.includes('【전법】')) tacLogs++; };
+      if (g.fireTactic(u.id, { type: 'city', id: c.id })) direct++;
+      g.stepUnit(u);
+    }
+    return { tacLogs, direct };
+  };
+  const sp = run('spear', 60), cv = run('cav', 60), bw = run('bow', 60), ct = run('catapult', 60);
+  if (sp.tacLogs || sp.direct || cv.tacLogs || cv.direct || bw.tacLogs || bw.direct) fail('육군/기병/노병이 도시 대상 전법 사용 ' + JSON.stringify({ sp, cv, bw }));
+  if (!ct.direct) fail('병기 직접 전법 불가');
+  console.log('R34 기본공격/전법 분리 게이트 PASS (창·기·노 도시 전법 0회, 투석기 직접 전법 ' + ct.direct + '/60)');
 }
 console.log('sample logs:'); for (const l of g.logs.slice(-8)) console.log(' ', l.t, l.msg);
