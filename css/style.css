@@ -34,3 +34,5 @@ button.big { font-size:20px; padding:14px 44px; }
 #modal .box { background:#26211a; border:1px solid #d4af37; border-radius:8px; padding:24px; max-width:400px; text-align:center; display:flex; flex-direction:column; gap:12px; }
 .back { margin-top:8px; }
 select { background:#3a3226; color:#e8e0d0; border:1px solid #6b5d43; font-family:inherit; padding:3px 6px; }
+
+#btn-rot-l, #btn-rot-r { padding:5px 10px !important; font-size:15px !important; line-height:1; }
