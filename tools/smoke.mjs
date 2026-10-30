@@ -92,4 +92,32 @@ if (g.units.find(u => u.id === 9999) && g.units.find(u => u.id === 9999).qi === 
   if (!(inc1 > inc0)) { console.error('FAIL: 통상 수입 보정', inc0, inc1); process.exit(1); }
   console.log('수입 특기 확인: 통상 적용 전', inc0, '→ 후', inc1);
 }
+// R2 기교 연구 (결정적)
+{
+  const g3 = new Game(scen, officers, {}, 0);
+  const F = g3.forces[0];
+  const cap = g3.forceCities(0).sort((a, b) => b.gold - a.gold)[0];
+  F.techP = 1500; cap.gold = 5000;
+  const ok = g3.researchTech(0, '창병');
+  if (!(ok && F.techs['창병'] === 1 && F.techP === 500 && cap.gold === 4000)) { console.error('FAIL: 기교 연구 1단계', { ok, techP: F.techP, gold: cap.gold }); process.exit(1); }
+  if (g3.researchTech(0, '창병')) { console.error('FAIL: 기교P 부족인데 연구 성공'); process.exit(1); }
+  const u = { force: 0, type: 'spear', officers: [F.ruler] };
+  const m1 = g3.unitTechAtk(u);
+  if (!(Math.abs(m1 - 1.05) < 1e-9)) { console.error('FAIL: 창병 1단계 공격 보정', m1); process.exit(1); }
+  F.techs['연병'] = 2; F.techs['발명'] = 3; F.techs['화공'] = 1; F.techs['방위'] = 4;
+  const p0 = F.techP; g3.gainTechP(0, 25);
+  if (F.techP !== p0 + 25) { console.error('FAIL: 기교P 획득'); process.exit(1); }
+  console.log('기교 연구 확인: 창병 1단계 공격 x' + m1.toFixed(2) + ', 기교P 소비/획득·금 차감·단계 반영 PASS');
+}
+// R2 AI 기교 연구 (결정적): 같은 비용·효과 규칙으로 AI도 연구 수행
+{
+  const g4 = new Game(scen, officers, {}, 0);
+  const F4 = g4.forces[1];
+  const cap4 = g4.forceCities(1).sort((a, b) => b.gold - a.gold)[0];
+  F4.techP = 2000; cap4.gold = 9000;
+  aiThink(g4, 1);
+  const total = Object.values(F4.techs).reduce((x, y) => x + y, 0);
+  if (total < 1) { console.error('FAIL: AI 기교 연구 미수행'); process.exit(1); }
+  console.log('AI 기교 연구 확인:', JSON.stringify(Object.entries(F4.techs).filter(([, v]) => v > 0)), '잔여P', F4.techP);
+}
 console.log('sample logs:'); for (const l of g.logs.slice(-8)) console.log(' ', l.t, l.msg);
