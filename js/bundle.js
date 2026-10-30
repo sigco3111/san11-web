@@ -868,7 +868,7 @@ class Game {
       const data = {
         scenId: this.scenId, year: this.year, month: this.month, dan: this.dan, turn: this.turn,
         cities: this.cities, forces: this.forces, units: this.units, nextUnitId: this.nextUnitId,
-        playerForce: this.playerForce, delegated: this.delegated, logs: this.logs.slice(-60),
+        playerForce: this.playerForce, delegated: this.delegated, deadAck: this.deadAck, logs: this.logs.slice(-60),
         officerStates: Object.fromEntries(Object.entries(this.officers).filter(([,o]) => o.state).map(([i,o]) => [i, o.state])),
       };
       localStorage.setItem(SAVE_KEY, JSON.stringify(data));
@@ -1069,12 +1069,12 @@ function setAuto(on) {
 function checkGameOver() {
   if (game.over) return;
   const f = game.forces[game.playerForce];
-  if (f && !f.alive) {
+  if (f && !f.alive && !game.deadAck) {
     const others = game.aliveForces();
     if (others.length === 0) { endModal('천하가 정리되었습니다.'); return; }
     modal(`【${game.forceName(f.id)}】이(가) 멸망했습니다.`, [
-      ['다른 세력으로 계속', () => { game.delegated = true; refreshHud(); setAuto(true); }],
-      ['관전만 계속', () => { game.delegated = true; refreshHud(); setAuto(true); }],
+      ['다른 세력으로 계속', () => { game.deadAck = true; game.delegated = true; refreshHud(); setAuto(true); }],
+      ['관전만 계속', () => { game.deadAck = true; game.delegated = true; refreshHud(); setAuto(true); }],
       ['게임 종료', () => endModal('게임을 종료했습니다. 타이틀로 돌아갑니다.')],
     ]);
   }
@@ -1215,7 +1215,7 @@ async function boot() {
     $('btn-continue').onclick = () => {
       const d = JSON.parse(localStorage.getItem(SAVE_KEY));
       const g = new Game(DATA.scenarios[d.scenId], DATA.officers, DATA.skills, d.playerForce);
-      Object.assign(g, { year: d.year, month: d.month, dan: d.dan, turn: d.turn, cities: d.cities, forces: d.forces, units: d.units, nextUnitId: d.nextUnitId, playerForce: d.playerForce, delegated: d.delegated, logs: d.logs });
+      Object.assign(g, { year: d.year, month: d.month, dan: d.dan, turn: d.turn, cities: d.cities, forces: d.forces, units: d.units, nextUnitId: d.nextUnitId, playerForce: d.playerForce, delegated: d.delegated, logs: d.logs, deadAck: d.deadAck });
       g.cityById = {}; g.cities.forEach(c => g.cityById[c.id] = c);
       for (const [i, st] of Object.entries(d.officerStates)) if (DATA.officers[i]) DATA.officers[i].state = st;
       game = g; enterGame(); refreshAll();
