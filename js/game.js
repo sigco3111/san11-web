@@ -74,7 +74,12 @@ export const STRATS = {
 
 // === 기교 연구 (자체 수치) ===
 // R23: 개별 기교 (설계 106행 예시 명칭, 비용·효과는 자체) - 기교P+금으로 연구
-export const ARTS = { '난소행군': { p: 800, gold: 2000, desc: '강·여울 도하 감속 완화 (깊은 강 이동 0.35→0.8, 여울 0.6→0.8, 경로 비용 완화)' } };
+export const ARTS = {
+  '난소행군': { p: 800, gold: 2000, desc: '강·여울 도하 감속 완화 (깊은 강 이동 0.35→0.8, 여울 0.6→0.8, 경로 비용 완화)' },
+  '석벽술':   { p: 600, gold: 1500, desc: '야전 시설 「석벽」을 지을 수 있음 (적 육군 통행을 크게 방해)' },
+  '정예창병': { p: 700, gold: 1800, desc: '창병·극병 공격력 +8%' },
+  '군제개혁': { p: 900, gold: 2500, desc: '군사 커맨드(출진·징병·병기·선박 생산) 행동력 15% 절감' },
+};
 export const TECH_BRANCHES = ['창병','극병','노병','기병','연병','발명','방위','화공'];
 export const TECH_P = [1000, 2000, 3000, 5000];      // 단계별 필요 기교P
 // === R13: 능력연구 4계통 (설계안 120행 PK 채택, 계통·단계·수치는 자체 설계) ===
@@ -95,6 +100,7 @@ const TYPE2TECH = { spear: '창병', pike: '극병', bow: '노병', cav: '기병
 export const FIELD_FACS = {
   '진':     { cost: 150, turns: 1, hp: 400, r: 3.0, desc: '반경 3 안 아군 부대가 받는 피해 -8%, 매 턴 기력 +3' },
   '채':     { cost: 350, turns: 2, hp: 900, r: 3.5, desc: '반경 3.5 안 아군 부대가 받는 피해 -15%, 매 턴 기력 +5' },
+  '석벽':   { cost: 300, turns: 2, hp: 900, r: 1.2, art: '석벽술', desc: '(기교 「석벽술」 필요) 적 육군이 반경 1.2 안에서 이동 속도 15%로 감소 (강한 통행 방해)' },
   '토루':   { cost: 120, turns: 1, hp: 300, r: 1.4, desc: '적 육군이 반경 1.4 안에서 이동 속도 40%로 감소 (통행 방해)' },
   '투석대': { cost: 300, turns: 2, hp: 500, r: 3.0, desc: '매 턴 반경 3 안 적 부대 병력의 4%(최소 100) 피해' },
 };
@@ -289,6 +295,7 @@ export class Game {
   canBuildField(u, type) { // 야전 시설 건설 가능 여부 (불가 사유 반환, 가능하면 null)
     const sp = FIELD_FACS[type]; if (!sp) return '알 수 없는 시설';
     if (!u || u.force < 0 || SHIP_TYPES.has(u.type)) return '육군 부대만 건설할 수 있습니다';
+    if (sp.art && !this.forces[u.force]?.arts?.[sp.art]) return `기교 「${sp.art}」가 필요합니다`;
     if (u.building) return '이미 건설 중입니다';
     if ((u.conf ?? 0) > 0) return '혼란 중에는 건설할 수 없습니다';
     if (isWaterAt(u.x, u.z)) return '물 위에는 지을 수 없습니다';
@@ -369,8 +376,9 @@ export class Game {
   floodTurn() { for (const c of this.cities) if ((c.flood ?? 0) > 0) { if (c._floodOwner !== undefined && c._floodOwner !== c.force) { c.flood = 0; continue; } /* 점령되면 침수 종료(새 소유자에게 이어지지 않음) */ c.flood--; const d = Math.round(c.troops * 0.03); c.troops = Math.max(0, c.troops - d); this.log(`【수공】${josa(c.name_ko, ['이','가'])} 침수 중 — 병사 ${d} 감소`, c.force === this.playerForce); } }
   fieldSlow(u) { // 토루 통행 방해 배율
     if (u.slowT > 0) { u.slowT--; return 0.5; } // R28: 낙석
-    for (const f of this.fieldFacs ?? []) if (f.type === '토루' && f.left <= 0 && f.force !== u.force && Math.hypot(u.x - f.x, u.z - f.z) <= FIELD_FACS['토루'].r) return 0.4;
-    return 1;
+    let m = 1;
+    for (const f of this.fieldFacs ?? []) if ((f.type === '토루' || f.type === '석벽') && f.left <= 0 && f.force !== u.force && Math.hypot(u.x - f.x, u.z - f.z) <= FIELD_FACS[f.type].r) m = Math.min(m, f.type === '석벽' ? 0.15 : 0.4);
+    return m;
   }
   aiFieldBuild() { // AI도 같은 buildField로 건설: 적이 가까운 정지 부대가 4턴마다 투석대/채/진/토루 순으로 시도
     if (this.turn % 4 !== 0) return;
@@ -379,12 +387,12 @@ export class Game {
       const nc = this.cities.find(c => c.force != null && c.force !== u.force && this.canBreakLevee(u, c) === null);
       if (nc && this.breakLevee(u.id, nc.id)) continue; // R28: AI도 같은 breakLevee
       if (!this.units.some(v => v.force !== u.force && v.force !== -1 && Math.hypot(v.x - u.x, v.z - u.z) < 4)) continue;
-      for (const t of ['투석대', '채', '진', '토루', '불화살함정', '낙석']) { if (this.buildField(u.id, t)) break; }
+      for (const t of ['투석대', '채', '진', '석벽', '토루', '불화살함정', '낙석']) { if (this.buildField(u.id, t)) break; }
     }
   }
   // === 기교 (자체 수치) ===
   techLv(fid, b) { return this.forces[fid]?.techs?.[b] ?? 0; }
-  unitTechAtk(u) { const b = TYPE2TECH[u.type]; return b ? 1 + 0.05 * this.techLv(u.force, b) : 1; }
+  unitTechAtk(u) { const b = TYPE2TECH[u.type]; return (b ? 1 + 0.05 * this.techLv(u.force, b) : 1) * ((u.type === 'spear' || u.type === 'pike') && this.forces[u.force]?.arts?.['정예창병'] ? 1.08 : 1); }
   gainTechP(fid, n) { const f = this.forces[fid]; if (f?.alive) f.techP = (f.techP ?? 0) + n; }
   riverMult(u) { if (this.forces[u.force]?.arts?.['난소행군']) return 0.8; return isFordAt(u.x, u.z) ? 0.6 : 0.35; }
   researchArt(fid, name) { // R23: 개별 기교 연구 (기교P+금, 1회)
@@ -396,6 +404,7 @@ export class Game {
     this.log(`【기교】${this.forceName(fid)} 「${name}」 연구 완료 (기교P ${a.p}·금 ${a.gold} 소비)`, fid === this.playerForce);
     return true;
   }
+  researchNextArt(fid) { for (const n of Object.keys(ARTS)) if (this.researchArt(fid, n)) return true; return false; } // R30: AI 개별 기교 연구
   researchTech(fid, b) { // 기교P + 금 소비, 계통당 4단계
     const f = this.forces[fid];
     if (!f?.alive || !TECH_BRANCHES.includes(b)) return false;
@@ -1504,7 +1513,7 @@ export class Game {
   forceFacLv(fid, t) { return this.cities.filter(c => c.force === fid).reduce((s, c) => s + this.cityFacLv(c, t), 0); }
   apMult(c, cat) { // R13: 군사부·인재부·외교부 — 해당 커맨드 행동력 25% 절감 (자체)
     const fac = { military: '군사부', personnel: '인재부', diplo: '외교부' }[cat];
-    return fac && this.cityFac(c, fac).length ? 0.75 : 1;
+    return (fac && this.cityFac(c, fac).length ? 0.75 : 1) * (cat === 'military' && c?.force != null && this.forces[c.force]?.arts?.['군제개혁'] ? 0.85 : 1);
   }
   absorbFacility(cityId, fi1, fi2) { // R13 흡수합병: 같은 완성 시설 2개를 합쳐 Lv+1 (최대 3), 금 200·AP 10 (자체 수치)
     const c = this.cityById[cityId], f = this.forces[c?.force];
