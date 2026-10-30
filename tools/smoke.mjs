@@ -95,6 +95,7 @@ console.log('tactics fired:', tacN, '| stratagems fired:', stratN, '| field batt
       off.state = off.state ?? {};
       off.state.items = [...new Set([...(off.state.items ?? []), 'yuxi'])].slice(0, 3);
       const before = f.techP ?? 0;
+      f.ab = { '공격': 3, '방어': 3, '계략': 3, '내정': 3 }; // R13: 월 자동 능력연구의 기교P 소비를 차단해 결정적으로
       for (let t = 0; t < 3; t++) { g.endTurn((gg, fid) => { if (fid !== f.id) aiThink(gg, fid); }); if (g.pendingDuel) g.duelAuto(g.pendingDuel); if (g.pendingDebate) g.debateAuto(g.pendingDebate); } // 월 처리는 3순(1개월)마다. 대상 세력의 AI 기교 연구(techP 소비)는 차단해 결정적으로
       if (!((f.techP ?? 0) >= before + 10)) { console.error('FAIL: 옥새 기교P 월+10', before, f.techP); process.exit(1); }
       off.state.items = off.state.items.filter(i => i !== 'yuxi');
