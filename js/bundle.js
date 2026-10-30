@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { loadGLBAssets } from './assets-3d.js';
+import { loadGLBAssets, applyEnvironment } from './assets-3d.js';
 const LON0 = 100, LON1 = 126.5, LAT0 = 21.5, LAT1 = 43;
 function toWorld(lon, lat) {
 const x = (lon - (LON0+LON1)/2) * 3.1;
