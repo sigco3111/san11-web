@@ -1,15 +1,25 @@
 // 진입점: 화면 전환·UI·지도 연결
-import { Map3D, toWorld } from './map3d.js?v=r30';
-import { Game, SAVE_KEY, forceColor, UNIT_TYPES, ARTS, FIELD_FACS, TRAPS, SHIP_TYPES, josa, josaRo, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL } from './game.js?v=r30';
-import { aiThink } from './ai.js?v=r30';
+import { Map3D, toWorld } from './map3d.js?v=r31';
+import { Game, SAVE_KEY, forceColor, UNIT_TYPES, ARTS, FIELD_FACS, TRAPS, SHIP_TYPES, josa, josaRo, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL } from './game.js?v=r31';
+import { aiThink } from './ai.js?v=r31';
 
 const $ = id => document.getElementById(id);
 let DATA = null, game = null, map = null, selectedUnit = null, autoTimer = null, pendingFire = null; // R15: 직접 전법·계략 대기
 
+const BUILD_ID = 'r31'; // 빌드 ID (index.html의 meta[name=build]와 같아야 함 - 오래된 캐시된 index와 새 스크립트의 혼합 감지)
+function checkBuildSkew() {
+  const idx = document.querySelector('meta[name="build"]')?.content;
+  if (idx === BUILD_ID) return;
+  const tried = sessionStorage.getItem('cheonha-xi-web.skew');
+  if (!tried) { sessionStorage.setItem('cheonha-xi-web.skew', '1'); location.replace(location.pathname + '?fresh=' + Date.now()); return; } // 1회만 자동 새로고침
+  const b = document.createElement('div'); b.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99;background:#7a2b2b;color:#fff;padding:8px;text-align:center;font-size:14px';
+  b.textContent = '게임 파일 버전이 서로 맞지 않습니다. 브라우저 캐시를 지우고 새로고침해 주세요.'; document.body.appendChild(b);
+}
+checkBuildSkew();
 async function loadData() {
   const [officers, skills, portraits, s184, s190, s251] = await Promise.all(
     ['data/officers670.json','data/skills.json','data/portraits.json','data/scenario-184.json','data/scenario-190.json','data/scenario-251.json']
-      .map(u => fetch(u + '?v=r30').then(r => r.json())));
+      .map(u => fetch(u + '?v=r31').then(r => r.json())));
   const byIdx = {};
   for (const o of officers) byIdx[o.idx] = o;
   DATA = { officers: byIdx, skills, portraits, scenarios: { '184': s184, '190': s190, '251': s251 } };
