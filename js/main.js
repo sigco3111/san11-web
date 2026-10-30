@@ -63,9 +63,7 @@ function startGame(scenId, fid) {
   enterGame();
   game.log(`${DATA.officers[game.forces[fid].ruler].name_ko}(으)로 ${scenId}년 시나리오를 시작합니다.`, true);
   const cap = game.forceCities(fid)[0];
-  console.log('[probe] startGame cap=', cap && cap.id, cap && cap.lon, cap && cap.lat);
   if (cap) map.focusCity(cap);
-  console.log('[probe] after focus view=', map.view, 'target=', map.camTarget.x.toFixed(1), map.camTarget.z.toFixed(1));
   refreshAll();
 }
 function enterGame() {
