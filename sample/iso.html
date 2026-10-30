@@ -215,9 +215,9 @@ scene.add(cityLabel);
 // ---------- 직교 아이소메트릭 카메라 ----------
 let az = Math.PI/4;                            // 45°
 const EL = Math.atan(1/Math.SQRT2);            // 35.264°
-let view = 300, zoom = 1;
+let view = 300, zoom = 2.1;
 const cam = new THREE.OrthographicCamera();
-const target = new THREE.Vector3(wx(CX), 12, wz(CY)+18);
+const target = new THREE.Vector3(wx(CX), 10, wz(CY)+10);
 function updateCam(){
   renderer.setSize(innerWidth, innerHeight);
   const aspect = innerWidth/innerHeight;
