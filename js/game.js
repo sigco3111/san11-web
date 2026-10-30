@@ -19,6 +19,8 @@ export const UNIT_TYPES = {
   lou:  { name: '누선', atk: 0.9, def: 0.9, move: 1.1, cost: { lous: 1 }, perUnit: true,  ship: true },
   dou:  { name: '투함', atk: 1.1, def: 1.0, move: 1.0, cost: { dous: 1 }, perUnit: true,  ship: true },
 };
+// R34: 기본 공격과 전법 분리 - 도시는 기본 공격이 원칙, 도시 대상 전법은 병기(공성) 부대만 (설계 64~72행: 전법은 부대 대상, 병기는 거점 대상)
+export const RULES = { cityTacticSiegeOnly: true };
 export const SIEGE_TYPES = new Set(['ram', 'tower', 'beast', 'catapult']);
 export const SHIP_TYPES = new Set(['junk', 'lou', 'dou']);
 // 병기 생산·선박 건조 (자체 비용). 특색 도시는 25% 할인 (설계안: 특색 병장 생산 비용 감소, 병기·배는 자동 생산 제외)
@@ -1125,7 +1127,7 @@ export class Game {
     // 전법: 병종 적성 B 이상 + 기력 소모, 무력이 높을수록 발동 잘됨
     const tac = TACTICS[u.type];
     const aptLv = u.type === 'sword' ? 1 : APT_LV(lead.apt?.[APT_IDX[u.type]]);
-    if ((u._tacTurn ?? -1) !== this.turn && aptLv >= (tac.minApt ?? 1) && u.qi >= tac.qi && Math.random() < Math.min(0.55, 0.15 + lead.war/250)) {
+    if ((!RULES.cityTacticSiegeOnly || SIEGE_TYPES.has(u.type)) && (u._tacTurn ?? -1) !== this.turn && aptLv >= (tac.minApt ?? 1) && u.qi >= tac.qi && Math.random() < Math.min(0.55, 0.15 + lead.war/250)) {
       u.qi -= tac.qi;
       this.gainMerit(u.officers[0], MERIT.tactic);
       dmg = Math.round(dmg * tac.mult);
@@ -1325,7 +1327,7 @@ export class Game {
     }
     if (target.type === 'city') {
       const c = this.cityById[target.id];
-      if (!c || c.force === u.force || (c.force != null && this.isPeace(u.force, c.force)) || !inRange(c.lon, c.lat)) return false;
+      if ((RULES.cityTacticSiegeOnly && !SIEGE_TYPES.has(u.type)) || !c || c.force === u.force || (c.force != null && this.isPeace(u.force, c.force)) || !inRange(c.lon, c.lat)) return false;
       const ut = UNIT_TYPES[u.type];
       let dmg = Math.round(u.troops * 0.12 * ut.atk * (0.7 + lead.war/150) * this.aptMult(u) * this.unitDmgMult(u, true) * this.unitItemAtk(u) * this.unitTechAtk(u) * this.unitRelMult(u) * (1 + 0.1 * this.techLv(u.force, '발명'))); // 공성 산식과 동일
       dmg = Math.round(dmg * tac.mult);
