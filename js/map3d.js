@@ -1,6 +1,6 @@
 // 3D 저폴리 지도 엔진 (Three.js) - 고정 등각 아이소메트릭 + 계단식 지형 + 성곽/숲
 import * as THREE from 'three';
-import { loadGLBAssets, applyEnvironment } from './assets-3d.js?v=r52';
+import { loadGLBAssets, applyEnvironment } from './assets-3d.js?v=r53';
 
 const LON0 = 100, LON1 = 126.5, LAT0 = 21.5, LAT1 = 43;
 export function toWorld(lon, lat) {
@@ -401,6 +401,9 @@ export class Map3D {
     }
     for (const k of Object.keys(per)) if (per[k].length) this.forestGroup.add(instancedFromScene(A[k], per[k]));
     this.forestGrid = grown;
+  }
+  mountainAtLL(lon, lat) { // 간도: 렌더 지형 높이 2 이상(구릉·산) 육지 셀 (엔진 규칙용)
+    if (!this.levels) return false; const [x, z] = toWorld(lon, lat); return this.levelAtWorld(x, z) >= 2;
   }
   forestAtLL(lon, lat) { // 엔진 규칙용 숲 판정 (렌더 숲 셀과 동일)
     if (!this.forestGrid) return false;
