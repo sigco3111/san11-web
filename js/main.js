@@ -4,7 +4,7 @@ import { Game, SAVE_KEY, forceColor, UNIT_TYPES, josa, TECH_BRANCHES, TECH_P, TE
 import { aiThink } from './ai.js';
 
 const $ = id => document.getElementById(id);
-let DATA = null, game = null, map = null, selectedUnit = null, autoTimer = null;
+let DATA = null, game = null, map = null, selectedUnit = null, autoTimer = null, pendingFire = null; // R15: 직접 전법·계략 대기
 
 async function loadData() {
   const [officers, skills, portraits, s184, s190, s251] = await Promise.all(
@@ -267,6 +267,15 @@ function modal(text, buttons) {
 function onPick(nx, ny) {
   if (!game || game.over) return;
   const hit = map.pick(nx, ny);
+  if (pendingFire) { // R15: 직접 전법·계략 대상 선택
+    const pf = pendingFire; pendingFire = null;
+    let ok = false;
+    if (hit && hit.type === 'unit') ok = pf.kind === 'tactic' ? game.fireTactic(pf.uid, { type: 'unit', id: hit.id }) : game.fireStrat(pf.uid, pf.kind, { type: 'unit', id: hit.id });
+    else if (hit && hit.type === 'city') ok = pf.kind === 'tactic' ? game.fireTactic(pf.uid, { type: 'city', id: hit.id }) : game.fireStrat(pf.uid, pf.kind, { type: 'city', id: hit.id });
+    selectedUnit = null;
+    if (ok) refreshAll(); else { game.log('대상이 유효하지 않습니다 (인접한 적 부대·도시만 가능)', true); refreshLog(); showUnitPanel(pf.uid); }
+    return;
+  }
   if (!hit) { $('panel').classList.add('hidden'); selectedUnit = null; return; }
   if (hit.type === 'unit') {
     const u = game.units.find(x => x.id === hit.id);
@@ -627,8 +636,19 @@ function showUnitPanel(uid) {
     <p>소속: ${game.forceName(u.force)} · 병력 ${u.troops.toLocaleString()}<br>
     부장: ${u.officers.map(i => DATA.officers[i].name_ko).join(', ')}<br>기력 ${u.qi ?? 100} / 100${(u.conf ?? 0) > 0 ? ` · <span style='color:#e66'>혼란 ${u.conf}턴</span>` : ''}</p>
     ${mine ? '<p style="color:#ffd700">목표 도시를 클릭하면 이동 명령을 내립니다.</p>' : ''}
+    ${mine && game.tacticInfo?.(u) ? `<p><button class="cmd" id="up-tac">전법 ${game.tacticInfo(u).tac.name} (기력 ${game.tacticInfo(u).tac.qi})</button></p>` : ''}
+    ${mine && (u.conf ?? 0) <= 0 && u.officers.some(i => (DATA.officers[i]?.int ?? 0) >= 75) && (u.qi ?? 100) >= 30 ? '<p><button class="cmd" id="up-fire">계략 화계 (기력 30)</button></p>' : ''}
+    ${mine && (u.conf ?? 0) <= 0 && u.officers.some(i => (DATA.officers[i]?.int ?? 0) >= 80) && (u.qi ?? 100) >= 25 ? '<p><button class="cmd" id="up-conf">계략 혼란 (기력 25)</button></p>' : ''}
     <p><button class="cmd" id="up-close">닫기</button></p>`;
-  $('up-close').onclick = () => { $('panel').classList.add('hidden'); selectedUnit = null; };
+  $('up-close').onclick = () => { $('panel').classList.add('hidden'); selectedUnit = null; pendingFire = null; };
+  const armFire = (kind, label) => { // R15: 대상 선택 모드 진입
+    pendingFire = { uid: u.id, kind };
+    p.innerHTML = `<h3>${u.label} — ${label}</h3><p style="color:#ffd700">인접한 적 부대나 도시를 클릭하면 발동합니다.</p><p><button class="cmd" id="up-cancel">취소</button></p>`;
+    $('up-cancel').onclick = () => { pendingFire = null; showUnitPanel(u.id); };
+  };
+  if ($('up-tac')) $('up-tac').onclick = () => armFire('tactic', `전법 ${game.tacticInfo(u).tac.name}`);
+  if ($('up-fire')) $('up-fire').onclick = () => armFire('fire', '계략 화계');
+  if ($('up-conf')) $('up-conf').onclick = () => armFire('confuse', '계략 혼란');
 }
 
 // === 부트 ===
