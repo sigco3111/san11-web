@@ -116,10 +116,10 @@ export class Map3D {
     this.view = 84;
     this.camTarget = new THREE.Vector3(8, 0, 4);
     this.camera = new THREE.OrthographicCamera();
-    this.scene.add(new THREE.HemisphereLight(0xcfe8ff, 0x3a2f1a, 1.1));
-    const sun = new THREE.DirectionalLight(0xfff2d8, 1.35);
+    this.scene.add(new THREE.HemisphereLight(0xe6f0ee, 0x3a2f1a, 0.85));
+    const sun = new THREE.DirectionalLight(0xfff2d8, 1.25);
     sun.position.set(50, 70, 25);
-    const fill = new THREE.DirectionalLight(0xf2ede2, 0.5);
+    const fill = new THREE.DirectionalLight(0xf2ede2, 0.35);
     fill.position.set(-60, 40, -35);
     this.scene.add(fill);
     sun.castShadow = true;
