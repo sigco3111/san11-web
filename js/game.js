@@ -155,7 +155,7 @@ export const ITEMS = [
 ]; // weapon=부대 공격 +5% · seal=군주 보유 시 기교P 월+10 (즉시 효과) / horse·bow·sword·book은 일기토(R10)·설전(R11) 연결 예정
 
 // === 공적·관작 (자체 수치) ===
-const RANKS = [[2,'주자사'],[4,'주목'],[6,'우림중랑장'],[8,'오관중랑장'],[12,'대장군'],[14,'대사마'],[18,'공'],[20,'왕']]; // 설계안 사다리(황제는 R14 통합). 황건 세력은 작위 불가
+const RANKS = [[2,'주자사'],[4,'주목'],[6,'우림중랑장'],[8,'오관중랑장'],[12,'대장군'],[14,'대사마'],[18,'공'],[20,'왕'],[24,'황제']]; // 설계안 97행 사다리 (황제 24+ — 후한 옹립 메커니즘은 보류, 황제 부재 조건만). 황건 세력은 작위 불가
 const MERIT = { develop: 30, recruit: 80, facility: 100, tactic: 40, stratagem: 30, capture: 150 }; // 공적 부여량 (자체 수치)
 const DEBATE_CARDS = { // R11: 설전 화술 (자체 명칭·수치). int=서적 미보유 시 필요 지력, cd=재사용 대기 합
   질타: { dmg: 12 }, 강변: { dmg: 24, cd: 2, int: 80 }, 반박: { counter: 8 }, 경청: { heal: 12, cd: 2 }, 도발: { seal: true, cd: 3, int: 85 },
@@ -192,10 +192,22 @@ export class Game {
     this.pendingJoin = null;  // 턴 경계에서 인계할 세력
     this.logs = [];
     this.over = false;
+    this.chronicle = []; // R14: 연감 — 【】 주요 사건 기록
   }
-  log(msg, mine=false) { this.logs.push({ t: `${this.year}년 ${this.month}월`, msg, mine }); if (this.logs.length > 200) this.logs.shift(); }
+  log(msg, mine=false) {
+    this.logs.push({ t: `${this.year}년 ${this.month}월`, msg, mine }); if (this.logs.length > 200) this.logs.shift();
+    if (msg.includes('【')) { this.chronicle = this.chronicle ?? []; this.chronicle.push({ y: this.year, m: this.month, msg }); if (this.chronicle.length > 300) this.chronicle.shift(); } // R14 연감
+  }
   forceName(fid) { const f = this.forces[fid]; return f ? this.officers[f.ruler].name_ko + '군' : '적병'; }
   forceCities(fid) { return this.cities.filter(c => c.force === fid); }
+  inVision(x, z) { // R14: 전쟁 안개 — 관전(위임) 중엔 전체 공개(설계안 191행), 직접 지휘 시 내 도시·부대 반경 5 (자체 수치)
+    if (this.delegated || this.playerForce == null || !this.forces[this.playerForce]?.alive) return true;
+    const R2 = 25;
+    for (const c of this.cities) if (c.force === this.playerForce && (c.lon - x) ** 2 + (c.lat - z) ** 2 <= R2) return true;
+    for (const u of this.units) if (u.force === this.playerForce && (u.x - x) ** 2 + (u.z - z) ** 2 <= R2) return true;
+    return false;
+  }
+  cityVisible(c) { return c.force === this.playerForce || this.inVision(c.lon, c.lat); } // R14
   forceOfficers(fid) { return Object.values(this.officers).filter(o => o.state && o.state.force === fid); }
   aliveForces() { return Object.values(this.forces).filter(f => f.alive); }
   totalGold(fid) { return this.forceCities(fid).reduce((s,c) => s + c.gold, 0); }
@@ -240,7 +252,7 @@ export class Game {
   gainMerit(i, n) { const st = this.officers[i]?.state; if (st) st.merit = (st.merit ?? 0) + n; }
   meritGrade(i) { return Math.min(8, Math.floor((this.officers[i]?.state?.merit ?? 0) / 500)); } // 공적 500당 1등급 (자체 수치)
   salaryOf(i) { return 10 + this.meritGrade(i) * 5; } // 월 봉록: 기본 10금 + 등급당 5금 (자체 수치)
-  forceRank(fid) { // 소유 도시 수 기준 관작 (황건 제외, 황제 승격은 R14)
+  forceRank(fid) { // 소유 도시 수 기준 관작 (황건 제외, 황제는 24도시 — 설계안 102행)
     const f = this.forces[fid];
     if (!f?.alive || this.forceName(fid).includes('황건')) return null;
     const n = this.cities.filter(c => c.force === fid).length;
@@ -452,9 +464,10 @@ export class Game {
       if (!f.alive) continue;
       const r = this.forceRank(f.id);
       if (r && r !== f.rank) {
+        const emp = r === '황제' && f.rank !== '황제';
         f.rank = r;
-        for (const o of Object.values(this.officers)) if (o.state?.force === f.id) o.state.loyal = Math.min(100, (o.state.loyal ?? 70) + 5);
-        this.log(`【관작】${this.forceName(f.id)}이(가) ${r}(으)로 승진했습니다! 소속 무장 충성 상승`, true);
+        for (const o of Object.values(this.officers)) if (o.state?.force === f.id) o.state.loyal = Math.min(100, (o.state.loyal ?? 70) + (emp ? 10 : 5)); // R14: 황제 즉위는 +10 (자체)
+        this.log(emp ? `【황제】${this.forceName(f.id)}이(가) 황제에 올랐습니다! 소속 무장 충성 대폭 상승, 기교P 매월 +20` : `【관작】${this.forceName(f.id)}이(가) ${r}(으)로 승진했습니다! 소속 무장 충성 상승`, true);
       }
     }
   }
@@ -619,6 +632,7 @@ export class Game {
 
   // === 턴 진행 ===
   endTurn(aiThink) {
+    if (this.over) return; // R14: 게임 종료 후 턴 진행 불가
     if (this.pendingDuel || this.pendingDebate) return; // R10/R11: 일기토·설전 결판 전 턴 진행 불가
     // 전 부대 기력 회복
     for (const u of this.units) { // R13: 훈련장 주둔 부대 +5
@@ -728,6 +742,7 @@ export class Game {
       if (!f.alive) continue;
       const sj = Math.min(3, this.forceFacLv(f.id, '서재'));
       if (sj) this.gainTechP(f.id, sj * 10);
+      if (f.rank === '황제') this.gainTechP(f.id, 20); // R14: 황제 기교P 월 +20 (설계안 97행 '황제 옹립 시 기교P 증가' 취지, 자체 수치)
       f.ab = f.ab ?? { '공격': 0, '방어': 0, '계략': 0, '내정': 0 };
       const abTodo = Object.keys(AB_BRANCHES).filter(b => (f.ab[b] ?? 0) < 3 && (f.techP ?? 0) >= AB_P[f.ab[b] ?? 0] + 300).sort((a, b) => AB_P[f.ab[a] ?? 0] - AB_P[f.ab[b] ?? 0]);
       if (abTodo.length && f.id !== this.playerForce) this.researchAbility(f.id, abTodo[0]); // AI만 자동, 플레이어는 수동
@@ -764,6 +779,15 @@ export class Game {
         f.alive = false;
         this.log(`【${this.forceName(f.id)}】이(가) 멸망했습니다!`, true);
         for (const o of this.forceOfficers(f.id)) { o.state.force = null; o.state.status = 'free'; o.state.found = false; }
+      }
+    }
+    // R14: 천하 통일 판정 — 모든 도시를 한 세력이 제압 (설계안 102행 매뉴얼 문구)
+    if (!this.over) {
+      const owners = new Set(this.cities.map(c => c.force).filter(x => x != null));
+      if (owners.size === 1) {
+        const w = [...owners][0];
+        this.over = true;
+        this.log(`【통일】${this.forceName(w)}이(가) 모든 도시를 제압해 천하를 통일했습니다! (${this.year}년 ${this.month}월, ${this.turn}턴)`, true);
       }
     }
     // 시계
@@ -1303,7 +1327,7 @@ export class Game {
       const data = {
         scenId: this.scenId, year: this.year, month: this.month, dan: this.dan, turn: this.turn,
         cities: this.cities, forces: this.forces, units: this.units, nextUnitId: this.nextUnitId,
-        playerForce: this.playerForce, delegated: this.delegated, deadAck: this.deadAck, logs: this.logs.slice(-60), diplo: this.diplo, itemPool: this.itemPool,
+        playerForce: this.playerForce, delegated: this.delegated, deadAck: this.deadAck, logs: this.logs.slice(-60), diplo: this.diplo, itemPool: this.itemPool, chronicle: this.chronicle, over: this.over, // R14
         officerStates: Object.fromEntries(Object.entries(this.officers).filter(([,o]) => o.state).map(([i,o]) => [i, o.state])),
       };
       localStorage.setItem(SAVE_KEY, JSON.stringify(data));
