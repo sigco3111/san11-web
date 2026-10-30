@@ -25,6 +25,16 @@ export function aiThink(game, fid) {
     const target = free.sort((a, b) => game.recruitChance(c.id, b.idx) - game.recruitChance(c.id, a.idx))[0];
     if (game.recruitChance(c.id, target.idx) >= 0.3) game.recruitOfficer(c.id, target.idx);
   }
+  // 2.7) 기교 연구: 플레이어와 같은 비용·효과 규칙. 주력 병종 계통 우선, 없으면 방어 계통
+  {
+    const cnt = { spear: 0, pike: 0, bow: 0, cav: 0 };
+    for (const u of game.units) if (u.force === fid && cnt[u.type] != null) cnt[u.type]++;
+    const mainType = Object.entries(cnt).sort((x, y) => y[1] - x[1])[0][0];
+    const pref = { spear: '창병', pike: '극병', bow: '노병', cav: '기병' }[mainType];
+    for (const b of [pref, '연병', '방위', '화공', '발명', '창병', '극병', '노병', '기병']) {
+      if (game.researchTech(fid, b)) break;
+    }
+  }
   // 3) 군사: 전방 도시(적과 인접) 병력이 충분하면 공격, 아니면 집결
   const enemyCities = game.cities.filter(c => c.force !== fid);
   for (const c of cities) {
