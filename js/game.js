@@ -1463,7 +1463,7 @@ export class Game {
   autosave() {
     try {
       const data = {
-        scenId: this.scenId, year: this.year, month: this.month, dan: this.dan, turn: this.turn,
+        scenId: this.scenId, year: this.year, month: this.month, dan: this.dan, turn: this.turn, emperor: this.emperor, // R17: 옹립 상태 영속 (구 세이브는 생성자 기본값으로 복원)
         cities: this.cities, forces: this.forces, units: this.units, nextUnitId: this.nextUnitId,
         playerForce: this.playerForce, delegated: this.delegated, deadAck: this.deadAck, logs: this.logs.slice(-60), diplo: this.diplo, itemPool: this.itemPool, chronicle: this.chronicle, over: this.over, unified: this.unified, // R14
         officerStates: Object.fromEntries(Object.entries(this.officers).filter(([,o]) => o.state).map(([i,o]) => [i, o.state])),
