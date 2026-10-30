@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { loadGLBAssets, applyEnvironment } from './assets-3d.js';
+import { loadGLBAssets, applyEnvironment } from './assets-3d.js?v=r17c';
 const LON0 = 100, LON1 = 126.5, LAT0 = 21.5, LAT1 = 43;
 function toWorld(lon, lat) {
 const x = (lon - (LON0+LON1)/2) * 3.1;
@@ -390,19 +390,23 @@ const g = new THREE.Group();
 const mat = c => new THREE.MeshLambertMaterial({ color: c, flatShading: true });
 const add = (geo, color, x=0, y=0, z=0, rx=0, ry=0, rz=0) => { const m = new THREE.Mesh(geo, mat(color)); m.position.set(x, y, z); m.rotation.set(rx, ry, rz); m.castShadow = true; g.add(m); return m; };
 const soldier = (kind) => {
-add(new THREE.ConeGeometry(0.45, 1.0, 5), 0x5a4a3a, 0, 0.65, 0);
+add(new THREE.BoxGeometry(0.3, 0.42, 0.2), 0x3e3226, 0, 0.21, 0);
+add(new THREE.BoxGeometry(0.44, 0.55, 0.26), 0x5a4a3a, 0, 0.7, 0);
+add(new THREE.BoxGeometry(0.5, 0.12, 0.3), 0x6a5a48, 0, 0.98, 0);
+add(new THREE.SphereGeometry(0.16, 6, 5), 0xd8b896, 0, 1.16, 0);
+add(new THREE.ConeGeometry(0.19, 0.26, 6), 0x707078, 0, 1.34, 0);
 if (kind === 'sword') {
-add(new THREE.BoxGeometry(0.08, 0.7, 0.5), 0x8a4a3a, -0.4, 0.7, 0);
-add(new THREE.BoxGeometry(0.1, 0.7, 0.04), 0xd8d8e0, 0.38, 1.0, 0, 0, 0, 0.4);
+add(new THREE.BoxGeometry(0.08, 0.72, 0.5), 0x8a4a3a, -0.34, 0.75, 0);
+add(new THREE.BoxGeometry(0.06, 0.8, 0.05), 0xd8d8e0, 0.36, 1.05, 0, 0, 0, 0.35);
 } else if (kind === 'spear') {
-add(new THREE.CylinderGeometry(0.07, 0.07, 2.0, 5), 0x9a7a4a, 0.34, 1.3, 0);
-add(new THREE.ConeGeometry(0.12, 0.4, 4), 0xd8d8e0, 0.34, 2.5, 0);
+add(new THREE.CylinderGeometry(0.06, 0.06, 2.2, 5), 0x9a7a4a, 0.34, 1.35, 0);
+add(new THREE.ConeGeometry(0.12, 0.42, 4), 0xd8d8e0, 0.34, 2.65, 0);
 } else if (kind === 'pike') {
-add(new THREE.CylinderGeometry(0.07, 0.07, 1.7, 5), 0x9a7a4a, 0.34, 1.2, 0);
-add(new THREE.BoxGeometry(0.55, 0.18, 0.08), 0xd8d8e0, 0.34, 2.0, 0);
+add(new THREE.CylinderGeometry(0.06, 0.06, 1.9, 5), 0x9a7a4a, 0.34, 1.2, 0);
+add(new THREE.BoxGeometry(0.58, 0.18, 0.08), 0xd8d8e0, 0.34, 2.15, 0);
 } else if (kind === 'bow') {
-add(new THREE.TorusGeometry(0.55, 0.07, 5, 12, Math.PI), 0xc09a5a, 0.45, 1.0, 0, 0, 0, Math.PI/2);
-add(new THREE.CylinderGeometry(0.02, 0.02, 1.1, 3), 0xe8e0d0, 0.45, 1.0, 0);
+add(new THREE.TorusGeometry(0.55, 0.06, 5, 12, Math.PI), 0xc09a5a, 0.44, 1.0, 0, 0, 0, Math.PI/2);
+add(new THREE.CylinderGeometry(0.02, 0.02, 1.08, 3), 0xe8e0d0, 0.44, 1.0, 0);
 }
 };
 const hull = (len, wid, sailH, tower = false, masts = 1) => {
@@ -713,6 +717,8 @@ const rec = { idx: o.idx, status: o.status, force: o.force ?? null, city: o.city
 this.officers[o.idx].state = rec;
 if ((o.status === 'ruler' || o.status === 'taesu' || o.status === 'serving') && o.city != null && this.cityById[o.city]) this.cityById[o.city].officers.push(o.idx);
 }
+const hanCap = this.cities.find(c => c.name_ko === '낙양');
+this.emperor = (this.scenId === '184' || this.scenId === '190') && hanCap ? { city: hanCap.id, holder: hanCap.force ?? null } : null;
 this.units = []; this.nextUnitId = 1;
 this.diplo = {};
 this.itemPool = ITEMS.map(i => i.id);
@@ -777,12 +783,18 @@ return true;
 gainMerit(i, n) { const st = this.officers[i]?.state; if (st) st.merit = (st.merit ?? 0) + n; }
 meritGrade(i) { return Math.min(8, Math.floor((this.officers[i]?.state?.merit ?? 0) / 500)); }
 salaryOf(i) { return 10 + this.meritGrade(i) * 5; }
+emperorHolder() { return this.emperor ? (this.cityById[this.emperor.city]?.force ?? null) : null; }
 forceRank(fid) {
 const f = this.forces[fid];
 if (!f?.alive || this.forceName(fid).includes('황건')) return null;
+if (f.rank === '황제') return '황제';
 const n = this.cities.filter(c => c.force === fid).length;
 let r = null;
-for (const [need, name] of RANKS) if (n >= need) r = name;
+for (const [need, name] of RANKS) {
+if (n < need) continue;
+if (name === '황제' && this.emperor && this.emperorHolder() !== fid) continue;
+r = name;
+}
 return r;
 }
 appointAdvisor(officerIdx) {
@@ -946,7 +958,7 @@ if (f.ap < apc) return false;
 c.gold -= 1000; f.ap -= apc;
 const chr = Math.max(50, ...c.officers.map(i => this.officers[i].chr));
 const myN = this.cities.filter(x => x.force === fid).length;
-const p = Math.min(0.5, 0.05 + (chr - 50) / 200 + (myN - tCities.length) * 0.05);
+const p = Math.min(0.5, 0.05 + (chr - 50) / 200 + (myN - tCities.length) * 0.05 + (this.cityHasSkill(c, '귀납') ? 0.1 : 0));
 if (Math.random() < p) {
 for (const tc of tCities) { tc.force = fid; }
 for (const u of this.units) if (u.force === tid) u.force = fid;
@@ -1060,7 +1072,7 @@ if (rel.dear.some(i => this.officers[i]?.state?.force === c.force)) mod += 0.1;
 const rf = this.forces[c.force];
 if (rf && rel.hate.includes(rf.ruler)) mod -= 0.15;
 if (rel.sworn.some(i => { const f2 = this.officers[i]?.state?.force; return f2 != null && f2 !== c.force; }) || (rel.spouse != null && (this.officers[rel.spouse]?.state?.force != null) && this.officers[rel.spouse].state.force !== c.force)) mod -= 0.2;
-return Math.max(0.1, Math.min(0.9, 0.45 + (envoy - t.chr)/200 + (ruler - 50)/500 - loyal/400 + (this.cityHasSkill(c, '등용') ? 0.1 : 0) + mod));
+return Math.max(0.1, Math.min(0.9, 0.45 + (envoy - t.chr)/200 + (ruler - 50)/500 - loyal/400 + (this.cityHasSkill(c, '등용') ? 0.1 : 0) + (this.cityHasSkill(c, '이간') ? 0.1 : 0) + mod));
 }
 recruitOfficer(cityId, officerIdx) {
 const c = this.cityById[cityId], f = this.forces[c.force];
@@ -1143,19 +1155,77 @@ this.units.push(unit);
     this.log(`${c.name_ko}에서 ${this.officers[officerIdxs[0]].name_ko}의 ${ut.name} ${troops} 출진`, c.force === this.playerForce);
 return unit;
 }
+findPath(u, tx, tz) {
+const ship = SHIP_TYPES.has(u.type);
+const st = 0.15, lon0 = 100, lat0 = 20, W = 226, H = 146;
+const ci = x => Math.round((x - lon0) / st), cj = z => Math.round((z - lat0) / st);
+const pass = (i, j) => ship ? isWaterAt(lon0 + i * st, lat0 + j * st) : !isSeaAt(lon0 + i * st, lat0 + j * st);
+const stepCost = (i, j) => (!ship && isRiverAt(lon0 + i * st, lat0 + j * st)) ? 3 : 1;
+const snap = (i, j) => {
+if (i >= 0 && i <= W && j >= 0 && j <= H && pass(i, j)) return [i, j];
+for (let r = 1; r <= 8; r++) for (let di = -r; di <= r; di++) for (let dj = -r; dj <= r; dj++) {
+if (Math.max(Math.abs(di), Math.abs(dj)) !== r) continue;
+const ni = i + di, nj = j + dj;
+if (ni >= 0 && ni <= W && nj >= 0 && nj <= H && pass(ni, nj)) return [ni, nj];
+}
+return null;
+};
+const sc = snap(ci(u.x), cj(u.z)), tc = snap(ci(tx), cj(tz));
+if (!sc || !tc) return null;
+const Hcap = 90000;
+const g = new Map(), came = new Map();
+const heap = [[0, sc[0], sc[1]]];
+const push = (f, i, j) => { heap.push([f, i, j]); let k = heap.length - 1; while (k > 0) { const p = (k - 1) >> 1; if (heap[p][0] <= heap[k][0]) break; [heap[p], heap[k]] = [heap[k], heap[p]]; k = p; } };
+const pop = () => { const top = heap[0], last = heap.pop(); if (heap.length) { heap[0] = last; let k = 0; for (;;) { const l = 2*k+1, r = 2*k+2; let m = k; if (l < heap.length && heap[l][0] < heap[m][0]) m = l; if (r < heap.length && heap[r][0] < heap[m][0]) m = r; if (m === k) break; [heap[m], heap[k]] = [heap[k], heap[m]]; k = m; } } return top; };
+const kk = (i, j) => i * 1000 + j;
+g.set(kk(sc[0], sc[1]), 0);
+let pops = 0, found = false;
+while (heap.length && pops++ < Hcap) {
+const [, i, j] = pop();
+if (i === tc[0] && j === tc[1]) { found = true; break; }
+const gi = g.get(kk(i, j));
+for (let di = -1; di <= 1; di++) for (let dj = -1; dj <= 1; dj++) {
+if (!di && !dj) continue;
+const ni = i + di, nj = j + dj;
+if (ni < 0 || ni > W || nj < 0 || nj > H || !pass(ni, nj)) continue;
+const ng = gi + stepCost(ni, nj) * (di && dj ? 1.4 : 1);
+const k2 = kk(ni, nj);
+if (ng < (g.get(k2) ?? 1e18)) {
+g.set(k2, ng); came.set(k2, [i, j]);
+push(ng + Math.hypot(tc[0] - ni, tc[1] - nj), ni, nj);
+}
+}
+}
+if (!found) return null;
+const cells = [];
+let cur = tc;
+while (cur) { cells.push(cur); cur = came.get(kk(cur[0], cur[1])); }
+cells.reverse();
+const pts = [];
+for (let k = 4; k < cells.length; k += 5) pts.push([lon0 + cells[k][0] * st, lat0 + cells[k][1] * st]);
+pts.push([tx, tz]);
+return pts;
+}
 orderUnit(unitId, targetCityId) {
 const u = this.units.find(u => u.id === unitId);
 const c = this.cityById[targetCityId];
 if (!u || !c) return;
     if (c.force != null && c.force !== u.force && this.isPeace(u.force, c.force)) { this.log(`${this.forceName(c.force)}은(는) 동맹·정전 중이라 공격할 수 없습니다`, u.force === this.playerForce); return; }
+const path = this.findPath(u, c.lon, c.lat);
+if (!path) {
+      this.log(`${josa(u.label, ['은','는'])} ${c.name_ko}(으)로 통하는 노선이 없어 출진할 수 없습니다`, u.force === this.playerForce);
+return false;
+}
 u.targetCity = targetCityId; u.tx = c.lon; u.tz = c.lat;
+u.path = path;
+return true;
 }
 endTurn(aiThink) {
 if (this.over) return;
 if (this.pendingDuel || this.pendingDebate) return;
 for (const u of this.units) {
 const home = this.cities.find(c => c.force != null && c.force === u.force && c.lon === u.x && c.lat === u.z);
-u.qi = Math.min(100, (u.qi ?? 100) + 10 + (home && this.cityFac(home, '훈련장').length ? 5 : 0));
+u.qi = Math.min(100, (u.qi ?? 100) + 10 + (home && this.cityFac(home, '훈련장').length ? 5 : 0) + (this.unitHasSkill(u, '훈련') ? 5 : 0));
 }
 for (const u of [...this.units]) { if (u.force === -1) this.banditAct(u); else this.stepUnit(u); }
 this.resolveFieldBattles();
@@ -1243,11 +1313,16 @@ const cand = c.officers.filter(i => (this.officers[i]?.state?.merit ?? 0) >= 500
 if (cand.length >= 2) { this.swearBrotherhood(c.id, cand.slice(0, 3)); break; }
 }
 }
+if (this.emperor) {
+const h = this.emperorHolder();
+      if (h !== this.emperor.holder) { this.emperor.holder = h; if (h != null) this.log(`【옹립】${josa(this.forceName(h), ['이','가'])} 후한 황제를 옹립했습니다! 기교P 매월 +10`, true); }
+}
 for (const f of Object.values(this.forces)) {
 if (!f.alive) continue;
 const sj = Math.min(3, this.forceFacLv(f.id, '서재'));
 if (sj) this.gainTechP(f.id, sj * 10);
 if (f.rank === '황제') this.gainTechP(f.id, 20);
+if (this.emperor && this.emperorHolder() === f.id) this.gainTechP(f.id, 10);
 f.ab = f.ab ?? { '공격': 0, '방어': 0, '계략': 0, '내정': 0 };
 const abTodo = Object.keys(AB_BRANCHES).filter(b => (f.ab[b] ?? 0) < 3 && (f.techP ?? 0) >= AB_P[f.ab[b] ?? 0] + 300).sort((a, b) => AB_P[f.ab[a] ?? 0] - AB_P[f.ab[b] ?? 0]);
 if (abTodo.length && f.id !== this.playerForce) this.researchAbility(f.id, abTodo[0]);
@@ -1328,15 +1403,24 @@ const tgt = u.targetCity != null ? this.cityById[u.targetCity] : null;
 if (!tgt || tgt.force !== u.force) return;
 }
 const ut = UNIT_TYPES[u.type];
-const speed = 0.55 * ut.move * (this.unitHasSkill(u, '질풍') ? 1.25 : 1);
-const dx = u.tx - u.x, dz = u.tz - u.z;
+const spdMult = this.unitHasSkill(u, '질풍') ? 1.25 : (this.unitHasSkill(u, '신행') ? 1.15 : 1);
+let speed = 0.55 * ut.move * spdMult;
+while (u.path?.length && Math.hypot(u.path[0][0] - u.x, u.path[0][1] - u.z) < 0.35) { if (u.path.length > 1) { u.x = u.path[0][0]; u.z = u.path[0][1]; } u.path.shift(); }
+const aimX = u.path?.length ? u.path[0][0] : u.tx, aimZ = u.path?.length ? u.path[0][1] : u.tz;
+const dx = aimX - u.x, dz = aimZ - u.z;
 const d = Math.hypot(dx, dz);
-if (d > 1.2) {
+if ((u.path?.length || d > 1.2) && d > 1e-6) {
+if (!SHIP_TYPES.has(u.type) && isRiverAt(u.x, u.z)) speed *= 0.5;
 const nx = u.x + dx/d*speed, nz = u.z + dz/d*speed;
 if (SHIP_TYPES.has(u.type) && !isWaterAt(nx, nz)) {
         if (!u._landWarn) { u._landWarn = true; this.log(`${josa(u.label, ['이','가'])} 수로를 벗어나 더 이상 나아갈 수 없습니다`, u.force === this.playerForce); }
-return;
+u.path = []; return;
 }
+if (!SHIP_TYPES.has(u.type) && isSeaAt(nx, nz)) {
+        if (!u._waterWarn) { u._waterWarn = true; this.log(`${josa(u.label, ['은','는'])} 바다를 건널 수 없어 진격을 멈췄습니다`, u.force === this.playerForce); }
+u.path = []; return;
+}
+u._waterWarn = false;
 u._landWarn = false;
 u.x = nx; u.z = nz; return;
 }
@@ -1470,7 +1554,8 @@ this.units = this.units.filter(x => x !== u);
 } else if (u.troops < (this.unitHasSkill(u, '완강') ? 600 : 1200)) {
 const home = this.forceCities(u.force).sort((pp, qq) => Math.hypot(pp.lon-u.x, pp.lat-u.z) - Math.hypot(qq.lon-u.x, qq.lat-u.z))[0];
 if (home) {
-u.targetCity = home.id; u.tx = home.lon; u.tz = home.lat;
+const rp = this.findPath(u, home.lon, home.lat);
+if (rp) { u.targetCity = home.id; u.tx = home.lon; u.tz = home.lat; u.path = rp; }
           this.log(`${josa(u.label, ['이','가'])} ${josa(home.name_ko, ['으로','로'])} 퇴각합니다`, u.force === this.playerForce);
 }
 }
@@ -1823,7 +1908,7 @@ this.gainMerit(w.offs[w.cur], 40); this.gainTechP(w.u.force, 30);
 } else if (result === 'flee') {
 const f = d[d.fled];
 const home = this.forceCities(f.u.force).sort((p, q) => Math.hypot(p.lon - f.u.x, p.lat - f.u.z) - Math.hypot(q.lon - f.u.x, q.lat - f.u.z))[0];
-if (home) { f.u.targetCity = home.id; f.u.tx = home.lon; f.u.tz = home.lat; }
+if (home) { const rp = this.findPath(f.u, home.lon, home.lat); if (rp) { f.u.targetCity = home.id; f.u.tx = home.lon; f.u.tz = home.lat; f.u.path = rp; } }
       this.log(`【일기토】${this.officers[f.offs[f.cur]].name_ko}이(가) 물러났습니다`, f.u.force === this.playerForce);
 } else {
       this.log(`【일기토】${d.bout}합 무승부로 끝났습니다`, true);
@@ -1919,7 +2004,7 @@ return true;
 autosave() {
 try {
 const data = {
-scenId: this.scenId, year: this.year, month: this.month, dan: this.dan, turn: this.turn,
+scenId: this.scenId, year: this.year, month: this.month, dan: this.dan, turn: this.turn, emperor: this.emperor,
 cities: this.cities, forces: this.forces, units: this.units, nextUnitId: this.nextUnitId,
 playerForce: this.playerForce, delegated: this.delegated, deadAck: this.deadAck, logs: this.logs.slice(-60), diplo: this.diplo, itemPool: this.itemPool, chronicle: this.chronicle, over: this.over, unified: this.unified,
 officerStates: Object.fromEntries(Object.entries(this.officers).filter(([,o]) => o.state).map(([i,o]) => [i, o.state])),
@@ -2048,7 +2133,7 @@ let type = 'sword';
 if (c.spears >= n) type = 'spear'; else if (c.horses >= n) type = 'cav'; else if (c.pikes >= n) type = 'pike'; else if (c.bows >= n) type = 'bow';
 else if ((c.catapults ?? 0) > 0) type = 'catapult'; else if ((c.rams ?? 0) > 0) type = 'ram'; else if ((c.beasts ?? 0) > 0) type = 'beast'; else if ((c.towers ?? 0) > 0) type = 'tower';
 const u = game.dispatch(c.id, pick, n, type);
-if (u) game.orderUnit(u.id, best.id);
+if (u && !game.orderUnit(u.id, best.id)) game.orderUnit(u.id, c.id);
 }
 }
 }
@@ -2059,13 +2144,13 @@ const foes = game.cities.filter(c => c.force !== fid && (c.force == null || (gam
 let best = null, bd = 1e9;
 for (const e of foes) { const d = Math.hypot(e.lon - u.x, e.lat - u.z); if (d < bd) { bd = d; best = e; } }
 const homes = cities.slice().sort((a,b) => Math.hypot(a.lon-u.x,a.lat-u.z) - Math.hypot(b.lon-u.x,b.lat-u.z));
-if (best && bd < 10 && u.troops > Math.max(best.troops * 1.2, 4000)) game.orderUnit(u.id, best.id);
+if (best && bd < 10 && u.troops > Math.max(best.troops * 1.2, 4000)) { if (!game.orderUnit(u.id, best.id) && homes.length) game.orderUnit(u.id, homes[0].id); }
 else if (homes.length) game.orderUnit(u.id, homes[0].id);
 }
 for (const u of [...game.units]) {
 if (u.force !== fid || !game.units.includes(u)) continue;
 const inR = (x, z) => Math.hypot(x - u.x, z - u.z) < 2.2;
-const eu = game.units.find(x => x.force !== u.force && !game.isPeace(u.force, x.force) && inR(x.x, x.z));
+const eu = game.units.filter(x => x.force !== u.force && !game.isPeace(u.force, x.force) && inR(x.x, x.z)).sort((a, b) => (game.unitHasSkill(b, '미끼') ? 1 : 0) - (game.unitHasSkill(a, '미끼') ? 1 : 0))[0];
 const ec = game.cities.find(c => c.force != null && c.force !== u.force && !game.isPeace(u.force, c.force) && inR(c.lon, c.lat));
 if (game.tacticInfo(u)) {
 if (eu) { game.fireTactic(u.id, { type: 'unit', id: eu.id }); }
@@ -2086,7 +2171,7 @@ let DATA = null, game = null, map = null, selectedUnit = null, autoTimer = null,
 async function loadData() {
 const [officers, skills, portraits, s184, s190, s251] = await Promise.all(
 ['data/officers670.json','data/skills.json','data/portraits.json','data/scenario-184.json','data/scenario-190.json','data/scenario-251.json']
-.map(u => fetch(u).then(r => r.json())));
+.map(u => fetch(u + '?v=r17c').then(r => r.json())));
 const byIdx = {};
 for (const o of officers) byIdx[o.idx] = o;
 DATA = { officers: byIdx, skills, portraits, scenarios: { '184': s184, '190': s190, '251': s251 } };
