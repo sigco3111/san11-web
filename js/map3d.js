@@ -1,6 +1,6 @@
 // 3D 저폴리 지도 엔진 (Three.js) - 고정 등각 아이소메트릭 + 계단식 지형 + 성곽/숲
 import * as THREE from 'three';
-import { loadGLBAssets, applyEnvironment } from './assets-3d.js?v=r50';
+import { loadGLBAssets, applyEnvironment } from './assets-3d.js?v=r51';
 
 const LON0 = 100, LON1 = 126.5, LAT0 = 21.5, LAT1 = 43;
 export function toWorld(lon, lat) {
@@ -545,6 +545,10 @@ export class Map3D {
       if (f.type === '토루') { box(1.6, 0.35, 0.6, 0, 0.18, 0); box(0.6, 0.35, 1.6, 0, 0.18, 0); }
       else if (f.type === '진') { box(1.4, 0.18, 1.4, 0, 0.09, 0); box(0.08, 1.3, 0.08, 0, 0.8, 0); box(0.6, 0.35, 0.04, 0.34, 1.2, 0, flag); }
       else if (f.type === '채') { for (const [x, z] of [[-.8, -.8], [.8, -.8], [-.8, .8], [.8, .8]]) box(0.18, 0.8, 0.18, x, 0.4, z); box(1.8, 0.3, 0.12, 0, 0.55, -.8); box(1.8, 0.3, 0.12, 0, 0.55, .8); box(0.12, 0.3, 1.8, -.8, 0.55, 0); box(0.12, 0.3, 1.8, .8, 0.55, 0); box(0.08, 1.6, 0.08, 0, 0.9, 0); box(0.6, 0.35, 0.04, 0.34, 1.5, 0, flag); }
+      else if (f.type === '성채') { box(2.0, 0.5, 2.0, 0, 0.25, 0); box(0.5, 1.2, 0.5, -0.8, 0.8, -0.8); box(0.5, 1.2, 0.5, 0.8, 0.8, -0.8); box(0.5, 1.2, 0.5, -0.8, 0.8, 0.8); box(0.5, 1.2, 0.5, 0.8, 0.8, 0.8); box(0.08, 1.8, 0.08, 0, 1.4, 0); box(0.6, 0.4, 0.04, 0.34, 2.1, 0, flag); }
+      else if (f.type === '태고대') { box(1.1, 0.5, 1.1, 0, 0.25, 0); const dr = box(0.7, 0.5, 0.7, 0, 0.8, 0, flag); dr.rotation.z = Math.PI / 2; box(0.08, 0.6, 0.08, 0.5, 0.9, 0); }
+      else if (f.type === '군악대') { box(1.1, 0.4, 1.1, 0, 0.2, 0); box(0.08, 1.2, 0.08, -0.3, 0.9, 0); box(0.08, 1.2, 0.08, 0.3, 0.9, 0); box(0.7, 0.3, 0.04, 0, 1.4, 0, flag); }
+      else if (f.type === '석병팔진') { const st = new THREE.MeshLambertMaterial({ color: f.done ? 0x8d8d92 : 0xb5b5b8, transparent: !f.done, opacity: f.done ? 1 : 0.55 }); for (let i = 0; i < 8; i++) { const a = i * Math.PI / 4; box(0.3, 0.8, 0.3, Math.cos(a) * 0.9, 0.4, Math.sin(a) * 0.9, st); } box(0.08, 1.3, 0.08, 0, 0.65, 0); box(0.5, 0.3, 0.04, 0.28, 1.2, 0, flag); }
       else if (f.type === '석벽') { const st = new THREE.MeshLambertMaterial({ color: f.done ? 0x8d8d92 : 0xb5b5b8, transparent: !f.done, opacity: f.done ? 1 : 0.55 }); box(2.0, 0.9, 0.35, 0, 0.45, 0, st); box(0.35, 0.9, 1.4, 0.85, 0.45, 0.6, st); box(0.08, 1.4, 0.08, -0.8, 1.1, 0); box(0.5, 0.3, 0.04, -0.55, 1.4, 0, flag); }
       else if (f.type === '불화살함정') { box(0.9, 0.08, 0.9, 0, 0.05, 0); box(0.08, 0.5, 0.08, 0.2, 0.3, 0, flag).rotation.z = 0.5; box(0.08, 0.5, 0.08, -0.2, 0.3, 0, flag).rotation.z = -0.5; }
       else if (f.type === '낙석') { box(0.5, 0.4, 0.5, 0, 0.2, 0); box(0.35, 0.3, 0.35, 0.4, 0.15, 0.2); box(0.3, 0.25, 0.3, -0.35, 0.12, -0.2); }
