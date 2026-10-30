@@ -140,6 +140,8 @@ export class Game {
   relation(a, b) { return a === b ? 100 : this.diploOf(a, b).v; }
   relStage(v) { return v >= 80 ? '친밀' : v >= 60 ? '호의' : v >= 40 ? '중립' : v >= 20 ? '불화' : '험악'; }
   isAllied(a, b) { return a !== b && (this.diploOf(a, b).allianceUntil ?? 0) >= this.turn; }
+  isTruce(a, b) { return a !== b && (this.diploOf(a, b).truceUntil ?? 0) >= this.turn; }
+  isPeace(a, b) { return this.isAllied(a, b) || this.isTruce(a, b); } // 동맹·정전 중 공격 금지
   changeRelation(a, b, n) { const d = this.diploOf(a, b); d.v = Math.max(0, Math.min(100, d.v + n)); return d.v; }
   envoy(fid, tid, cityId) { // 친선 사절: 금 500·AP 20, 정치 보정 + 논객 특기 우위 (자체 수치)
     const c = this.cityById[cityId], f = this.forces[c?.force], t = this.forces[tid];
@@ -176,8 +178,9 @@ export class Game {
     c.gold -= 2000; f.ap -= 30;
     const pol = Math.max(50, ...c.officers.map(i => this.officers[i].pol));
     if (Math.random() < Math.min(0.8, 0.3 + pol / 300 + d.v / 200)) {
+      d.truceUntil = this.turn + 12; // 정전 12턴간 양측 공격 금지 (자체 수치)
       const v = this.changeRelation(fid, tid, 30);
-      this.log(`【외교】${this.forceName(fid)}과(와) ${this.forceName(tid)}이(가) 정전했습니다 (관계 → ${v} ${this.relStage(v)})`, true);
+      this.log(`【외교】${this.forceName(fid)}과(와) ${this.forceName(tid)}이(가) 정전했습니다 (12턴간 공격 금지, 관계 → ${v} ${this.relStage(v)})`, true);
       return true;
     }
     this.log(`【외교】${this.forceName(tid)}이(가) 정전 요청을 거절했습니다`, fid === this.playerForce || tid === this.playerForce);
@@ -194,6 +197,7 @@ export class Game {
     const p = Math.min(0.5, 0.05 + (chr - 50) / 200 + (myN - tCities.length) * 0.05);
     if (Math.random() < p) {
       for (const tc of tCities) { tc.force = fid; }
+      for (const u of this.units) if (u.force === tid) u.force = fid; // 야전 부대도 귀속
       for (const o of Object.values(this.officers)) if (o.state?.force === tid) { o.state.force = fid; if (o.state.city != null) { const nc = this.cityById[o.state.city]; if (nc && !nc.officers.includes(o.idx)) nc.officers.push(o.idx); } }
       t.alive = false;
       this.log(`【항복】${this.forceName(tid)}이(가) ${this.forceName(fid)}에 항복했습니다! 도시 ${tCities.length}개와 무장이 귀속됩니다`, true);
@@ -347,7 +351,7 @@ export class Game {
     const u = this.units.find(u => u.id === unitId);
     const c = this.cityById[targetCityId];
     if (!u || !c) return;
-    if (c.force != null && c.force !== u.force && this.isAllied(u.force, c.force)) { this.log(`${this.forceName(c.force)}은(는) 동맹국이라 공격할 수 없습니다`, u.force === this.playerForce); return; }
+    if (c.force != null && c.force !== u.force && this.isPeace(u.force, c.force)) { this.log(`${this.forceName(c.force)}은(는) 동맹·정전 중이라 공격할 수 없습니다`, u.force === this.playerForce); return; }
     u.targetCity = targetCityId; u.tx = c.lon; u.tz = c.lat;
   }
 
@@ -394,6 +398,10 @@ export class Game {
         if ((d.allianceUntil ?? 0) > 0 && d.allianceUntil < this.turn) {
           d.allianceUntil = 0;
           this.log(`【외교】${this.forceName(a)}과(와) ${this.forceName(b)}의 동맹이 만료되었습니다`, true);
+        }
+        if ((d.truceUntil ?? 0) > 0 && d.truceUntil < this.turn) {
+          d.truceUntil = 0;
+          this.log(`【외교】${this.forceName(a)}과(와) ${this.forceName(b)}의 정전이 끝났습니다`, true);
         }
         if (d.v > 50) d.v--; else if (d.v < 50) d.v++;
       }
@@ -481,7 +489,7 @@ export class Game {
     // 도착: 도시 처리
     const c = this.cityById[u.targetCity];
     if (!c) { u.tx = null; return; }
-    if (c.force != null && c.force !== u.force && this.isAllied(u.force, c.force)) { // 동맹 도시 공격 불가
+    if (c.force != null && c.force !== u.force && this.isPeace(u.force, c.force)) { // 동맹·정전 도시 공격 불가
       u.tx = null; u.targetCity = null;
       return;
     }
@@ -551,7 +559,7 @@ export class Game {
       const a = us[i], b = us[j];
       if (!this.units.includes(a) || !this.units.includes(b)) continue;
       if (a.force === b.force) continue;
-      if (this.isAllied(a.force, b.force)) continue;
+      if (this.isPeace(a.force, b.force)) continue;
       if (Math.hypot(a.x-b.x, a.z-b.z) >= 2.2) continue;
       this.fieldBattle(a, b);
     }
@@ -622,4 +630,4 @@ export function josa(name, pair) { // [을,를] 형태
   const code = name.charCodeAt(name.length-1);
   const jong = (code >= 0xAC00 && code <= 0xD7A3) ? (code-0xAC00)%28 : 0;
   return name + (jong ? pair[0] : pair[1]);
-                                    }
+}
