@@ -1,12 +1,12 @@
 // 진입점: 화면 전환·UI·지도 연결
-import { Map3D, toWorld } from './map3d.js?v=r50';
-import { Game, SAVE_KEY, forceColor, UNIT_TYPES, ARTS, FIELD_FACS, TRAPS, SHIP_TYPES, josa, josaRo, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL, AB_PICK } from './game.js?v=r50';
-import { aiThink } from './ai.js?v=r50';
+import { Map3D, toWorld } from './map3d.js?v=r51';
+import { Game, SAVE_KEY, forceColor, UNIT_TYPES, ARTS, FIELD_FACS, TRAPS, SHIP_TYPES, josa, josaRo, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL, AB_PICK } from './game.js?v=r51';
+import { aiThink } from './ai.js?v=r51';
 
 const $ = id => document.getElementById(id);
 let DATA = null, game = null, map = null, selectedUnit = null, autoTimer = null, pendingFire = null; // R15: 직접 전법·계략 대기
 
-const BUILD_ID = 'r50'; // 빌드 ID (index.html의 meta[name=build]와 같아야 함 - 오래된 캐시된 index와 새 스크립트의 혼합 감지)
+const BUILD_ID = 'r51'; // 빌드 ID (index.html의 meta[name=build]와 같아야 함 - 오래된 캐시된 index와 새 스크립트의 혼합 감지)
 function checkBuildSkew() {
   const idx = document.querySelector('meta[name="build"]')?.content;
   if (idx === BUILD_ID) { sessionStorage.removeItem('cheonha-xi-web.skew'); return; } // 일치하면 재시도 표식 해제
@@ -19,7 +19,7 @@ checkBuildSkew();
 async function loadData() {
   const [officers, skills, portraits, s184, s190, s251] = await Promise.all(
     ['data/officers670.json','data/skills.json','data/portraits.json','data/scenario-184.json','data/scenario-190.json','data/scenario-251.json']
-      .map(u => fetch(u + '?v=r50').then(r => r.json())));
+      .map(u => fetch(u + '?v=r51').then(r => r.json())));
   const byIdx = {};
   for (const o of officers) byIdx[o.idx] = o;
   DATA = { officers: byIdx, skills, portraits, scenarios: { '184': s184, '190': s190, '251': s251 } };
@@ -612,7 +612,7 @@ function showCityPanel(c) {
       <button class="cmd" id="cmd-move">무장 이동</button>
       <button class="cmd" id="cmd-tech">기교 연구</button>
       <button class="cmd" id="cmd-fac">시설 건설</button>
-      ${(c.burn ?? 0) > 0 ? '<span style="color:#ff9a4a">불이 붙었습니다 (' + c.burn + '턴, 턴당 수비병 -3%) — 성 주변 아군 부대가 소화할 수 있습니다</span>' : ''}
+      ${(c.burn ?? 0) > 0 ? '<span style="color:#ff9a4a;display:block;margin:4px 0">불이 붙었습니다 (' + c.burn + '턴, 턴당 수비병 -3%) — 성 주변 아군 부대가 소화할 수 있습니다</span>' : ''}
       ${c.leveeBroken ? '<button class="cmd" id="cmd-levee">제방 보수 (금300)</button>' : ''}
       <button class="cmd" id="cmd-search">수색 (금100)</button>
       <button class="cmd" id="cmd-patrol">치안 순찰 (금100·AP20)</button>
