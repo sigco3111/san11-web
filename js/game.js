@@ -82,7 +82,7 @@ export const ARTS = {
   '정예창병': { p: 700, gold: 1800, desc: '창병·극병 공격력 +8%, 받는 피해 -8%, 이동 +8%' },
   '창병단련': { p: 500, gold: 1200, desc: '창병·극병 전법 위력 +15%' },
   '신화계':   { p: 800, gold: 2000, desc: '화계 성공 시 대상 주변 3칸 안 다른 적 부대에도 불이 번짐' },
-  '군제개혁': { p: 900, gold: 2500, desc: '지휘 상한 증가: 한 부대에 편성할 수 있는 무장 3명 → 4명' },
+  '군제개혁': { p: 900, gold: 2500, desc: '군사 커맨드(출진·징병·병기·선박 생산) 행동력 15% 절감' },
 };
 export const TECH_BRANCHES = ['창병','극병','노병','기병','연병','발명','방위','화공'];
 export const TECH_P = [1000, 2000, 3000, 5000];      // 단계별 필요 기교P
@@ -298,7 +298,7 @@ export class Game {
 
   unitDefMult(u) { return (this.unitHasSkill(u, '강직') ? 0.85 : 1) * this.fieldDefMult(u) * (this.elitePike(u) ? 0.92 : 1); }
   elitePike(u) { return (u.type === 'spear' || u.type === 'pike') && !!this.forces[u.force]?.arts?.['정예창병']; } // 정예창병 (자체 잠정값)
-  dispatchCap(fid) { return this.forces[fid]?.arts?.['군제개혁'] ? 4 : 3; } // 군제개혁: 지휘 상한 3→4 (자체 잠정값)
+  dispatchCap(fid) { return 3; } // 부대 편성 무장 3명 제한 보존 (군제개혁의 「지휘 상한」 의미 미확정이라 변경 안 함)
   fieldDefMult(u) { // R26: 진·채 (중첩 없이 가장 큰 쪽)
     let best = 1;
     for (const f of this.fieldFacs ?? []) { if (f.force !== u.force || f.left > 0) continue; const sp = FIELD_FACS[f.type]; if (!sp || (f.type !== '진' && f.type !== '채' && f.type !== '성채') || Math.hypot(u.x - f.x, u.z - f.z) > sp.r) continue; best = Math.min(best, f.type === '성채' ? 0.75 : f.type === '채' ? 0.85 : 0.92); }
@@ -1621,7 +1621,7 @@ export class Game {
   forceFacLv(fid, t) { return this.cities.filter(c => c.force === fid).reduce((s, c) => s + this.cityFacLv(c, t), 0); }
   apMult(c, cat) { // R13: 군사부·인재부·외교부 — 해당 커맨드 행동력 25% 절감 (자체)
     const fac = { military: '군사부', personnel: '인재부', diplo: '외교부' }[cat];
-    return (fac && this.cityFac(c, fac).length ? 0.75 : 1);
+    return (fac && this.cityFac(c, fac).length ? 0.75 : 1) * (cat === 'military' && c?.force != null && this.forces[c.force]?.arts?.['군제개혁'] ? 0.85 : 1); // 군제개혁: r53까지의 잠정 해석(AP 15% 절감) 복원 - 「지휘 상한」 의미 미확정
   }
   absorbFacility(cityId, fi1, fi2) { // R13 흡수합병: 같은 완성 시설 2개를 합쳐 Lv+1 (최대 3), 금 200·AP 10 (자체 수치)
     const c = this.cityById[cityId], f = this.forces[c?.force];
