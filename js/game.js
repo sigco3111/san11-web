@@ -69,6 +69,8 @@ export const STRATS = {
   rumor:   { name: '위보', qi: 15, minInt: 80 },            // R18: 적 부대를 가까운 자기 도시로 퇴각 (설계 15, 확률 자체)
   calm:    { name: '진정', qi: 10, minInt: 70 },
   ambush:  { name: '복병', qi: 10, minInt: 60 },          // R33: 숲에서 인접 적 기습, 기병·병기 불가 (자체 수치)
+  sorcery: { name: '요술', qi: 50, radius: 1.5, loss: 0.06, conf: 2 }, // 설계: 기력 50·특기 전용·광역·지력 기반. 반경/피해/혼란턴은 자체 잠정값
+  thunder: { name: '낙뢰', qi: 50, radius: 1.0, loss: 0.15, conf: 1 }, // 동일(자체 잠정값)
   douse:   { name: '소화', qi: 10, minInt: 60 },           // R32: 화계로 붙은 불(3턴, 턴당 병력 -4%) 끄기 (자체 수치)            // R18: 아군 부대 혼란 해제·기력 +20 (자체 수치)
 };
 
@@ -1480,6 +1482,24 @@ export class Game {
       this.gainMerit(caster.idx, MERIT.stratagem);
       d.conf = 0; d.qi = Math.min(100, (d.qi ?? 100) + 20);
       this.log(`【계략】${caster.name_ko}의 진정! ${josa(d.label, ['이','가'])} 안정을 되찾았습니다`, u.force === this.playerForce);
+      this.autosave();
+      return true;
+    }
+    if (kind === 'sorcery' || kind === 'thunder') { // 특기 보유 무장이 있는 부대만(지력·기술로 우회 불가), 대상 부대 중심 광역
+      const S = STRATS[kind];
+      const sk = kind === 'sorcery' ? '요술' : '낙뢰';
+      const holder = u.officers.map(i => this.officers[i]).find(o => o && o.skill === sk);
+      if (!holder || (u.qi ?? 100) < S.qi || target.type !== 'unit') return false;
+      const d = enemyUnit();
+      if (!d) return false;
+      u._stratTurn = this.turn;
+      const p = Math.min(0.8, 0.3 + holder.int / 250) * (1 - this.mindDefense(d.force));
+      if (Math.random() >= p) { this.log(`【계략】${holder.name_ko}의 ${S.name}이 ${d.label}에 통하지 않았습니다`, u.force === this.playerForce); this.autosave(); return true; }
+      u.qi -= S.qi;
+      this.gainMerit(holder.idx, MERIT.stratagem);
+      const hit = this.units.filter(x => x.force !== u.force && !this.isPeace(u.force, x.force) && Math.hypot(x.x - d.x, x.z - d.z) <= S.radius);
+      for (const x of hit) { const l = Math.round(x.troops * S.loss); x.troops -= l; x.conf = Math.max(x.conf ?? 0, S.conf); }
+      this.log(`【계략】${holder.name_ko}의 ${S.name}! 범위 안 적 부대 ${hit.length}개가 피해를 입고 혼란에 빠졌습니다`, u.force === this.playerForce);
       this.autosave();
       return true;
     }
