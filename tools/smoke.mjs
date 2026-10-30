@@ -5,12 +5,17 @@ const officers = {}; for (const o of JSON.parse(readFileSync('data/officers670.j
 const scen = JSON.parse(readFileSync('data/scenario-190.json'));
 const g = new Game(scen, officers, {}, 0); // 조조로 시작
 console.log('start forces:', g.aliveForces().length, 'units:', g.units.length);
-// 전법/계략 발동 카운트
-let tacN = 0, stratN = 0;
+// 전법/계략/야전 발동 카운트
+let tacN = 0, stratN = 0, fieldN = 0;
 const origLog = g.log.bind(g);
-g.log = (m, mine) => { if (m.includes('【전법】')) tacN++; if (m.includes('【계략】')) stratN++; origLog(m, mine); };
+g.log = (m, mine) => { if (m.includes('【전법】')) tacN++; if (m.includes('【계략】')) stratN++; if (m.includes('【야전】')) fieldN++; origLog(m, mine); };
 // 레거시 세이브 호환: qi/conf 필드 없는 부대가 있어도 턴이 정상 진행되어야 함
 const enemy = g.cities.find(c => c.force != null && c.force !== g.playerForce);
+// 야전 검증: 적 부대 2개를 인접 배치 (교전·전법·퇴각/전멸 경로 강제)
+if (enemy) {
+  g.units.push({ id: 9997, force: g.playerForce, officers: [g.forces[g.playerForce].ruler], troops: 9000, type: 'cav', x: 0, z: 0, path: [], tx: 5, tz: 0, targetCity: null, label: '아군시험 9k', qi: 100, conf: 0 });
+  g.units.push({ id: 9998, force: enemy.force, officers: [g.forces[enemy.force].ruler], troops: 9000, type: 'spear', x: 1, z: 0, path: [], tx: -5, tz: 0, targetCity: null, label: '적군시험 9k', qi: 100, conf: 0 });
+}
 if (enemy) g.units.push({ id: 9999, force: g.playerForce, officers: [g.forces[g.playerForce].ruler], troops: 8000, type: 'cav', x: enemy.lon - 3, z: enemy.lat, path: [], tx: enemy.lon, tz: enemy.lat, targetCity: enemy.id, label: '레거시시험 8k' });
 // 플레이어도 AI로 돌려 60턴 시뮬레이션
 for (let t = 0; t < 60; t++) {
@@ -24,7 +29,8 @@ console.log('units in field:', g.units.length);
 const owned = {};
 for (const c of g.cities) if (c.force != null) owned[c.force] = (owned[c.force]||0)+1;
 console.log('cities per force:', owned);
-console.log('tactics fired:', tacN, '| stratagems fired:', stratN);
+console.log('tactics fired:', tacN, '| stratagems fired:', stratN, '| field battles:', fieldN);
+if (fieldN < 1) { console.error('FAIL: no field battle resolved'); process.exit(1); }
 if (g.units.find(u => u.id === 9999) && g.units.find(u => u.id === 9999).qi === undefined) {
   // 아직 전투에 도달하지 않았으면 기력 미회복 상태일 수 있음 — 오류 없이 진행됐으면 통과
 }
