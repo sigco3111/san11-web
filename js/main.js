@@ -91,10 +91,11 @@ function refreshAll() {
     else map.updateUnit(worldUnit(u), forceColor(u.force));
   }
   for (const id of Object.keys(map.unitMeshes)) if (!game.units.find(u => u.id == id)) map.removeUnit(id);
+  map.setSeason?.(game.month); // R16: 사계절 표현
   refreshHud(); refreshLog();
   game.autosave(); // R13 회귀 방지: UI에서 실행한 모든 커맨드는 실행 직후 영속 (턴 종료 전 리로드 소실 방지)
 }
-function worldUnit(u) { const [x, z] = toWorld(u.x, u.z); return { id: u.id, x, z, label: u.label }; }
+function worldUnit(u) { const [x, z] = toWorld(u.x, u.z); return { id: u.id, x, z, label: u.label, type: u.type }; } // R16: 병종별 모델용 type
 function refreshHud() {
   document.documentElement.style.setProperty('--hud-h', ($('hud-top').offsetHeight + 6) + 'px'); // R14: 패널 상단을 실제 HUD 높이 아래로
   const f = game.forces[game.playerForce];
@@ -141,7 +142,8 @@ function showDuel() {
       return `<button class="cmd duel-cmd" data-c="${name}" ${ok ? '' : 'disabled'}>${name}${need ? ` (투지${need})` : ''}</button>`;
     };
     m.innerHTML = `<div class="box" style="min-width:420px">
-      <h3 style="color:#f66">일기토 — ${po.name_ko} vs ${eo.name_ko} (${d.bout}합)</h3>
+      <h3 style="color:#f66;text-align:center">일기토 (${d.bout}합)</h3>
+      <p style="text-align:center;margin:4px 0"><span class="pimg" style="${portraitCss(po.idx)};display:inline-block;width:64px;height:64px;border:2px solid #d44;border-radius:4px;vertical-align:middle"></span> <b style="font-size:20px;color:#f66;vertical-align:middle"> VS </b> <span class="pimg" style="${portraitCss(eo.idx)};display:inline-block;width:64px;height:64px;border:2px solid #47d;border-radius:4px;vertical-align:middle"></span><br><b>${po.name_ko}</b> vs <b>${eo.name_ko}</b></p>
       <p>${po.name_ko} 체력 ${bar(P.hp, 100, '#d44')} ${Math.max(0, P.hp)} · 투지 ${bar(P.spirit, 300, '#4a7fd4')} ${P.spirit}<br>
       ${eo.name_ko} 체력 ${bar(E.hp, 100, '#d44')} ${Math.max(0, E.hp)} · 투지 ${bar(E.spirit, 300, '#4a7fd4')} ${E.spirit}</p>
       <p style="font-size:12px;color:#cbB;min-height:54px">${d.log.slice(-3).join('<br>')}</p>
@@ -193,7 +195,8 @@ function showDebate() { // R11: 설전 모달
       return `<button class="cmd debate-card" data-c="${c}" ${ok ? '' : 'disabled'}>${c}${cd}${owned ? '' : ' 🔒'}</button>`;
     };
     m.innerHTML = `<div class="box" style="min-width:420px">
-      <h3 style="color:#6cf">설전 — ${po.name_ko} vs ${eo.name_ko} (${d.bout}합) <span style="font-size:12px;color:#aaa">${ctxName}</span></h3>
+      <h3 style="color:#6cf;text-align:center">설전 (${d.bout}합) <span style="font-size:12px;color:#aaa">${ctxName}</span></h3>
+      <p style="text-align:center;margin:4px 0"><span class="pimg" style="${portraitCss(P.o)};display:inline-block;width:64px;height:64px;border:2px solid #47d;border-radius:4px;vertical-align:middle"></span> <b style="font-size:20px;color:#6cf;vertical-align:middle"> VS </b> <span class="pimg" style="${portraitCss(E.o)};display:inline-block;width:64px;height:64px;border:2px solid #d44;border-radius:4px;vertical-align:middle"></span><br><b>${po.name_ko}</b> vs <b>${eo.name_ko}</b></p>
       <p>${po.name_ko} 논리 ${bar(P.hp, 100, '#d44')} ${Math.max(0, P.hp)}${P.seal ? ' · 봉인' : ''}<br>
       ${eo.name_ko} 논리 ${bar(E.hp, 100, '#d44')} ${Math.max(0, E.hp)}${E.seal ? ' · 봉인' : ''}</p>
       <p style="font-size:12px;color:#cbb;min-height:54px">${d.log.slice(-3).join('<br>')}</p>
@@ -286,7 +289,7 @@ function onPick(nx, ny) {
   const c = game.cityById[hit.id];
   if (selectedUnit != null && game.units.find(u => u.id === selectedUnit && u.force === game.playerForce) && !game.delegated) {
     game.orderUnit(selectedUnit, hit.id);
-    game.log(`${game.units.find(u=>u.id===selectedUnit).label} → ${c.name_ko}(으)로 이동 명령`, true);
+    game.log(`${game.units.find(u=>u.id===selectedUnit).label} → ${josa(c.name_ko, ['으로','로'])} 이동 명령`, true);
     selectedUnit = null; $('panel').classList.add('hidden'); refreshLog();
     return;
   }
