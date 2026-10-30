@@ -300,7 +300,7 @@ export class Game {
     if (!o || o.int < 70 || !o.state || o.state.force == null) return false;
     const f = this.forces[o.state.force];
     f.advisor = officerIdx;
-    this.log(`【군사】${this.forceName(f.id)}의 군사로 ${o.name_ko}을(를) 임명했습니다`, f.id === this.playerForce);
+    this.log(`【군사】${this.forceName(f.id)}의 군사로 ${josa(o.name_ko, ['을','를'])} 임명했습니다`, f.id === this.playerForce);
     return true;
   }
   mindDefense(fid) { // 계략 방어: 대상 세력 군주·군사의 지력이 높을수록 계략 성공률 감소 (설계안 79행, 자체 수치)
@@ -350,7 +350,7 @@ export class Game {
       const t = hidden[Math.floor(Math.random() * hidden.length)];
       t.state.found = true;
       this.gainMerit(bestOff, 20);
-      this.log(`【수색】${c.name_ko}에서 재야 무장 ${t.name_ko}을(를) 발견했습니다! 등용할 수 있습니다`, c.force === this.playerForce);
+      this.log(`【수색】${c.name_ko}에서 재야 무장 ${josa(t.name_ko, ['을','를'])} 발견했습니다! 등용할 수 있습니다`, c.force === this.playerForce);
       return true;
     }
     this.itemPool = this.itemPool ?? ITEMS.map(i => i.id);
@@ -360,10 +360,10 @@ export class Game {
       const st = this.officers[bestOff].state;
       st.items = (st.items ?? []).concat(id).slice(0, 3); // 무장당 최대 3개 (자체)
       this.gainMerit(bestOff, 20);
-      this.log(`【수색】${c.name_ko}에서 명품 ${item.name}을(를) 발견했습니다! ${this.officers[bestOff].name_ko}이(가) 소유합니다`, true);
+      this.log(`【수색】${c.name_ko}에서 명품 ${josa(item.name, ['을','를'])} 발견했습니다! ${josa(this.officers[bestOff].name_ko, ['이','가'])} 소유합니다`, true);
       return true;
     }
-    this.log(`${c.name_ko}을(를) 수색했지만 아무것도 발견하지 못했습니다`, c.force === this.playerForce);
+    this.log(`${josa(c.name_ko, ['을','를'])} 수색했지만 아무것도 발견하지 못했습니다`, c.force === this.playerForce);
     return true;
   }
   tradeRate() { return 4000 + ((this.year * 12 + this.month) * 7 % 4) * 1000; } // 1000금당 병량 4000~7000, 월별 변동 (자체 수치)
@@ -422,10 +422,10 @@ export class Game {
     const p = Math.min(0.9, 0.4 + (d.v - 50) / 100 + pol / 300);
     if (Math.random() < p) {
       d.allianceUntil = this.turn + 24;
-      this.log(`【외교】${this.forceName(fid)}과(와) ${this.forceName(tid)}이(가) 24턴 동맹을 맺었습니다!`, true);
+      this.log(`【외교】${josa(this.forceName(fid), ['과','와'])} ${josa(this.forceName(tid), ['이','가'])} 24턴 동맹을 맺었습니다!`, true);
       return true;
     }
-    this.log(`【외교】${this.forceName(tid)}이(가) ${this.forceName(fid)}의 동맹 제의를 거절했습니다`, fid === this.playerForce || tid === this.playerForce);
+    this.log(`【외교】${josa(this.forceName(tid), ['이','가'])} ${this.forceName(fid)}의 동맹 제의를 거절했습니다`, fid === this.playerForce || tid === this.playerForce);
     this.tryDebate({ kind: 'alliance', fid, tid, cityId }); // R11: 결렬 시 설전 발동 가능
     return false;
   }
@@ -441,10 +441,10 @@ export class Game {
     if (Math.random() < Math.min(0.8, 0.3 + pol / 300 + d.v / 200)) {
       d.truceUntil = this.turn + 12; // 정전 12턴간 양측 공격 금지 (자체 수치)
       const v = this.changeRelation(fid, tid, 30);
-      this.log(`【외교】${this.forceName(fid)}과(와) ${this.forceName(tid)}이(가) 정전했습니다 (12턴간 공격 금지, 관계 → ${v} ${this.relStage(v)})`, true);
+      this.log(`【외교】${josa(this.forceName(fid), ['과','와'])} ${josa(this.forceName(tid), ['이','가'])} 정전했습니다 (12턴간 공격 금지, 관계 → ${v} ${this.relStage(v)})`, true);
       return true;
     }
-    this.log(`【외교】${this.forceName(tid)}이(가) 정전 요청을 거절했습니다`, fid === this.playerForce || tid === this.playerForce);
+    this.log(`【외교】${josa(this.forceName(tid), ['이','가'])} 정전 요청을 거절했습니다`, fid === this.playerForce || tid === this.playerForce);
     this.tryDebate({ kind: 'truce', fid, tid, cityId }); // R11: 결렬 시 설전 발동 가능
     return false;
   }
@@ -464,11 +464,11 @@ export class Game {
       for (const u of this.units) if (u.force === tid) u.force = fid; // 야전 부대도 귀속
       for (const o of Object.values(this.officers)) if (o.state?.force === tid) { o.state.force = fid; if (o.state.city != null) { const nc = this.cityById[o.state.city]; if (nc && !nc.officers.includes(o.idx)) nc.officers.push(o.idx); } }
       t.alive = false;
-      this.log(`【항복】${this.forceName(tid)}이(가) ${this.forceName(fid)}에 항복했습니다! 도시 ${tCities.length}개와 무장이 귀속됩니다`, true);
+      this.log(`【항복】${josa(this.forceName(tid), ['이','가'])} ${this.forceName(fid)}에 항복했습니다! 도시 ${tCities.length}개와 무장이 귀속됩니다`, true);
       return true;
     }
     this.changeRelation(fid, tid, -20);
-    this.log(`【외교】${this.forceName(tid)}이(가) 항복 권고를 거부했습니다 (관계 악화)`, fid === this.playerForce || tid === this.playerForce);
+    this.log(`【외교】${josa(this.forceName(tid), ['이','가'])} 항복 권고를 거부했습니다 (관계 악화)`, fid === this.playerForce || tid === this.playerForce);
     return false;
   }
   requestAid(fid, tid, cityId) { // 원군 요청: 동맹국, 18턴 쿨(설계안), 병사 3000 지원 (자체 단순화)
@@ -483,14 +483,14 @@ export class Game {
     const dst = this.cities.filter(x => x.force === fid).sort((a, b) => a.troops - b.troops)[0];
     dst.troops = Math.min(dst.metropolis ? 150000 : 100000, dst.troops + 3000);
     d.aidTurn = this.turn;
-    this.log(`【외교】동맹국 ${this.forceName(tid)}이(가) 원군 3000을 ${dst.name_ko}에 보냈습니다`, true);
+    this.log(`【외교】동맹국 ${josa(this.forceName(tid), ['이','가'])} 원군 3000을 ${dst.name_ko}에 보냈습니다`, true);
     return true;
   }
   breakAlliance(fid, tid) { // 동맹 파기: 관계 -40
     if (!this.isAllied(fid, tid)) return false;
     this.diploOf(fid, tid).allianceUntil = 0;
     const v = this.changeRelation(fid, tid, -40);
-    this.log(`【외교】${this.forceName(fid)}이(가) ${this.forceName(tid)}과(와)의 동맹을 파기했습니다 (관계 → ${v} ${this.relStage(v)})`, true);
+    this.log(`【외교】${josa(this.forceName(fid), ['이','가'])} ${josa(this.forceName(tid), ['과','와'])}의 동맹을 파기했습니다 (관계 → ${v} ${this.relStage(v)})`, true);
     return true;
   }
   checkRanks() { // 관작 자동 승진: 승진 시 전 소속 무장 충성 +5 (자체 수치)
@@ -501,7 +501,7 @@ export class Game {
         const emp = r === '황제' && f.rank !== '황제';
         f.rank = r;
         for (const o of Object.values(this.officers)) if (o.state?.force === f.id) o.state.loyal = Math.min(100, (o.state.loyal ?? 70) + (emp ? 10 : 5)); // R14: 황제 즉위는 +10 (자체)
-        this.log(emp ? `【황제】${this.forceName(f.id)}이(가) 황제에 올랐습니다! 소속 무장 충성 대폭 상승, 기교P 매월 +20` : `【관작】${this.forceName(f.id)}이(가) ${r}(으)로 승진했습니다! 소속 무장 충성 상승`, true);
+        this.log(emp ? `【황제】${josa(this.forceName(f.id), ['이','가'])} 황제에 올랐습니다! 소속 무장 충성 대폭 상승, 기교P 매월 +20` : `【관작】${josa(this.forceName(f.id), ['이','가'])} ${josaRo(r)} 승진했습니다! 소속 무장 충성 상승`, true);
       }
     }
   }
@@ -525,7 +525,7 @@ export class Game {
     const c = this.cityById[cityId];
     if (!c?.facilities?.[fi]) return false;
     const [rm] = c.facilities.splice(fi, 1);
-    this.log(`${c.name_ko}의 ${rm.type}을(를) 철거했습니다`, c.force === this.playerForce);
+    this.log(`${c.name_ko}의 ${josa(rm.type, ['을','를'])} 철거했습니다`, c.force === this.playerForce);
     return true;
   }
   develop(cityId, kind) { // kind: 'commerce' | 'farm', 비용 금 300, AP 30
@@ -590,7 +590,7 @@ export class Game {
       if (envoyIdx != null) this.gainMerit(envoyIdx, MERIT.recruit);
       t.state.status = 'serving'; t.state.force = c.force;
       if (!c.officers.includes(officerIdx)) c.officers.push(officerIdx);
-      this.log(`【등용】${t.name_ko}이(가) 【${this.forceName(c.force)}】에 등용되었습니다 (${c.name_ko}, 사자 매력 ${envoy})`, true);
+      this.log(`【등용】${josa(t.name_ko, ['이','가'])} 【${this.forceName(c.force)}】에 등용되었습니다 (${c.name_ko}, 사자 매력 ${envoy})`, true);
       return true;
     }
     this.log(`${c.name_ko}의 ${t.name_ko} 등용에 실패했습니다`, c.force === this.playerForce);
@@ -712,10 +712,10 @@ export class Game {
     const u = this.units.find(u => u.id === unitId);
     const c = this.cityById[targetCityId];
     if (!u || !c) return;
-    if (c.force != null && c.force !== u.force && this.isPeace(u.force, c.force)) { this.log(`${this.forceName(c.force)}은(는) 동맹·정전 중이라 공격할 수 없습니다`, u.force === this.playerForce); return; }
+    if (c.force != null && c.force !== u.force && this.isPeace(u.force, c.force)) { this.log(`${josa(this.forceName(c.force), ['은','는'])} 동맹·정전 중이라 공격할 수 없습니다`, u.force === this.playerForce); return; }
     const path = this.findPath(u, c.lon, c.lat);
     if (!path) { // R17b: 도달 불가 노선은 명령 거부 — 직선 폴백의 바다 정지·지형 관통 재발 방지. AI는 반환값으로 회복 처리
-      this.log(`${josa(u.label, ['은','는'])} ${c.name_ko}(으)로 통하는 노선이 없어 출진할 수 없습니다`, u.force === this.playerForce);
+      this.log(`${josa(u.label, ['은','는'])} ${josaRo(c.name_ko)} 통하는 노선이 없어 출진할 수 없습니다`, u.force === this.playerForce);
       return false;
     }
     u.targetCity = targetCityId; u.tx = c.lon; u.tz = c.lat;
@@ -771,7 +771,7 @@ export class Game {
           c.troops = Math.max(0, Math.round(c.troops * 0.95));
           c.gold = Math.max(0, Math.round(c.gold * 0.9));
           c.food = Math.max(0, Math.round(c.food * 0.9));
-          if (c.disaster.until <= this.turn) { this.log(`【재해】${c.name_ko}의 ${c.disaster.type}이(가) 지나갔습니다`, c.force === this.playerForce); c.disaster = null; }
+          if (c.disaster.until <= this.turn) { this.log(`【재해】${c.name_ko}의 ${josa(c.disaster.type, ['이','가'])} 지나갔습니다`, c.force === this.playerForce); c.disaster = null; }
         } else if (Math.random() < 0.02) { // 역병 발생 (월 2%, 자체 수치)
           c.disaster = { type: '역병', until: this.turn + 6 };
           this.log(`【재해】${c.name_ko}에 역병이 돌고 있습니다! (2개월간 병사·금·병량 감소)`, true);
@@ -790,11 +790,11 @@ export class Game {
         const [a, b] = k.split('_').map(Number);
         if ((d.allianceUntil ?? 0) > 0 && d.allianceUntil < this.turn) {
           d.allianceUntil = 0;
-          this.log(`【외교】${this.forceName(a)}과(와) ${this.forceName(b)}의 동맹이 만료되었습니다`, true);
+          this.log(`【외교】${josa(this.forceName(a), ['과','와'])} ${this.forceName(b)}의 동맹이 만료되었습니다`, true);
         }
         if ((d.truceUntil ?? 0) > 0 && d.truceUntil < this.turn) {
           d.truceUntil = 0;
-          this.log(`【외교】${this.forceName(a)}과(와) ${this.forceName(b)}의 정전이 끝났습니다`, true);
+          this.log(`【외교】${josa(this.forceName(a), ['과','와'])} ${this.forceName(b)}의 정전이 끝났습니다`, true);
         }
         if (d.v > 50) d.v--; else if (d.v < 50) d.v++;
       }
@@ -806,7 +806,7 @@ export class Game {
           if ((st.loyal ?? 70) <= 25 && Math.random() < 0.15) {
             st.status = 'free'; st.force = null; st.city = null; st.found = false;
             c.officers = c.officers.filter(x => x !== i);
-            this.log(`【하야】${this.officers[i].name_ko}이(가) 충성이 낮아 【${this.forceName(c.force)}】을(를) 떠났습니다`, true);
+            this.log(`【하야】${josa(this.officers[i].name_ko, ['이','가'])} 충성이 낮아 【${this.forceName(c.force)}】${josa(this.forceName(c.force), ['을','를']).slice(-1)} 떠났습니다`, true);
           }
         }
       }
@@ -858,7 +858,7 @@ export class Game {
     for (const o of Object.values(this.officers)) {
       if (o.state && o.state.status === 'not_yet' && this.year >= o.avail) {
         o.state.status = 'free';
-        if (o.state.city != null && this.cityById[o.state.city]) this.log(`${o.name_ko}이(가) ${this.cityById[o.state.city].name_ko}에 등장했습니다 (재야)`);
+        if (o.state.city != null && this.cityById[o.state.city]) this.log(`${josa(o.name_ko, ['이','가'])} ${this.cityById[o.state.city].name_ko}에 등장했습니다 (재야)`);
       }
     }
     // 세력 AP 회복·AI
@@ -875,7 +875,7 @@ export class Game {
       const hasUnit = this.units.some(u => u.force === f.id);
       if (!hasCity && !hasUnit) {
         f.alive = false;
-        this.log(`【${this.forceName(f.id)}】이(가) 멸망했습니다!`, true);
+        this.log(`【${this.forceName(f.id)}】${josa(this.forceName(f.id), ['이','가']).slice(-1)} 멸망했습니다!`, true);
         for (const o of this.forceOfficers(f.id)) { o.state.force = null; o.state.status = 'free'; o.state.found = false; }
       }
     }
@@ -886,7 +886,7 @@ export class Game {
         const w = [...owners][0];
         this.over = true;
         this.unified = true; // 관전 계속(over 해제) 후 재발동 방지
-        this.log(`【통일】${this.forceName(w)}이(가) 모든 도시를 제압해 천하를 통일했습니다! (${this.year}년 ${this.month}월, ${this.turn}턴)`, true);
+        this.log(`【통일】${josa(this.forceName(w), ['이','가'])} 모든 도시를 제압해 천하를 통일했습니다! (${this.year}년 ${this.month}월, ${this.turn}턴)`, true);
       }
     }
     // 시계
@@ -918,7 +918,7 @@ export class Game {
   stepUnit(u) {
     if ((u.conf ?? 0) > 0) { // 혼란: 이동·공격 불가
       u.conf--;
-      this.log(`${u.label}이(가) 혼란에 빠져 움직이지 못합니다`, u.force === this.playerForce);
+      this.log(`${josa(u.label, ['이','가'])} 혼란에 빠져 움직이지 못합니다`, u.force === this.playerForce);
       return;
     }
     if (u.tx == null) return;
@@ -1265,7 +1265,7 @@ export class Game {
       this.gainMerit(caster.idx, MERIT.stratagem);
       const home = this.forceCities(d.force).sort((pp, qq) => Math.hypot(pp.lon-d.x, pp.lat-d.z) - Math.hypot(qq.lon-d.x, qq.lat-d.z))[0];
       const rp = home ? this.findPath(d, home.lon, home.lat) : null;
-      if (rp) { d.targetCity = home.id; d.tx = home.lon; d.tz = home.lat; d.path = rp; d.engaged = null; this.log(`【계략】${caster.name_ko}의 위보! ${josa(d.label, ['이','가'])} 거짓 보고에 속아 ${home.name_ko}(으)로 퇴각합니다`, u.force === this.playerForce); }
+      if (rp) { d.targetCity = home.id; d.tx = home.lon; d.tz = home.lat; d.path = rp; d.engaged = null; this.log(`【계략】${caster.name_ko}의 위보! ${josa(d.label, ['이','가'])} 거짓 보고에 속아 ${josaRo(home.name_ko)} 퇴각합니다`, u.force === this.playerForce); }
       else this.log(`【계략】${caster.name_ko}의 위보가 ${d.label}에 통하지 않았습니다 (퇴각로 없음)`, u.force === this.playerForce);
       this.autosave();
       return true;
@@ -1322,11 +1322,11 @@ export class Game {
       if (done.length) {
         const f = done[Math.floor(Math.random() * done.length)];
         c.facilities = c.facilities.filter(x => x !== f);
-        this.log(`【적】${c.name_ko}의 ${f.type}이(가) 적에게 파괴되었습니다!`, true);
+        this.log(`【적】${c.name_ko}의 ${josa(f.type, ['이','가'])} 적에게 파괴되었습니다!`, true);
       } else {
         const loot = Math.min(c.gold, 500);
         c.gold -= loot;
-        this.log(`【적】적병이 ${c.name_ko}을(를) 약탈했습니다 (금 -${loot})`, true);
+        this.log(`【적】적병이 ${josa(c.name_ko, ['을','를'])} 약탈했습니다 (금 -${loot})`, true);
       }
       c.security = Math.max(0, (c.security ?? 80) - 5);
       this.units = this.units.filter(x => x !== u);
@@ -1381,7 +1381,7 @@ export class Game {
     a.level = (a.level ?? 1) + 1;
     c.facilities.splice(fi2, 1);
     c.gold -= 200; f.ap -= 10;
-    this.log(`【합병】${c.name_ko}의 ${a.type}을(를) 흡수합병해 Lv${a.level}(으)로 강화했습니다 (금 200·AP 10, 개발지 1개 회수)`, c.force === this.playerForce);
+    this.log(`【합병】${c.name_ko}의 ${josa(a.type, ['을','를'])} 흡수합병해 Lv${josaRo(a.level)} 강화했습니다 (금 200·AP 10, 개발지 1개 회수)`, c.force === this.playerForce);
     this.autosave();
     return true;
   }
@@ -1402,7 +1402,7 @@ export class Game {
       const cand = this.forceOfficers(fid).filter(o => o && !o.skill && !o.state?.grantSkill).sort((a, b) => (b.state?.merit ?? 0) - (a.state?.merit ?? 0))[0];
       if (cand) {
         cand.skill = sk; if (cand.state) cand.state.grantSkill = sk; // 저장 영속용
-        this.log(`【연구】${cand.name_ko}이(가) 연구 성과로 특기 「${sk}」을(를) 습득했습니다!`, fid === this.playerForce);
+        this.log(`【연구】${josa(cand.name_ko, ['이','가'])} 연구 성과로 특기 「${sk}」${josa(sk, ['을','를']).slice(-1)} 습득했습니다!`, fid === this.playerForce);
       }
     }
     this.autosave();
@@ -1421,7 +1421,7 @@ export class Game {
       st.sworn = [...new Set([...(st.sworn ?? []), ...idxs.filter(x => x !== i)])];
       st.loyal = Math.min(100, (st.loyal ?? 70) + 10);
     }
-    this.log(`【결연】${idxs.map(i => this.officers[i].name_ko).join('·')}이(가) ${c.name_ko}에서 의형제를 맺었습니다! (기교P -500, 충성 +10)`, c.force === this.playerForce);
+    this.log(`【결연】${josa(idxs.map(i => this.officers[i].name_ko).join('·'), ['이','가'])} ${c.name_ko}에서 의형제를 맺었습니다! (기교P -500, 충성 +10)`, c.force === this.playerForce);
     this.autosave(); // 커맨드 직후 영속 (턴 종료 전 리로드 소실 방지)
     return true;
   }
@@ -1456,7 +1456,7 @@ export class Game {
         if (this.effWar(nxt) > this.effWar(cur) + 5 && Math.random() < assistP) {
           s.hpMap[s.offs[s.cur]] = s.hp; s.cur++;
           s.hp = s.hpMap[s.offs[s.cur]] ?? 100; s.spirit = Math.round(s.spirit / 2);
-          d.log.push(`${nxt.name_ko}이(가) 교체 출전!`);
+          d.log.push(`${josa(nxt.name_ko, ['이','가'])} 교체 출전!`);
         }
       }
     }
@@ -1503,8 +1503,8 @@ export class Game {
     d.b.hp -= rA.dmg; d.a.hp -= rB.dmg;
     if (rB.dmg > 0) d.a.spirit = Math.min(300, d.a.spirit + 6); // 피격 시 투지 상승 (설계안)
     if (rA.dmg > 0) d.b.spirit = Math.min(300, d.b.spirit + 6);
-    if (rA.vital && d.b.hp > 0) { const vo = this.duelOfficer(d, 'b'); vo.state.injuredUntil = this.turn + 6; d.log.push(`${vo.name_ko}이(가) 급소를 맞아 부상! (6턴간 무력 -20·출진 불가)`); }
-    if (rB.vital && d.a.hp > 0) { const vo = this.duelOfficer(d, 'a'); vo.state.injuredUntil = this.turn + 6; d.log.push(`${vo.name_ko}이(가) 급소를 맞아 부상! (6턴간 무력 -20·출진 불가)`); }
+    if (rA.vital && d.b.hp > 0) { const vo = this.duelOfficer(d, 'b'); vo.state.injuredUntil = this.turn + 6; d.log.push(`${josa(vo.name_ko, ['이','가'])} 급소를 맞아 부상! (6턴간 무력 -20·출진 불가)`); }
+    if (rB.vital && d.a.hp > 0) { const vo = this.duelOfficer(d, 'a'); vo.state.injuredUntil = this.turn + 6; d.log.push(`${josa(vo.name_ko, ['이','가'])} 급소를 맞아 부상! (6턴간 무력 -20·출진 불가)`); }
     if (rA.note) d.log.push(`${rA.name}의 ${rA.note}! ${rA.dmg} 대미지`);
     if (rB.note) d.log.push(`${rB.name}의 ${rB.note}! ${rB.dmg} 대미지`);
     if (!rA.note && !rB.note) d.log.push(`${d.bout}합: 공방 ${rA.dmg} / ${rB.dmg}`);
@@ -1520,12 +1520,12 @@ export class Game {
       const w = d[result], l = d[result === 'a' ? 'b' : 'a'];
       l.u.troops = Math.round(l.u.troops * 0.7);
       this.gainMerit(w.offs[w.cur], 40); this.gainTechP(w.u.force, 30);
-      this.log(`【일기토】${this.officers[w.offs[w.cur]].name_ko}이(가) ${this.officers[l.offs[l.cur]].name_ko}를 격파! ${l.u.label} 병력 -30%`, true);
+      this.log(`【일기토】${josa(this.officers[w.offs[w.cur]].name_ko, ['이','가'])} ${this.officers[l.offs[l.cur]].name_ko}를 격파! ${l.u.label} 병력 -30%`, true);
     } else if (result === 'flee') {
       const f = d[d.fled];
       const home = this.forceCities(f.u.force).sort((p, q) => Math.hypot(p.lon - f.u.x, p.lat - f.u.z) - Math.hypot(q.lon - f.u.x, q.lat - f.u.z))[0];
       if (home) { const rp = this.findPath(f.u, home.lon, home.lat); if (rp) { f.u.targetCity = home.id; f.u.tx = home.lon; f.u.tz = home.lat; f.u.path = rp; } } // R17b
-      this.log(`【일기토】${this.officers[f.offs[f.cur]].name_ko}이(가) 물러났습니다`, f.u.force === this.playerForce);
+      this.log(`【일기토】${josa(this.officers[f.offs[f.cur]].name_ko, ['이','가'])} 물러났습니다`, f.u.force === this.playerForce);
     } else {
       this.log(`【일기토】${d.bout}합 무승부로 끝났습니다`, true);
     }
@@ -1561,12 +1561,12 @@ export class Game {
     const okCard = (k, c) => { const s = d[k]; return c && this.debateCards(s.o)[c] && (s.cds[c] ?? 0) <= 0; };
     if (!okCard('a', cardA)) cardA = null;
     if (!okCard('b', cardB)) cardB = null;
-    if (d.a.seal) { if (cardA) d.log.push(`${name(d.a)}은(는) 도발에 말려 화술을 쓰지 못했습니다`); cardA = null; d.a.seal = false; }
-    if (d.b.seal) { if (cardB) d.log.push(`${name(d.b)}은(는) 도발에 말려 화술을 쓰지 못했습니다`); cardB = null; d.b.seal = false; }
+    if (d.a.seal) { if (cardA) d.log.push(`${josa(name(d.a), ['은','는'])} 도발에 말려 화술을 쓰지 못했습니다`); cardA = null; d.a.seal = false; }
+    if (d.b.seal) { if (cardB) d.log.push(`${josa(name(d.b), ['은','는'])} 도발에 말려 화술을 쓰지 못했습니다`); cardB = null; d.b.seal = false; }
     const defA = cardA ? DEBATE_CARDS[cardA] : null, defB = cardB ? DEBATE_CARDS[cardB] : null;
     let dmgA = 0, dmgB = 0; // dmgA: a가 b에게 주는 피해
-    if (defA?.dmg) { if (cardB === '반박') { dmgB += Math.round(DEBATE_CARDS.반박.counter * mult(d.b)); d.log.push(`${name(d.b)}의 반박! ${name(d.a)}의 ${cardA}을(를) 되돌림`); } else dmgA += Math.round(defA.dmg * mult(d.a)); }
-    if (defB?.dmg) { if (cardA === '반박') { dmgA += Math.round(DEBATE_CARDS.반박.counter * mult(d.a)); d.log.push(`${name(d.a)}의 반박! ${name(d.b)}의 ${cardB}을(를) 되돌림`); } else dmgB += Math.round(defB.dmg * mult(d.b)); }
+    if (defA?.dmg) { if (cardB === '반박') { dmgB += Math.round(DEBATE_CARDS.반박.counter * mult(d.b)); d.log.push(`${name(d.b)}의 반박! ${name(d.a)}의 ${josa(cardA, ['을','를'])} 되돌림`); } else dmgA += Math.round(defA.dmg * mult(d.a)); }
+    if (defB?.dmg) { if (cardA === '반박') { dmgA += Math.round(DEBATE_CARDS.반박.counter * mult(d.a)); d.log.push(`${name(d.a)}의 반박! ${name(d.b)}의 ${josa(cardB, ['을','를'])} 되돌림`); } else dmgB += Math.round(defB.dmg * mult(d.b)); }
     if (defA?.heal) { d.a.hp = Math.min(100, d.a.hp + defA.heal); d.log.push(`${name(d.a)}의 경청 (논리 +${defA.heal})`); }
     if (defB?.heal) { d.b.hp = Math.min(100, d.b.hp + defB.heal); d.log.push(`${name(d.b)}의 경청 (논리 +${defB.heal})`); }
     if (defA?.seal) { d.b.seal = true; d.log.push(`${name(d.a)}의 도발! ${name(d.b)}의 다음 화술 봉인`); }
@@ -1589,12 +1589,12 @@ export class Game {
     d.winner = w;
     const ctx = d.ctx ?? {};
     if (w === 'a') {
-      if (ctx.kind === 'alliance') { const dd = this.diploOf(ctx.fid, ctx.tid); dd.allianceUntil = this.turn + 24; this.log(`【설전】${an}이(가) ${bn}을(를) 논파! ${this.forceName(ctx.fid)}과(와) ${this.forceName(ctx.tid)}이(가) 24턴 동맹을 맺었습니다!`, true); }
-      else if (ctx.kind === 'truce') { const dd = this.diploOf(ctx.fid, ctx.tid); dd.truceUntil = this.turn + 12; const v = this.changeRelation(ctx.fid, ctx.tid, 30); this.log(`【설전】${an}이(가) ${bn}을(를) 논파! 정전 성립 (12턴간 공격 금지, 관계 → ${v})`, true); }
-      else if (ctx.kind === 'recruit') { const c = this.cityById[ctx.cityId], t = this.officers[ctx.officerIdx]; if (c && t?.state && t.state.force == null) { t.state.status = 'serving'; t.state.force = c.force; if (!c.officers.includes(t.idx)) c.officers.push(t.idx); this.gainMerit(d.a.o, MERIT.recruit); this.log(`【설전】${an}의 설파 끝에 ${t.name_ko}이(가) 【${this.forceName(c.force)}】에 등용되었습니다! (${c.name_ko})`, true); } }
+      if (ctx.kind === 'alliance') { const dd = this.diploOf(ctx.fid, ctx.tid); dd.allianceUntil = this.turn + 24; this.log(`【설전】${josa(an, ['이','가'])} ${josa(bn, ['을','를'])} 논파! ${josa(this.forceName(ctx.fid), ['과','와'])} ${josa(this.forceName(ctx.tid), ['이','가'])} 24턴 동맹을 맺었습니다!`, true); }
+      else if (ctx.kind === 'truce') { const dd = this.diploOf(ctx.fid, ctx.tid); dd.truceUntil = this.turn + 12; const v = this.changeRelation(ctx.fid, ctx.tid, 30); this.log(`【설전】${josa(an, ['이','가'])} ${josa(bn, ['을','를'])} 논파! 정전 성립 (12턴간 공격 금지, 관계 → ${v})`, true); }
+      else if (ctx.kind === 'recruit') { const c = this.cityById[ctx.cityId], t = this.officers[ctx.officerIdx]; if (c && t?.state && t.state.force == null) { t.state.status = 'serving'; t.state.force = c.force; if (!c.officers.includes(t.idx)) c.officers.push(t.idx); this.gainMerit(d.a.o, MERIT.recruit); this.log(`【설전】${an}의 설파 끝에 ${josa(t.name_ko, ['이','가'])} 【${this.forceName(c.force)}】에 등용되었습니다! (${c.name_ko})`, true); } }
     } else if (w === 'b') {
-      if (ctx.kind === 'alliance' || ctx.kind === 'truce') { const v = this.changeRelation(ctx.fid, ctx.tid, -5); this.log(`【설전】${bn}이(가) ${an}을(를) 논파 — 협상 결렬 (관계 → ${v} ${this.relStage(v)})`, ctx.fid === this.playerForce || ctx.tid === this.playerForce); }
-      else this.log(`【설전】${bn}이(가) ${an}을(를) 논파 — 등용 결렬`, ctx.fid === this.playerForce);
+      if (ctx.kind === 'alliance' || ctx.kind === 'truce') { const v = this.changeRelation(ctx.fid, ctx.tid, -5); this.log(`【설전】${josa(bn, ['이','가'])} ${josa(an, ['을','를'])} 논파 — 협상 결렬 (관계 → ${v} ${this.relStage(v)})`, ctx.fid === this.playerForce || ctx.tid === this.playerForce); }
+      else this.log(`【설전】${josa(bn, ['이','가'])} ${josa(an, ['을','를'])} 논파 — 등용 결렬`, ctx.fid === this.playerForce);
     } else this.log(`【설전】${an} vs ${bn} — ${d.bout}합 무승부`, ctx.fid === this.playerForce || ctx.tid === this.playerForce);
     this.pendingDebate = null;
     return d;
@@ -1630,6 +1630,7 @@ export class Game {
     } catch (e) { /* 용량 초과 등 무시 */ }
   }
 }
+export function josaRo(name) { const code = String(name).charCodeAt(String(name).length-1); const jong = (code >= 0xAC00 && code <= 0xD7A3) ? (code-0xAC00)%28 : 0; return name + (jong && jong !== 8 ? '으로' : '로'); } // (으)로: 받침 없음·ㄹ받침은 '로'
 export function josa(name, pair) { // [을,를] 형태
   const code = name.charCodeAt(name.length-1);
   const jong = (code >= 0xAC00 && code <= 0xD7A3) ? (code-0xAC00)%28 : 0;
