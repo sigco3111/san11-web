@@ -1121,7 +1121,7 @@ export class Game {
       if (this.units.some(v => v !== d && Math.hypot(v.x - nx, v.z - nz) < 0.35)) break;
       d.x = nx; d.z = nz; moved += 0.4;
     }
-    if (moved > 0 && d.tx != null && d.tz != null) d.path = this.findPath(d, d.tx, d.tz) || [];
+    if (moved > 0 && d.tx != null && d.tz != null) { const np = this.findPath(d, d.tx, d.tz); if (np) d.path = np; else { d.path = []; d.tx = null; d.tz = null; d.targetCity = null; } } // 재탐색 실패 시 명령 취소(정지 부대 방지, AI가 다음 턴 재명령)
     return moved;
   }
   _tacExtra(u, d, tac, dmg) { // 추가 효과 적용 - 주 대상 피해 후. 부수 피해는 주 피해의 비율(자체)
