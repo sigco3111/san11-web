@@ -31,10 +31,7 @@ export const SHIP_BUILD = { junk: { name: '주가', gold: 400, store: 'junks' },
 const APT_IDX = { spear: 0, pike: 1, bow: 2, cav: 3, ram: 4, tower: 4, beast: 4, catapult: 4, junk: 5, lou: 5, dou: 5 }; // data apt 순서: 창 극 노 기 병기 수군 (검병은 적성 없음)
 const APT_LV = g => ({ S: 3, A: 2, B: 1 })[g] ?? 0;
 export const TACTICS = {
-  spear: { name: '창격', qi: 20, mult: 1.8 },
-  pike:  { name: '철벽', qi: 20, mult: 1.3, guard: 0.5 },
   bow:   { name: '불화살', qi: 15, mult: 1.6 }, // 설계 노병 불화살(기력 15는 설계에서도 확인 필요 표기 - 이 게임의 잠정값). 연사(기력 20)는 설계 밖 자체 전법이어서 대체
-  cav:   { name: '돌격', qi: 25, mult: 2.0 },
   ram:      { name: '파쇄',   qi: 20, mult: 2.4 },                    // 충거: 거점 대데미지
   tower:    { name: '불화살', qi: 15, mult: 1.7 },                    // 정란: 병사 살상
   beast:    { name: '방사',   qi: 20, mult: 1.6, burn: true },        // 목수: 화염 공격
@@ -1196,6 +1193,16 @@ export class Game {
       // 전법 (공성과 같은 규칙)
       const tac = TACTICS[att.type];
       const aptLv = att.type === 'sword' ? 1 : APT_LV(lead.apt?.[APT_IDX[att.type]]);
+      if (!tac && att.type !== 'sword' && (att._tacTurn ?? -1) < this.turn && Math.random() < Math.min(0.55, 0.15 + lead.war/250)) { // R39: 창·극·기병은 설계의 추가 전법(적성·기력·턴 1회 조건 동일)을 자동 전투에서도 같은 선택 규칙(pickTactic)으로 사용
+        const opt = this.pickTactic(att, def);
+        if (opt) {
+          att.qi -= opt.qi; att._tacTurn = this.turn; dmg = Math.round(dmg * opt.mult);
+          this.gainMerit(att.officers[0], MERIT.tactic);
+          if (att.type === 'cav') att._cavTactic = true;
+          const note = opt.eff ? this._tacExtra(att, def, opt, dmg) : '';
+          this.log(`【전법】${lead.name_ko}의 ${opt.name}! 야전에서 ${def.label}에 큰 피해${note}`, att.force === this.playerForce);
+        }
+      }
       if (tac && att.type !== 'sword' && (att._tacTurn ?? -1) !== this.turn && aptLv >= (tac.minApt ?? 1) && (att.qi ?? 100) >= tac.qi && Math.random() < Math.min(0.55, 0.15 + lead.war/250)) {
         att.qi -= tac.qi; dmg = Math.round(dmg * tac.mult);
         if (tac.guard) att._guard = true;
@@ -1219,8 +1226,8 @@ export class Game {
     };
     a._guard = false; b._guard = false;
     let da = strike(a, b), db = strike(b, a);
-    if (a._guard) db = Math.round(db * TACTICS[a.type].guard); // 철벽: 받는 피해 감소
-    if (b._guard) da = Math.round(da * TACTICS[b.type].guard);
+    if (a._guard) db = Math.round(db * (TACTICS[a.type]?.guard ?? 1)); // 철벽: 받는 피해 감소
+    if (b._guard) da = Math.round(da * (TACTICS[b.type]?.guard ?? 1));
     a.troops = Math.max(0, a.troops - db);
     b.troops = Math.max(0, b.troops - da);
     this.gainTechP(a.force, Math.min(40, Math.floor(db / 100))); this.gainTechP(b.force, Math.min(40, Math.floor(da / 100))); // 전투 기교P
@@ -1251,13 +1258,19 @@ export class Game {
   }
 
   // === R15: 전법·계략 직접 발동 — 자동 발동과 같은 비용·수치, 플레이어가 부대 패널에서 대상을 직접 선택 (설계안 본편 조작) ===
+  pickTactic(u, eu) { // 추가 전법 선택 규칙 (AI와 자동 전투 공통): 혼란형 우선, 주변 적 2부대 이상이면 광역·관통형, 아니면 기력이 가장 큰 것
+    const info = this.tacticInfo(u); if (!info) return null;
+    const ex = info.opts.filter(o => o.id !== 'base'); if (!ex.length) return null;
+    const near = this.units.filter(x => x !== eu && x.force !== u.force && !this.isPeace(u.force, x.force) && Math.hypot(x.x - eu.x, x.z - eu.z) < 1.6).length;
+    return ex.find(o => o.eff === 'conf' && (eu.conf ?? 0) <= 0) || (near >= 1 ? ex.find(o => ['whirl', 'volley', 'side', 'pierce'].includes(o.eff)) : null) || ex.slice().sort((a, b) => b.qi - a.qi)[0];
+  }
   tacticInfo(u) { // 직접 전법 가능 여부 (자동 발동의 자격·기력 조건과 동일)
-    const tac = u && u.type !== 'sword' ? TACTICS[u.type] : null; // R36: 검병은 전법 없음 (설계 58행)
-    if (!u || !tac || (u.conf ?? 0) > 0 || (u._tacTurn ?? -1) === this.turn) return null; // 턴 1회 제한 (자동 발동의 교전당 1회 판정과 같은 행동 경제)
+    const tac = u && u.type !== 'sword' ? TACTICS[u.type] : null; const hasEx = u && (TACTICS_EX[u.type]||[]).length > 0; // R36: 검병은 전법 없음 (설계 58행)
+    if (!u || (!tac && !hasEx) || (u.conf ?? 0) > 0 || (u._tacTurn ?? -1) === this.turn) return null; // 턴 1회 제한 (자동 발동의 교전당 1회 판정과 같은 행동 경제)
     const lead = this.officers[u.officers[0]] ?? { war: 60, int: 30, apt: null, name_ko: '적병 두목', idx: -1 };
     const aptLv = u.type === 'sword' ? 1 : APT_LV(lead.apt?.[APT_IDX[u.type]]);
     const opts = [];
-    if (aptLv >= (tac.minApt ?? 1) && (u.qi ?? 100) >= tac.qi) opts.push({ id: 'base', ...tac });
+    if (tac && aptLv >= (tac.minApt ?? 1) && (u.qi ?? 100) >= tac.qi) opts.push({ id: 'base', ...tac });
     for (const x of (TACTICS_EX[u.type] || [])) if (aptLv >= x.minApt && (u.qi ?? 100) >= x.qi) opts.push(x);
     if (!opts.length) return null;
     return { tac: opts.find(o => o.id === 'base') ?? opts[0], lead, opts };
