@@ -411,6 +411,8 @@ export class Game {
   }
   unitTechAtk(u) { const b = TYPE2TECH[u.type]; return (b ? 1 + 0.05 * this.techLv(u.force, b) : 1) * ((u.type === 'spear' || u.type === 'pike') && this.forces[u.force]?.arts?.['정예창병'] ? 1.08 : 1); }
   gainTechP(fid, n) { const f = this.forces[fid]; if (f?.alive) f.techP = (f.techP ?? 0) + n; }
+  passAt(x, z) { return !!this.mountainFn?.(x, z); } // 간도: 렌더 고지대 셀과 동일(map3d.mountainAtLL 연결, 저장 없음)
+  passMult(u) { return this.forces[u.force]?.arts?.['난소행군'] ? 0.9 : 0.6; } // 간도 통과 속도 (자체 잠정값, 난소행군이면 완화)
   riverMult(u) { if (this.forces[u.force]?.arts?.['난소행군']) return 0.8; return isFordAt(u.x, u.z) ? 0.6 : 0.35; }
   researchArt(fid, name) { // R23: 개별 기교 연구 (기교P+금, 1회)
     const f = this.forces[fid], a = ARTS[name];
@@ -819,7 +821,7 @@ export class Game {
     const ci = x => Math.round((x - lon0) / st), cj = z => Math.round((z - lat0) / st);
     const pass = (i, j) => ship ? isWaterAt(lon0 + i * st, lat0 + j * st) : !isSeaAt(lon0 + i * st, lat0 + j * st);
     const art = !!this.forces[u.force]?.arts?.['난소행군'];
-    const stepCost = (i, j) => { if (ship) return 1; const x = lon0 + i * st, z = lat0 + j * st; if (!isRiverAt(x, z)) return 1; return art ? 1.25 : (isFordAt(x, z) ? 1.7 : 2.9); }; // R23: 여울 우선 도하, 난소행군 시 완화
+    const stepCost = (i, j) => { if (ship) return 1; const x = lon0 + i * st, z = lat0 + j * st; if (!isRiverAt(x, z)) return this.passAt(x, z) ? (art ? 1.3 : 2.2) : 1; return art ? 1.25 : (isFordAt(x, z) ? 1.7 : 2.9); }; // R23: 여울 우선 도하, 난소행군 시 완화
     const snap = (i, j) => { // 가장 가까운 통과 가능 셀 (반경 8)
       if (i >= 0 && i <= W && j >= 0 && j <= H && pass(i, j)) return [i, j];
       for (let r = 1; r <= 8; r++) for (let di = -r; di <= r; di++) for (let dj = -r; dj <= r; dj++) {
@@ -1101,6 +1103,7 @@ export class Game {
     const d = Math.hypot(dx, dz);
     if ((u.path?.length || d > 1.2) && d > 1e-6) {
       if (!SHIP_TYPES.has(u.type)) speed *= this.fieldSlow(u); // R26: 토루
+      if (!SHIP_TYPES.has(u.type) && this.passAt(u.x, u.z)) speed *= this.passMult(u); // 간도(산악 샛길) 감속 (자체 정의)
       if (!SHIP_TYPES.has(u.type) && isRiverAt(u.x, u.z)) speed *= this.riverMult(u); // R17/R23: 육군 강 도하 감속 - 깊은 강 0.35·여울 0.6·난소행군 0.8 (자체 수치)
       const nx = u.x + dx/d*speed, nz = u.z + dz/d*speed;
       if (SHIP_TYPES.has(u.type) && !isWaterAt(nx, nz)) { // 수군: 강·바다에서만 기동
