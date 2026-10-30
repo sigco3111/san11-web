@@ -1,7 +1,7 @@
 // 진입점: 화면 전환·UI·지도 연결
-import { Map3D, toWorld } from './map3d.js?v=r26';
-import { Game, SAVE_KEY, forceColor, UNIT_TYPES, ARTS, josa, josaRo, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL } from './game.js?v=r26';
-import { aiThink } from './ai.js?v=r26';
+import { Map3D, toWorld } from './map3d.js?v=r27';
+import { Game, SAVE_KEY, forceColor, UNIT_TYPES, ARTS, FIELD_FACS, SHIP_TYPES, josa, josaRo, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL } from './game.js?v=r27';
+import { aiThink } from './ai.js?v=r27';
 
 const $ = id => document.getElementById(id);
 let DATA = null, game = null, map = null, selectedUnit = null, autoTimer = null, pendingFire = null; // R15: 직접 전법·계략 대기
@@ -9,7 +9,7 @@ let DATA = null, game = null, map = null, selectedUnit = null, autoTimer = null,
 async function loadData() {
   const [officers, skills, portraits, s184, s190, s251] = await Promise.all(
     ['data/officers670.json','data/skills.json','data/portraits.json','data/scenario-184.json','data/scenario-190.json','data/scenario-251.json']
-      .map(u => fetch(u + '?v=r26').then(r => r.json())));
+      .map(u => fetch(u + '?v=r27').then(r => r.json())));
   const byIdx = {};
   for (const o of officers) byIdx[o.idx] = o;
   DATA = { officers: byIdx, skills, portraits, scenarios: { '184': s184, '190': s190, '251': s251 } };
@@ -91,6 +91,7 @@ function refreshAll() {
     else map.updateUnit(worldUnit(u), forceColor(u.force));
   }
   for (const id of Object.keys(map.unitMeshes)) if (!game.units.find(u => u.id == id)) map.removeUnit(id);
+  map.syncFieldFacs?.((game.fieldFacs ?? []).filter(f => game.delegated || f.force === game.playerForce || game.inVision(f.x, f.z)).map(f => { const [x, z] = toWorld(f.x, f.z); return { id: f.id, type: f.type, x, z, color: forceColor(f.force), done: f.left <= 0 }; })); // R26: 야전 시설
   map.setSeason?.(game.month); // R16: 사계절 표현
   refreshHud(); refreshLog();
   game.autosave(); // R13 회귀 방지: UI에서 실행한 모든 커맨드는 실행 직후 영속 (턴 종료 전 리로드 소실 방지)
@@ -699,6 +700,7 @@ function showUnitPanel(uid) {
     ${mine && (u.conf ?? 0) <= 0 && (u._stratTurn ?? -1) !== game.turn && u.officers.some(i => (DATA.officers[i]?.int ?? 0) >= 75) && (u.qi ?? 100) >= 30 ? '<p><button class="cmd" id="up-fire">계략 화계 (기력 30)</button></p>' : ''}
     ${mine && (u.conf ?? 0) <= 0 && (u._stratTurn ?? -1) !== game.turn && u.officers.some(i => (DATA.officers[i]?.int ?? 0) >= 80) && (u.qi ?? 100) >= 25 ? '<p><button class="cmd" id="up-conf">계략 혼란 (기력 25)</button></p>' : ''}
     ${mine && (u.conf ?? 0) <= 0 && (u._stratTurn ?? -1) !== game.turn && u.officers.some(i => (DATA.officers[i]?.int ?? 0) >= 80) && (u.qi ?? 100) >= 15 ? '<button class="cmd" id="up-rumor">계략 위보 (기력 15)</button> <button class="cmd" id="up-calm">계략 진정 (기력 10)</button>' : ''}
+    ${mine && !SHIP_TYPES.has(u.type) ? `<p>${u.building ? `<span style="color:#ffd700">${u.building} 건설 중 (이동 명령을 내리면 취소)</span>` : Object.entries(FIELD_FACS).map(([k, v]) => `<button class="cmd up-ff" data-k="${k}" title="${v.desc}">${k} 건설 (금 ${v.cost}·${v.turns}턴)</button>`).join(' ')}</p>` : ''}
     <p><button class="cmd" id="up-close">닫기</button></p>`;
   $('up-close').onclick = () => { $('panel').classList.add('hidden'); selectedUnit = null; pendingFire = null; };
   const armFire = (kind, label, tid = null) => { // R15: 대상 선택 모드 진입
@@ -707,6 +709,11 @@ function showUnitPanel(uid) {
     $('up-cancel').onclick = () => { pendingFire = null; showUnitPanel(u.id); };
   };
   document.querySelectorAll('#panel .up-tac').forEach(b => { b.onclick = () => { const o = game.tacticInfo(u).opts.find(x => x.id === b.dataset.tid); armFire('tactic', `전법 ${o.name}`, o.id); }; });
+  document.querySelectorAll('#panel .up-ff').forEach(b => { b.onclick = () => { // R26
+    const ok = game.buildField(u.id, b.dataset.k);
+    refreshAll(); showUnitPanel(u.id);
+    if (!ok) { const w = document.createElement('p'); w.style.color = '#e66'; w.textContent = game.lastFieldWhy ?? '건설할 수 없습니다'; $('panel').insertBefore(w, $('up-close').parentElement); }
+  }; });
   if ($('up-fire')) $('up-fire').onclick = () => armFire('fire', '계략 화계');
   if ($('up-conf')) $('up-conf').onclick = () => armFire('confuse', '계략 혼란');
   if ($('up-rumor')) $('up-rumor').onclick = () => armFire('rumor', '계략 위보');
@@ -724,7 +731,7 @@ async function boot() {
       const d = JSON.parse(localStorage.getItem(SAVE_KEY));
       const g = new Game(DATA.scenarios[d.scenId], DATA.officers, DATA.skills, d.playerForce);
       window.__game = g; // 테스트 훅
-      Object.assign(g, { year: d.year, month: d.month, dan: d.dan, turn: d.turn, cities: d.cities, forces: d.forces, units: d.units, nextUnitId: d.nextUnitId, playerForce: d.playerForce, delegated: d.delegated, logs: d.logs, deadAck: d.deadAck, chronicle: d.chronicle ?? [], over: d.over ?? false, unified: d.unified ?? d.over ?? false }); // R14: over로 저장된 통일 세이브 호환
+      Object.assign(g, { year: d.year, month: d.month, dan: d.dan, turn: d.turn, cities: d.cities, forces: d.forces, units: d.units, nextUnitId: d.nextUnitId, fieldFacs: d.fieldFacs ?? [], nextFacId: d.nextFacId ?? 1, playerForce: d.playerForce, delegated: d.delegated, logs: d.logs, deadAck: d.deadAck, chronicle: d.chronicle ?? [], over: d.over ?? false, unified: d.unified ?? d.over ?? false }); // R14: over로 저장된 통일 세이브 호환
       g.cityById = {}; g.cities.forEach(c => g.cityById[c.id] = c);
       for (const c of g.cities) c.officers = [...new Set(c.officers ?? [])]; // 레거시 세이브 중복 무장 정리
       g.diplo = d.diplo ?? {};
