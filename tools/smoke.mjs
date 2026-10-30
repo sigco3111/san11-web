@@ -572,6 +572,83 @@ if (g.units.find(u => u.id === 9999) && g.units.find(u => u.id === 9999).qi === 
   console.log('R8 병기·수군 게이트 PASS');
 }
 // 번들 부팅 게이트: 모듈 초기화 오류(TDZ·문법·import 잔류)를 배포 전 검출
+// R9: 재해·치안·수완 게이트 (결정적)
+{
+  const g9 = new Game(JSON.parse(JSON.stringify(scen)), officers, {}, 0);
+  const home = g9.cities.find(c => c.force === 0);
+  const f0 = g9.forces[0];
+  const origRand = Math.random;
+  // 순찰: 치안 +10, 금 100·AP 20 차감 / 상한 100이면 불가
+  home.security = 70; home.gold = 1000; f0.ap = 100;
+  if (!g9.patrol(home.id) || home.security !== 80 || home.gold !== 900 || f0.ap !== 80) { console.error('FAIL: R9 순찰', home.security, home.gold, f0.ap); process.exit(1); }
+  home.security = 100;
+  if (g9.patrol(home.id)) { console.error('FAIL: R9 순찰 상한'); process.exit(1); }
+  // 월간 감소: 특기 없으면 -1, '치안' 특기 주둔 시 유지 (시나리오 주둔 치안 특기 무장은 제외하고 검증)
+  home.officers = home.officers.filter(i => g9.officers[i]?.skill !== '치안');
+  Math.random = () => 0.99;
+  home.security = 80; g9.dan = 3; g9.endTurn(aiThink);
+  if (home.security !== 79) { console.error('FAIL: R9 치안 감소', home.security); process.exit(1); }
+  const chiIdx = 91001;
+  g9.officers[chiIdx] = { idx: chiIdx, name_ko: '치안시험', ldr: 50, war: 50, int: 50, pol: 80, chr: 50, skill: '치안', apt: {}, state: { status: 'serving', force: 0, city: home.id } };
+  home.officers.push(chiIdx);
+  g9.dan = 3; g9.endTurn(aiThink);
+  if (home.security !== 79) { console.error('FAIL: R9 치안 특기 유지', home.security); process.exit(1); }
+  // 재해·적 출현: random 0 강제
+  Math.random = () => 0;
+  g9.dan = 3; g9.endTurn(aiThink);
+  Math.random = origRand;
+  if (!home.disaster || home.disaster.type !== '역병') { console.error('FAIL: R9 재해 발생', JSON.stringify(home.disaster)); process.exit(1); }
+  const bandit = g9.units.find(u => u.force === -1);
+  if (!bandit || bandit.targetCity !== home.id || bandit.troops !== 3000) { console.error('FAIL: R9 적 출현', JSON.stringify(bandit)); process.exit(1); }
+  // 적 도착: 완성 시설 파괴 후 소멸
+  bandit.x = home.lon + 1; bandit.z = home.lat;
+  home.facilities = [{ key: '시장', lv: 1, done: true, turnsLeft: 0 }];
+  Math.random = () => 0;
+  g9.banditAct(bandit);
+  Math.random = origRand;
+  if (home.facilities.length !== 0 || g9.units.includes(bandit)) { console.error('FAIL: R9 시설 파괴·소멸'); process.exit(1); }
+  // 시설 없으면 금 약탈
+  const b2 = { id: 99991, force: -1, officers: [], troops: 3000, type: 'spear', x: home.lon + 1, z: home.lat, path: [], tx: null, tz: null, targetCity: home.id, label: '적병 3k', qi: 100, conf: 0, until: g9.turn + 18 };
+  g9.units.push(b2);
+  const gB = home.gold;
+  g9.banditAct(b2);
+  if (home.gold !== gB - Math.min(gB, 500)) { console.error('FAIL: R9 약탈', gB, home.gold); process.exit(1); }
+  // 수명 도래 시 자연 소멸
+  const b4 = { ...b2, id: 99994, x: home.lon + 5, z: home.lat, until: g9.turn };
+  g9.units.push(b4);
+  g9.banditAct(b4);
+  if (g9.units.includes(b4)) { console.error('FAIL: R9 적 수명 소멸'); process.exit(1); }
+  // 야전: 무장 없는 적병 부대도 교전 처리 (가드 경로)
+  const b3 = { ...b2, id: 99992, x: 0, z: 0, targetCity: null };
+  const mine9 = { id: 99993, force: 0, officers: [f0.ruler], troops: 9000, type: 'cav', x: 1, z: 0, path: [], tx: null, tz: null, targetCity: null, label: '아군9k', qi: 100, conf: 0 };
+  g9.units.push(b3, mine9);
+  g9.fieldBattle(b3, mine9);
+  if (mine9.troops >= 9000) { console.error('FAIL: R9 적병 야전', mine9.troops); process.exit(1); }
+  // 수완: 수상전 공격 +15%
+  const oNo = 92001, oSu = 92002;
+  g9.officers[oNo] = { idx: oNo, name_ko: '무특기', ldr: 50, war: 80, int: 30, pol: 30, chr: 50, skill: null, apt: {}, state: { status: 'serving', force: 0, city: null } };
+  g9.officers[oSu] = { ...g9.officers[oNo], idx: oSu, skill: '수완' };
+  const dA = { id: 99011, force: 99, officers: [], troops: 100000, type: 'spear', x: 114.3, z: 30.5, path: [], tx: null, tz: null, targetCity: null, label: 'DA', qi: 100, conf: 0 };
+  const dB = { ...dA, id: 99012, label: 'DB' };
+  const aNo = { id: 99013, force: 0, officers: [oNo], troops: 10000, type: 'junk', x: 114.3, z: 30.5, path: [], tx: null, tz: null, targetCity: null, label: 'A1', qi: 100, conf: 0 };
+  const aSu = { ...aNo, id: 99014, officers: [oSu], label: 'A2' };
+  Math.random = () => 0.99;
+  g9.fieldBattle(aNo, dA); g9.fieldBattle(aSu, dB);
+  Math.random = origRand;
+  if (!(dB.troops < dA.troops)) { console.error('FAIL: R9 수완 수상 보정', dA.troops, dB.troops); process.exit(1); }
+  // 재해 지속: 병사 감소 후 만료
+  home.disaster = { type: '역병', until: 0 };
+  home.troops = 10000; home.gold = 1000; home.food = 10000;
+  Math.random = () => 0.99;
+  g9.dan = 3; g9.endTurn(aiThink);
+  Math.random = origRand;
+  if (home.troops !== 9500 || home.disaster) { console.error('FAIL: R9 재해 감소·만료', home.troops, JSON.stringify(home.disaster)); process.exit(1); }
+  // 세이브 직렬화: security·disaster·적병 부대 보존
+  const snap = JSON.parse(JSON.stringify({ cities: g9.cities, units: g9.units }));
+  const h2 = snap.cities.find(c => c.id === home.id);
+  if (typeof h2.security !== 'number') { console.error('FAIL: R9 세이브 치안 보존'); process.exit(1); }
+  console.log('R9 재해·치안 게이트 PASS (순찰/감소/특기/재해/적출현/파괴/약탈/야전/수완/세이브)');
+}
 {
   const fs = await import('fs');
   const vm = await import('vm');
