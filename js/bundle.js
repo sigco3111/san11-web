@@ -75,6 +75,40 @@ function inOutline(lon, lat) {
   }
   return inside;
 }
+// 해안 체인: 동해안(12..37), 남해안(37..42) — 폴리곤 바깥의 바다 판정용
+const EAST_COAST = OUTLINE.slice(12, 38);  // [125.5,41.5] -> [109.8,21.8]
+const SOUTH_COAST = OUTLINE.slice(37, 43); // [109.8,21.8] -> [101.2,26.2]
+function _chainLonAtLat(chain, lat) { // 감소 순서 체인에서 lat의 경계 lon
+  for (let i = 0; i < chain.length-1; i++) {
+    const [x1,y1] = chain[i], [x2,y2] = chain[i+1];
+    if ((y1 >= lat && y2 <= lat) || (y2 >= lat && y1 <= lat)) {
+      return y1 === y2 ? Math.max(x1,x2) : x1 + (x2-x1)*(lat-y1)/(y2-y1);
+    }
+  }
+  return chain[chain.length-1][0];
+}
+function _chainLatAtLon(chain, lon) {
+  for (let i = 0; i < chain.length-1; i++) {
+    const [x1,y1] = chain[i], [x2,y2] = chain[i+1];
+    if ((x1 <= lon && x2 >= lon) || (x2 <= lon && x1 >= lon)) {
+      return x1 === x2 ? Math.max(y1,y2) : y1 + (y2-y1)*(lon-x1)/(x2-x1);
+    }
+  }
+  return chain[0][1];
+}
+// 윤곽 밖 셀의 바다 여부: 동해안 동쪽, 남해안 남쪽만 바다. 서/북은 대륙이 이어짐.
+function isSea(lon, lat) {
+  if (inOutline(lon, lat)) return false;
+  if (lat <= EAST_COAST[0][1]) {
+    const coastLon = lat <= 21.8 ? 109.8 : _chainLonAtLat(EAST_COAST, lat);
+    if (lon > coastLon) return true;
+  }
+  if (lon >= SOUTH_COAST[SOUTH_COAST.length-1][0] && lon <= SOUTH_COAST[0][0]) {
+    if (lat < _chainLatAtLon(SOUTH_COAST, lon)) return true;
+  }
+  return false;
+}
+
 function hash(x, z) { const s = Math.sin(x*127.1+z*311.7)*43758.5453; return s - Math.floor(s); }
 function noise(x, z) { return hash(Math.floor(x*3.1), Math.floor(z*3.1))*0.6 + hash(Math.floor(x*7.7), Math.floor(z*7.7))*0.4; }
 
@@ -226,12 +260,7 @@ class Map3D {
       const x = GX2 + (ix+0.5)*CELL, z = GZ2 + (iz+0.5)*CELL;
       const [lon, lat] = toLonLat(x, z);
       let lv = 0;
-      if (ix < MGN || iz < MGN || ix >= MGN+GN || iz >= MGN+GN) {
-        // 확장 링: 대륙은 맵 밖으로 이어지고, 동해/남중국해만 바다
-        if (!((lon > 124 && lat < 40.5) || (lat < 21.8 && lon > 109))) {
-          lv = noise(lon*0.4+9, lat*0.4+2) > 0.8 ? 2 : 1;
-        }
-      } else if (inOutline(lon, lat)) {
+      if (inOutline(lon, lat)) {
         lv = Math.min(3, Math.max(1, 1 + Math.floor((rawHeight(lon,lat)-0.25)/0.6)));
         // 강 파내기 (도시 보호 반경 제외)
         let dR = 1e9;
@@ -239,6 +268,9 @@ class Map3D {
         if (dR < RIVER_R && !this.nearCity(x, z, CITY_RIVER_R)) lv = 0;
         // 도시 주변 평탄화
         if (lv > 1 && this.nearCity(x, z, CITY_FLAT_R)) lv = 1;
+      } else if (!isSea(lon, lat)) {
+        // 윤곽 밖 내륙(서/북/남서): 대륙이 맵 밖까지 물리적으로 이어짐
+        lv = noise(lon*0.4+9, lat*0.4+2) > 0.8 ? 2 : 1;
       }
       levels[iz*GN2+ix] = lv;
     }
