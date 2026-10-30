@@ -1852,13 +1852,13 @@ if (g.units.find(u => u.id === 9999) && g.units.find(u => u.id === 9999).qi === 
 {
   const fail = m => { console.log('FAIL: R39 ' + m); process.exit(1); };
   const rand0 = Math.random;
-  const run = (type, apt, qi, lastTurn) => {
+  const run = (type, apt, qi, lastTurn, gap = 0.5, extra = false) => {
     const g = new Game(JSON.parse(JSON.stringify(scen)), JSON.parse(JSON.stringify(officers)), {}, 0); g.units = [];
     const pf = g.playerForce, ef = g.cities.find(c => c.force != null && c.force !== pf).force;
     const o1 = g.forces[pf].ruler, o2 = g.forces[ef].ruler;
     for (const o of [o1, o2]) { g.officers[o].int = 10; g.officers[o].apt = {}; for (let k = 0; k < 12; k++) g.officers[o].apt[k] = apt; }
     const mk = (id, force, o, t, x) => { const u = { id, force, officers: [o], troops: 9000, type: t, x, z: 10, path: [], tx: null, tz: null, targetCity: null, label: 'G' + id, qi, conf: 0 }; g.units.push(u); return u; };
-    const a = mk(1, pf, o1, type, 10), b = mk(2, ef, o2, 'sword', 10.5);
+    const a = mk(1, pf, o1, type, 10), b = mk(2, ef, o2, 'sword', 10 + gap); if (extra) mk(3, ef, o2, 'sword', 10 + gap, 10.4);
     if (lastTurn) a._tacTurn = g.turn;
     let logs = []; g.log = m => { if (m.includes('【전법】')) logs.push(m); };
     Math.random = () => 0; try { g.fieldBattle(a, b); } finally { Math.random = rand0; }
@@ -1866,7 +1866,9 @@ if (g.units.find(u => u.id === 9999) && g.units.find(u => u.id === 9999).qi === 
   };
   const sp = run('spear', 'S', 100, false), pk = run('pike', 'S', 100, false), cv = run('cav', 'S', 100, false);
   if (sp.logs.length !== 1 || !/나선찌르기/.test(sp.logs[0]) || sp.aQi !== 85) fail('창병 자동 전법(혼란형 우선, 기력 15) ' + JSON.stringify(sp));
-  if (pk.logs.length !== 1 || !/선풍베기/.test(pk.logs[0]) || pk.aQi !== 75) fail('극병 자동 전법 ' + JSON.stringify(pk));
+  if (pk.logs.length !== 1 || !/옆베기/.test(pk.logs[0]) || pk.aQi !== 80) fail('극병이 맞붙은 거리(끌어당길 틈 없음, 주변 적 없음)에서는 옆베기(단독 대상 배율 1.2)만 후보 ' + JSON.stringify(pk));
+  const pkFar = run('pike', 'S', 100, false, 1.5); if (pkFar.logs.length !== 1 || !/웅수/.test(pkFar.logs[0]) || pkFar.aQi !== 85) fail('극병 거리 있을 때 웅수 ' + JSON.stringify(pkFar));
+  const pkMany = run('pike', 'S', 100, false, 1.5, true); if (pkMany.logs.length !== 1 || !/(선풍베기|옆베기)/.test(pkMany.logs[0])) fail('극병 주변 적 있을 때 광역형 ' + JSON.stringify(pkMany));
   if (cv.logs.length !== 1 || cv.aQi >= 100) fail('기병 자동 전법 ' + JSON.stringify(cv));
   if (run('spear', 'D', 100, false).logs.length) fail('적성 B 미만인데 자동 전법 발동');
   if (run('spear', 'S', 10, false).logs.length) fail('기력 부족인데 자동 전법 발동');
@@ -1876,7 +1878,25 @@ if (g.units.find(u => u.id === 9999) && g.units.find(u => u.id === 9999).qi === 
     const li = g.tacticInfo(mkS('lou', 1)), di = g.tacticInfo(mkS('dou', 2));
     if (!li || li.opts.some(x => x.id === 'base') || li.opts.filter(x => x.name === '격돌').length !== 1) fail('누선 격돌 중복 ' + JSON.stringify(li?.opts.map(x => x.name)));
     if (!di || !di.opts.some(x => x.name === '격돌') || !di.opts.some(x => x.id === 'base' && x.name === '투석')) fail('투함 격돌/투석 ' + JSON.stringify(di?.opts.map(x => x.name))); }
-  console.log('R39 창·극·기병 자동 전법 게이트 PASS (설계 EX 사용: 창 나선찌르기(15)·극 선풍베기(25, 혼란형 없음→최고 기력형), 기병 사용, 적성 B 미만/기력 부족/턴 1회 차단)');
+  { // 노병: 자동 판정도 기본 불화살/EX 중 실제 유효한 것 하나를 한 번만 선택 (한 타격당 기회 1회)
+    const bw = run('bow', 'S', 100, false, 1.5); if (bw.logs.length !== 1 || !/불화살/.test(bw.logs[0]) || bw.aQi !== 85) fail('노병 주변 적 없을 때 기본 불화살 ' + JSON.stringify(bw));
+    const bwMany = run('bow', 'S', 100, false, 1.5, true); if (bwMany.logs.length !== 1 || !/(난사|관통화살)/.test(bwMany.logs[0])) fail('노병 주변 적 있을 때 EX 광역 ' + JSON.stringify(bwMany)); }
+  { // 투함/누선 수전: 물 위에서 격돌(1칸 격퇴)이 자동으로 쓰이고 적이 실제로 밀려남, 저장 레코드에 기력·턴 반영
+    let wx = null, wz = null; for (let lat = 22; lat < 40 && wx == null; lat += 0.1) for (let lon = 100; lon < 124; lon += 0.1) { let all = true; for (let d = 0; d <= 1.6; d += 0.4) if (!isWaterAt(lon + d, lat)) { all = false; break; } if (all) { wx = lon; wz = lat; break; } }
+    if (wx == null) fail('수전 fixture용 물 지형을 찾지 못함');
+    for (const shipType of ['lou', 'dou']) {
+      const g = new Game(JSON.parse(JSON.stringify(scen)), JSON.parse(JSON.stringify(officers)), {}, 0); g.units = [];
+      const pf = g.playerForce, ef = g.cities.find(c => c.force != null && c.force !== pf).force; const o1 = g.forces[pf].ruler, o2 = g.forces[ef].ruler;
+      for (const o of [o1, o2]) { g.officers[o].int = 10; g.officers[o].apt = {}; for (let k = 0; k < 12; k++) g.officers[o].apt[k] = 'S'; }
+      const mkU = (id, force, o, t, x) => { const u = { id, force, officers: [o], troops: 9000, type: t, x, z: wz, path: [], tx: null, tz: null, targetCity: null, label: 'N' + id, qi: 100, conf: 0 }; g.units.push(u); return u; };
+      const a = mkU(1, pf, o1, shipType, wx), b = mkU(2, ef, o2, 'junk', wx + 0.5); const bx0 = b.x; let logs = []; g.log = m => { if (m.includes('【전법】') && m.includes(g.officers[o1].name_ko)) logs.push(m); };
+      const store = {}; globalThis.localStorage = { setItem: (k, v) => { store[k] = v; }, getItem: k => store[k] ?? null };
+      Math.random = () => 0; try { g.fieldBattle(a, b); } finally { Math.random = rand0; }
+      if (logs.length !== 1) fail(shipType + ' 수전 전법 1회 아님 ' + JSON.stringify(logs));
+      if (shipType === 'lou' && !(/격돌/.test(logs[0]) && b.x > bx0 && a.qi === 80)) fail('누선 격돌 격퇴/기력 ' + JSON.stringify({ logs, bx: [bx0, b.x], qi: a.qi }));
+      g.autosave(); const saved = JSON.parse(Object.values(store)[0] || '{}').units?.find(u => u.id === 1); if (!saved || saved.qi !== a.qi || saved._tacTurn !== g.turn) fail(shipType + ' 저장 레코드 ' + JSON.stringify(saved));
+    } }
+  console.log('R39 자동 전법 게이트 PASS (창 나선찌르기, 극병은 맞붙으면 무발동·거리 있으면 웅수·주변 적 있으면 광역, 노병 불화살/광역 선택, 누선 격돌 수전 격퇴·저장, 적성 B 미만/기력 부족/턴 1회 차단)');
 }
 // === R41: ai.js 호환 가드 - game에 pickTactic이 없어도(구 game.js와 혼합 로드) AI 전법이 예외 없이 같은 규칙으로 동작 ===
 {
