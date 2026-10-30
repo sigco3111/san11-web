@@ -604,6 +604,10 @@ const MERIT = { develop: 30, recruit: 80, facility: 100, tactic: 40, stratagem: 
 const DEBATE_CARDS = {
 질타: { dmg: 12 }, 강변: { dmg: 24, cd: 2, int: 80 }, 반박: { counter: 8 }, 경청: { heal: 12, cd: 2 }, 도발: { seal: true, cd: 3, int: 85 },
 };
+const SWORN_GROUPS = [['유비', '관우', '장비'], ['손책', '주유']];
+const SPOUSE_PAIRS = [['손책', '대교'], ['주유', '소교'], ['유비', '손상향'], ['조조', '변씨'], ['여포', '초선']];
+const DEAR_PAIRS = [['조조', '순욱'], ['조조', '곽가'], ['조조', '하후돈'], ['조조', '하후연'], ['유비', '조운'], ['유비', '제갈량'], ['손권', '주유'], ['손권', '여몽'], ['동탁', '여포']];
+const HATE_PAIRS = [['마초', '조조'], ['손책', '황조'], ['장비', '여포'], ['관우', '여포']];
 class Game {
 constructor(scen, officers, skills, playerForceId) {
 this.officers = officers;
@@ -940,7 +944,13 @@ if (t.state.found === false) return 0;
 const envoy = Math.max(...c.officers.map(i => this.officers[i].chr));
 const ruler = this.officers[this.forces[c.force].ruler]?.chr ?? 50;
 const loyal = t.state.loyal ?? 70;
-return Math.max(0.1, Math.min(0.9, 0.45 + (envoy - t.chr)/200 + (ruler - 50)/500 - loyal/400 + (this.cityHasSkill(c, '등용') ? 0.1 : 0)));
+const rel = this.relOf(officerIdx);
+let mod = 0;
+if (rel.dear.some(i => this.officers[i]?.state?.force === c.force)) mod += 0.1;
+const rf = this.forces[c.force];
+if (rf && rel.hate.includes(rf.ruler)) mod -= 0.15;
+if (rel.sworn.some(i => { const f2 = this.officers[i]?.state?.force; return f2 != null && f2 !== c.force; }) || (rel.spouse != null && (this.officers[rel.spouse]?.state?.force != null) && this.officers[rel.spouse].state.force !== c.force)) mod -= 0.2;
+return Math.max(0.1, Math.min(0.9, 0.45 + (envoy - t.chr)/200 + (ruler - 50)/500 - loyal/400 + (this.cityHasSkill(c, '등용') ? 0.1 : 0) + mod));
 }
 recruitOfficer(cityId, officerIdx) {
 const c = this.cityById[cityId], f = this.forces[c.force];
@@ -1095,6 +1105,24 @@ c.officers = c.officers.filter(x => x !== i);
 }
 }
 }
+for (const f of Object.values(this.forces)) {
+if (!f.alive) continue;
+const ra = this.affOf(f.ruler);
+for (const o of Object.values(this.officers)) {
+const st = o.state;
+if (!st || st.force !== f.id || (st.status !== 'serving' && st.status !== 'taesu')) continue;
+const diff = Math.abs(this.affOf(o.idx) - ra);
+if (diff >= 100) st.loyal = Math.max(0, (st.loyal ?? 70) - 1);
+else if (diff <= 25) st.loyal = Math.min(100, (st.loyal ?? 70) + 1);
+}
+}
+for (const f of Object.values(this.forces)) {
+if (!f.alive || (f.techP ?? 0) < 800) continue;
+for (const c of this.forceCities(f.id)) {
+const cand = c.officers.filter(i => (this.officers[i]?.state?.merit ?? 0) >= 500 && this.relOf(i).sworn.length === 0);
+if (cand.length >= 2) { this.swearBrotherhood(c.id, cand.slice(0, 3)); break; }
+}
+}
 }
 for (const o of Object.values(this.officers)) {
 if (o.state && o.state.status === 'not_yet' && this.year >= o.avail) {
@@ -1184,7 +1212,7 @@ if (SIEGE_TYPES.has(u.type) && (u.qi ?? 100) <= 0) {
 return;
 }
 const lead = this.officers[u.officers[0]];
-let dmg = Math.round(u.troops * 0.12 * ut.atk * (0.7 + lead.war/150) * this.aptMult(u) * this.unitDmgMult(u, true) * this.unitItemAtk(u) * this.unitTechAtk(u) * (1 + 0.1 * this.techLv(u.force, '발명')));
+let dmg = Math.round(u.troops * 0.12 * ut.atk * (0.7 + lead.war/150) * this.aptMult(u) * this.unitDmgMult(u, true) * this.unitItemAtk(u) * this.unitTechAtk(u) * this.unitRelMult(u) * (1 + 0.1 * this.techLv(u.force, '발명')));
 let loss = Math.round(c.troops * 0.06 / ut.def + 150);
 const tac = TACTICS[u.type];
 const aptLv = u.type === 'sword' ? 1 : APT_LV(lead.apt?.[APT_IDX[u.type]]);
@@ -1249,7 +1277,7 @@ if ((att.conf ?? 0) > 0) return 0;
 if (SIEGE_TYPES.has(att.type) && (att.qi ?? 100) <= 0) return 0;
 const utA = UNIT_TYPES[att.type], utD = UNIT_TYPES[def.type];
 const lead = this.officers[att.officers[0]] ?? { war: 60, int: 30, apt: null, name_ko: '적병 두목', idx: -1 };
-let dmg = Math.round(att.troops * 0.05 * utA.atk * (0.7 + lead.war/150) / utD.def * this.aptMult(att) * this.unitDmgMult(att) * this.unitItemAtk(att) * this.unitDefMult(def) * this.unitTechAtk(att) * (1 - 0.03 * this.techLv(def.force, '연병')));
+let dmg = Math.round(att.troops * 0.05 * utA.atk * (0.7 + lead.war/150) / utD.def * this.aptMult(att) * this.unitDmgMult(att) * this.unitItemAtk(att) * this.unitDefMult(def) * this.unitTechAtk(att) * this.unitRelMult(att) / this.unitRelMult(def) * (1 - 0.03 * this.techLv(def.force, '연병')));
 if (isWaterAt(att.x, att.z)) { dmg = Math.round(dmg * (utA.ship ? 1.3 : 0.7) * (this.unitHasSkill(att, '수완') ? 1.15 : 1)); }
 const tac = TACTICS[att.type];
 const aptLv = att.type === 'sword' ? 1 : APT_LV(lead.apt?.[APT_IDX[att.type]]);
@@ -1355,6 +1383,47 @@ if (isWaterAt(nx, nz)) return;
 u.x = nx; u.z = nz;
 }
 effWar(o) { return Math.max(1, (o?.war ?? 50) - ((o?.state?.injuredUntil ?? 0) > this.turn ? 20 : 0)); }
+buildRelations() {
+const byName = {};
+for (const o of Object.values(this.officers)) (byName[o.name_ko] ??= []).push(o.idx);
+const rels = {};
+const ensure = i => rels[i] ??= { sworn: [], spouse: null, dear: [], hate: [] };
+for (const g of SWORN_GROUPS) { const ids = g.flatMap(n => byName[n] ?? []); for (const a of ids) for (const b of ids) if (a !== b) ensure(a).sworn.push(b); }
+const pair = (list, fn) => { for (const [x, y] of list) for (const xi of byName[x] ?? []) for (const yi of byName[y] ?? []) if (xi !== yi) fn(xi, yi); };
+pair(SPOUSE_PAIRS, (a, b) => { ensure(a).spouse = b; ensure(b).spouse = a; });
+pair(DEAR_PAIRS, (a, b) => { ensure(a).dear.push(b); ensure(b).dear.push(a); });
+pair(HATE_PAIRS, (a, b) => { ensure(a).hate.push(b); ensure(b).hate.push(a); });
+return rels;
+}
+relOf(idx) {
+this._rels ??= this.buildRelations();
+const base = this._rels[idx] ?? { sworn: [], spouse: null, dear: [], hate: [] };
+const dyn = this.officers[idx]?.state?.sworn ?? [];
+return { ...base, sworn: [...new Set([...base.sworn, ...dyn])] };
+}
+isBonded(a, b) { const r = this.relOf(a); return r.sworn.includes(b) || r.spouse === b; }
+affOf(idx) { let s = 0; for (const ch of (this.officers[idx]?.name_ko ?? '')) s += ch.charCodeAt(0); return s % 150; }
+unitRelMult(u) {
+const os = u.officers;
+for (let i = 0; i < os.length; i++) for (let j = i + 1; j < os.length; j++) if (this.isBonded(os[i], os[j])) return 1.1;
+return 1;
+}
+swearBrotherhood(cityId, idxs) {
+idxs = [...new Set(idxs)];
+const c = this.cityById[cityId], f = this.forces[c?.force];
+if (!c || !f?.alive || this._blocked(c)) return false;
+if (idxs.length < 2 || idxs.length > 3 || idxs.some(i => !c.officers.includes(i))) return false;
+if (idxs.some(i => (this.officers[i]?.state?.merit ?? 0) < 500)) return false;
+if ((f.techP ?? 0) < 500) return false;
+f.techP -= 500;
+for (const i of idxs) {
+const st = this.officers[i].state ??= {};
+st.sworn = [...new Set([...(st.sworn ?? []), ...idxs.filter(x => x !== i)])];
+st.loyal = Math.min(100, (st.loyal ?? 70) + 10);
+}
+    this.log(`【결연】${idxs.map(i => this.officers[i].name_ko).join('·')}이(가) ${c.name_ko}에서 의형제를 맺었습니다! (기교P -500, 충성 +10)`, c.force === this.playerForce);
+return true;
+}
 unitHasItemKind(u, kind) {
 for (const i of u.officers) for (const id of (this.officers[i]?.state?.items ?? [])) if (ITEMS.find(x => x.id === id)?.kind === kind) return true;
 return false;
@@ -1381,7 +1450,8 @@ for (const k of ['a', 'b']) {
 const s = d[k];
 if (s.hp <= 30 && s.cur < s.offs.length - 1) {
 const cur = this.officers[s.offs[s.cur]], nxt = this.officers[s.offs[s.cur + 1]];
-if (this.effWar(nxt) > this.effWar(cur) + 5 && Math.random() < 0.5) {
+const assistP = this.isBonded(s.offs[s.cur], s.offs[s.cur + 1]) ? 0.75 : 0.5;
+if (this.effWar(nxt) > this.effWar(cur) + 5 && Math.random() < assistP) {
 s.hpMap[s.offs[s.cur]] = s.hp; s.cur++;
 s.hp = s.hpMap[s.offs[s.cur]] ?? 100; s.spirit = Math.round(s.spirit / 2);
           d.log.push(`${nxt.name_ko}이(가) 교체 출전!`);
@@ -1835,6 +1905,22 @@ else { m.classList.add('hidden'); refreshAll(); checkGameOver(); }
 };
 render();
 }
+function showSwear(c) {
+const m = $('modal'); m.classList.remove('hidden');
+const eligible = c.officers.filter(i => (DATA.officers[i]?.state?.merit ?? 0) >= 500);
+const techP = game.forces[c.force]?.techP ?? 0;
+const render = sel => {
+    m.innerHTML = `<div class="box" style="min-width:380px">
+      <h3 style="color:#fd7">의형제 결연 — ${c.name_ko}</h3>
+      <p style="font-size:12px">공적 500 이상 무장 2~3명 선택 · 세력 기교P 500 소비 (보유 ${techP}) · 결연 무장 충성 +10 · 같은 부대 공·방 +10%, 일기토 교체 지원 상승</p>
+      ${eligible.length ? eligible.map(i => { const o = DATA.officers[i]; return `<p><label><input type="checkbox" class="swear-pick" data-i="${i}" ${sel.has(i) ? 'checked' : ''}> ${o.name_ko} (공적 ${o.state?.merit ?? 0}${game.relOf(i).sworn.length ? ' · 이미 결연: ' + game.relOf(i).sworn.map(x => DATA.officers[x]?.name_ko).join('·') : ''})</label></p>`; }).join('') : '<p>조건을 갖춘 무장이 없습니다 (공적 500 필요)</p>'}
+      <p><button class="cmd" id="swear-ok" ${sel.size >= 2 && sel.size <= 3 && techP >= 500 ? '' : 'disabled'}>결연 맺기</button> <button class="cmd" id="swear-cancel">취소</button></p></div>`;
+m.querySelectorAll('.swear-pick').forEach(cb => cb.onchange = () => { const i = Number(cb.dataset.i); cb.checked ? sel.add(i) : sel.delete(i); render(sel); });
+$('swear-ok').onclick = () => { if (game.swearBrotherhood(c.id, [...sel])) { m.classList.add('hidden'); refreshAll(); showCityPanel(c); } };
+$('swear-cancel').onclick = () => { m.classList.add('hidden'); };
+};
+render(new Set());
+}
 function showDebate() {
 const d = game.pendingDebate; if (!d) return;
 const m = $('modal'); m.classList.remove('hidden');
@@ -2079,9 +2165,20 @@ refreshAll(); showTech();
 });
 $('cmd-tech-back').onclick = () => { const c = lastCityId != null && game.cityById[lastCityId]; if (c) showCityPanel(c); else p.classList.add('hidden'); };
 }
+function relLine(idx) {
+const r = game.relOf(idx);
+const nm = i => DATA.officers[i]?.name_ko ?? '?';
+const parts = [];
+if (r.sworn.length) parts.push('의형제: ' + r.sworn.map(nm).join('·'));
+if (r.spouse != null) parts.push('배우자: ' + nm(r.spouse));
+if (r.dear.length) parts.push('친애: ' + r.dear.map(nm).join('·'));
+if (r.hate.length) parts.push('혐오: ' + r.hate.map(nm).join('·'));
+parts.push('상성 ' + game.affOf(idx));
+return ' · ' + parts.join(' · ');
+}
 function officerRow(idx) {
 const o = DATA.officers[idx];
-  return `<div class="officer"><span class="pimg" style="${portraitCss(idx)}"></span><div><div class="nm">${o.name_ko} <span class="st">${o.name_zh}</span></div><div class="st">통${o.ldr} 무${o.war} 지${o.int} 정${o.pol} 매${o.chr} · ${o.skill ? o.skill + ' — ' + (DATA.skills[o.skill] || '') : '특기 없음'} · 충성 ${o.state?.loyal ?? '-'} · 공적 ${o.state?.merit ?? 0}${(o.state?.injuredUntil ?? 0) > game.turn ? ' · <span style="color:#f66">부상</span>' : ''}${(o.state?.items ?? []).length ? ' · 명품: ' + o.state.items.map(id => ITEMS.find(i => i.id === id)?.name ?? id).join('·') : ''}</div></div></div>`;
+  return `<div class="officer"><span class="pimg" style="${portraitCss(idx)}"></span><div><div class="nm">${o.name_ko} <span class="st">${o.name_zh}</span></div><div class="st">통${o.ldr} 무${o.war} 지${o.int} 정${o.pol} 매${o.chr} · ${o.skill ? o.skill + ' — ' + (DATA.skills[o.skill] || '') : '특기 없음'} · 충성 ${o.state?.loyal ?? '-'} · 공적 ${o.state?.merit ?? 0}${(o.state?.injuredUntil ?? 0) > game.turn ? ' · <span style="color:#f66">부상</span>' : ''}${(o.state?.items ?? []).length ? ' · 명품: ' + o.state.items.map(id => ITEMS.find(i => i.id === id)?.name ?? id).join('·') : ''}</div><div class="st" style="color:#b9a">${relLine(idx)}</div></div></div>`;
 }
 let lastCityId = null;
 function showCityPanel(c) {
@@ -2131,6 +2228,7 @@ if (mine) {
       <button class="cmd" id="cmd-legion">군단</button>
     </div>`;
 }
+  if (mine) html += `<p style="margin-top:8px"><button class="cmd" id="cmd-swear">의형제 결연 (공적 500+ 무장 2~3명 · 기교P 500)</button></p>`;
   html += `<h3 style="margin-top:10px">주둔 무장 (${c.officers.length})</h3>`;
 html += c.officers.map(officerRow).join('') || '<p>무장 없음</p>';
 const free = Object.values(DATA.officers).filter(o => o.state?.status === 'free' && o.state.city === c.id && o.state.found !== false);
@@ -2146,6 +2244,8 @@ html += officerRow(o.idx);
 p.innerHTML = html;
 p.scrollTop = 0;
 if (mine) {
+const sw = $('cmd-swear');
+if (sw) sw.onclick = () => showSwear(c);
 $('cmd-dev-c').onclick = () => { game.develop(c.id, 'commerce'); refreshAll(); showCityPanel(c); };
 $('cmd-dev-f').onclick = () => { game.develop(c.id, 'farm'); refreshAll(); showCityPanel(c); };
 $('cmd-recruit').onclick = () => { game.recruit(c.id); refreshAll(); showCityPanel(c); };
