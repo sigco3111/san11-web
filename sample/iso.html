@@ -219,7 +219,8 @@ let view = 300, zoom = 1;
 const cam = new THREE.OrthographicCamera();
 const target = new THREE.Vector3(wx(CX), 12, wz(CY)+18);
 function updateCam(){
-  const a = Math.min(innerWidth, 1400), aspect = innerWidth/innerHeight;
+  renderer.setSize(innerWidth, innerHeight);
+  const aspect = innerWidth/innerHeight;
   const v = view / zoom;
   cam.left = -v*aspect/2; cam.right = v*aspect/2; cam.top = v/2; cam.bottom = -v/2;
   cam.near = -800; cam.far = 1600;
@@ -280,4 +281,4 @@ Promise.all([buildForest(), buildCastle()])
   .catch(e => { document.getElementById('load').textContent = '에셋 로드 실패: ' + e; });
 </script>
 </body>
-</html>
+    </html>
