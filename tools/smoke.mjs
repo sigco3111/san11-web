@@ -602,7 +602,7 @@ if (g.units.find(u => u.id === 9999) && g.units.find(u => u.id === 9999).qi === 
   if (!bandit || bandit.targetCity !== home.id || bandit.troops !== 3000) { console.error('FAIL: R9 적 출현', JSON.stringify(bandit)); process.exit(1); }
   // 적 도착: 완성 시설 파괴 후 소멸
   bandit.x = home.lon + 1; bandit.z = home.lat;
-  home.facilities = [{ key: '시장', lv: 1, done: true, turnsLeft: 0 }];
+  home.facilities = [{ type: '시장', progress: 100, builders: [], done: true }];
   Math.random = () => 0;
   g9.banditAct(bandit);
   Math.random = origRand;
