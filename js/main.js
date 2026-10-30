@@ -197,7 +197,13 @@ function showCityPanel(c) {
   html += `<h3 style="margin-top:10px">주둔 무장 (${c.officers.length})</h3>`;
   html += c.officers.map(officerRow).join('') || '<p>무장 없음</p>';
   const free = Object.values(DATA.officers).filter(o => o.state?.status === 'free' && o.state.city === c.id);
-  if (free.length) html += `<h3 style="margin-top:10px">재야 무장 (${free.length})</h3>` + free.map(o => officerRow(o.idx)).join('');
+  if (free.length) {
+    html += `<h3 style="margin-top:10px">재야 무장 (${free.length})</h3>`;
+    for (const o of free) {
+      html += officerRow(o.idx);
+      if (mine && game.recruitChance(c.id, o.idx) > 0) html += `<button class="cmd cmd-rec" data-i="${o.idx}">등용 (금100·성공률 ${Math.round(game.recruitChance(c.id, o.idx)*100)}%)</button>`;
+    }
+  }
   p.innerHTML = html;
   if (mine) {
     $('cmd-dev-c').onclick = () => { game.develop(c.id, 'commerce'); refreshAll(); showCityPanel(c); };
@@ -205,6 +211,7 @@ function showCityPanel(c) {
     $('cmd-recruit').onclick = () => { game.recruit(c.id); refreshAll(); showCityPanel(c); };
     $('cmd-dispatch').onclick = () => showDispatch(c);
     $('cmd-move').onclick = () => showMove(c);
+    p.querySelectorAll('.cmd-rec').forEach(b => b.onclick = () => { game.recruitOfficer(c.id, Number(b.dataset.i)); refreshAll(); showCityPanel(c); });
   }
   const join = $('cmd-join');
   if (join) join.onclick = () => {
