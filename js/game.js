@@ -50,6 +50,10 @@ export const STRATS = {
 // === 기교 연구 (자체 수치) ===
 export const TECH_BRANCHES = ['창병','극병','노병','기병','연병','발명','방위','화공'];
 export const TECH_P = [1000, 2000, 3000, 5000];      // 단계별 필요 기교P
+// === R13: 능력연구 4계통 (설계안 120행 PK 채택, 계통·단계·수치는 자체 설계) ===
+export const AB_BRANCHES = { '공격': 'war', '방어': 'ldr', '계략': 'int', '내정': 'pol' };
+export const AB_P = [500, 1500, 3000]; // 계통당 3단계 필요 기교P
+export const AB_SKILL = { '공격': '맹돌', '방어': '강직', '계략': '논객', '내정': '치안' }; // 3단계 완료 시 특기 습득 (자체 선택)
 export const TECH_GOLD = [1000, 2000, 5000, 10000];  // 단계별 연구 비용 (금)
 export const TECH_DESC = {
   '창병': '창병 부대 공격력 단계당 +5%', '극병': '극병 부대 공격력 단계당 +5%',
@@ -70,6 +74,17 @@ export const FACILITIES = {
   '마구간': { cost: 400, turns: 3, desc: '매월 군마 자동 생산 (특색 군마는 대량)' },
   '공방':   { cost: 300, turns: 3, desc: '병기 생산: 충거·정란·목수·투석기 (특색 병기 도시 할인)' },
   '조선소': { cost: 300, turns: 3, desc: '선박 건조: 주가·누선·투함 (특색 선박 도시 할인)' },
+  // R13: PK 신 내정시설 10종 (설계안 121행 — 부절대·군사부는 설계안 명명, 나머지는 자체 설계·자체 수치)
+  '부절대': { cost: 400, turns: 3, desc: '턴 시작 행동력 회복 +10 (합산 최대 +30)' },
+  '군사부': { cost: 400, turns: 3, desc: '이 도시의 군사 커맨드(출진·징병·생산) 행동력 25% 절감' },
+  '인재부': { cost: 400, turns: 3, desc: '이 도시의 인사 커맨드(수색·등용·이동) 행동력 25% 절감' },
+  '외교부': { cost: 400, turns: 3, desc: '이 도시의 외교 커맨드 행동력 25% 절감' },
+  '회계청': { cost: 400, turns: 3, desc: '이 도시 금 수입 +10%' },
+  '곡물창고': { cost: 400, turns: 3, desc: '이 도시 병량 수입 +10%' },
+  '훈련장': { cost: 400, turns: 3, desc: '이 도시에 주둔한 부대 기력 회복 +5' },
+  '의관':   { cost: 400, turns: 3, desc: '이 도시 부상 무장 회복 2배' },
+  '감찰소': { cost: 400, turns: 3, desc: '이 도시 치안 매월 +2' },
+  '서재':   { cost: 400, turns: 3, desc: '세력 기교P 매월 +10 (합산 최대 +30)' },
 };
 
 
@@ -163,7 +178,7 @@ export class Game {
     this.cities = scen.cities.map(c => ({ ...c, commerce: Math.round(c.revenue/10), farm: Math.round(c.harvest/100), hp: c.maxhp, officers: [], troops: c.troops, facilities: [] }));
     this.cityById = {}; this.cities.forEach(c => this.cityById[c.id] = c);
     this.forces = {};
-    for (const f of scen.forces) this.forces[f.id] = { id: f.id, ruler: f.ruler, alive: true, ap: 60, techP: 0, techs: Object.fromEntries(TECH_BRANCHES.map(b => [b, 0])), advisor: null, legions: [] };
+    for (const f of scen.forces) this.forces[f.id] = { id: f.id, ruler: f.ruler, alive: true, ap: 60, techP: 0, techs: Object.fromEntries(TECH_BRANCHES.map(b => [b, 0])), advisor: null, legions: [], ab: { '공격': 0, '방어': 0, '계략': 0, '내정': 0 } };
     for (const o of scen.officers) {
       const rec = { idx: o.idx, status: o.status, force: o.force ?? null, city: o.city ?? null, loyal: o.loyal, found: o.status === 'free' ? false : true, items: [] };
       this.officers[o.idx].state = rec;
@@ -278,8 +293,9 @@ export class Game {
   searchCity(cityId) { // 수색: AP 20·금 100. 미발견 재야 발견(정치·수완 보정) 또는 명품 발견
     const c = this.cityById[cityId], f = this.forces[c?.force];
     if (this._blocked(c)) return false; // 군단 소속
-    if (!c || c.force == null || !f?.alive || f.ap < 20 || c.gold < 100 || !c.officers.length) return false;
-    c.gold -= 100; f.ap -= 20;
+    const apc = Math.ceil(20 * this.apMult(c, 'personnel')); // R13 인재부
+    if (!c || c.force == null || !f?.alive || f.ap < apc || c.gold < 100 || !c.officers.length) return false;
+    c.gold -= 100; f.ap -= apc;
     const bestOff = [...new Set(c.officers)].sort((a, b) => this.officers[b].pol - this.officers[a].pol)[0];
     const pol = this.officers[bestOff].pol;
     const suwan = this.officers[bestOff].skill === '수완';
@@ -338,8 +354,9 @@ export class Game {
   changeRelation(a, b, n) { const d = this.diploOf(a, b); d.v = Math.max(0, Math.min(100, d.v + n)); return d.v; }
   envoy(fid, tid, cityId) { // 친선 사절: 금 500·AP 20, 정치 보정 + 논객 특기 우위 (자체 수치)
     const c = this.cityById[cityId], f = this.forces[c?.force], t = this.forces[tid];
-    if (!c || c.force !== fid || !f?.alive || !t?.alive || f.ap < 20 || c.gold < 500) return false;
-    c.gold -= 500; f.ap -= 20;
+    const apc = Math.ceil(20 * this.apMult(c, 'diplo')); // R13 외교부
+    if (!c || c.force !== fid || !f?.alive || !t?.alive || f.ap < apc || c.gold < 500) return false;
+    c.gold -= 500; f.ap -= apc;
     const pol = Math.max(50, ...c.officers.map(i => this.officers[i].pol));
     const negotiator = c.officers.some(i => this.officers[i].skill === '논객');
     const gain = Math.round((8 + pol / 10) * (negotiator ? 1.5 : 1));
@@ -349,10 +366,12 @@ export class Game {
   }
   proposeAlliance(fid, tid, cityId) { // 동맹 제의: 호의(60) 이상, 금 1000·AP 30, 24턴 (자체 수치)
     const c = this.cityById[cityId], f = this.forces[c?.force], t = this.forces[tid];
-    if (!c || c.force !== fid || !f?.alive || !t?.alive || f.ap < 30 || c.gold < 1000) return false;
+    if (!c || c.force !== fid || !f?.alive || !t?.alive || f.ap < 23 || c.gold < 1000) return false;
     const d = this.diploOf(fid, tid);
     if (d.v < 60 || this.isAllied(fid, tid)) return false;
-    c.gold -= 1000; f.ap -= 30;
+    const apc = Math.ceil(30 * this.apMult(c, 'diplo')); // R13 외교부
+    if (f.ap < apc) return false;
+    c.gold -= 1000; f.ap -= apc;
     const pol = Math.max(50, ...c.officers.map(i => this.officers[i].pol));
     const p = Math.min(0.9, 0.4 + (d.v - 50) / 100 + pol / 300);
     if (Math.random() < p) {
@@ -366,10 +385,12 @@ export class Game {
   }
   requestTruce(fid, tid, cityId) { // 정전 요청: 불화 이하 대상, 금 2000·AP 30, 성공 시 관계 +30 (자체 수치)
     const c = this.cityById[cityId], f = this.forces[c?.force], t = this.forces[tid];
-    if (!c || c.force !== fid || !f?.alive || !t?.alive || f.ap < 30 || c.gold < 2000) return false;
+    if (!c || c.force !== fid || !f?.alive || !t?.alive || f.ap < 23 || c.gold < 2000) return false;
     const d = this.diploOf(fid, tid);
     if (d.v > 39) return false;
-    c.gold -= 2000; f.ap -= 30;
+    const apc = Math.ceil(30 * this.apMult(c, 'diplo')); // R13 외교부
+    if (f.ap < apc) return false;
+    c.gold -= 2000; f.ap -= apc;
     const pol = Math.max(50, ...c.officers.map(i => this.officers[i].pol));
     if (Math.random() < Math.min(0.8, 0.3 + pol / 300 + d.v / 200)) {
       d.truceUntil = this.turn + 12; // 정전 12턴간 양측 공격 금지 (자체 수치)
@@ -383,10 +404,12 @@ export class Game {
   }
   demandSurrender(fid, tid, cityId) { // 항복 권고: 대상 도시 2개 이하, 금 1000·AP 30, 매력 보정 (자체 수치)
     const c = this.cityById[cityId], f = this.forces[c?.force], t = this.forces[tid];
-    if (!c || c.force !== fid || !f?.alive || !t?.alive || f.ap < 30 || c.gold < 1000) return false;
+    if (!c || c.force !== fid || !f?.alive || !t?.alive || f.ap < 23 || c.gold < 1000) return false;
     const tCities = this.cities.filter(x => x.force === tid);
     if (tCities.length > 2) return false;
-    c.gold -= 1000; f.ap -= 30;
+    const apc = Math.ceil(30 * this.apMult(c, 'diplo')); // R13 외교부
+    if (f.ap < apc) return false;
+    c.gold -= 1000; f.ap -= apc;
     const chr = Math.max(50, ...c.officers.map(i => this.officers[i].chr));
     const myN = this.cities.filter(x => x.force === fid).length;
     const p = Math.min(0.5, 0.05 + (chr - 50) / 200 + (myN - tCities.length) * 0.05);
@@ -475,10 +498,11 @@ export class Game {
   recruit(cityId) { // 금 200 + 병량 1000 → 병사, AP 30
     const c = this.cityById[cityId], f = this.forces[c.force];
     if (this._blocked(c)) return false; // 군단 소속
-    if (c.gold < 200 || c.food < 1000 || f.ap < 30) return false;
+    const apc = Math.ceil(30 * this.apMult(c, 'military')); // R13 군사부
+    if (c.gold < 200 || c.food < 1000 || f.ap < apc) return false;
     const best = Math.max(50, ...c.officers.map(i => this.officers[i].chr));
-    const n = Math.round((1500 + best*30) * (this.cityHasSkill(c, '명성') ? 1.3 : 1) * (this.cityFac(c, '병영').length ? 1.3 : 1));
-    c.gold -= 200; c.food -= 1000; f.ap -= 30;
+    const n = Math.round((1500 + best*30) * (this.cityHasSkill(c, '명성') ? 1.3 : 1) * (1 + 0.3 * this.cityFacLv(c, '병영'))); // R13: 병영 레벨 합산
+    c.gold -= 200; c.food -= 1000; f.ap -= apc;
     const cap = c.metropolis ? 150000 : 100000;
     c.troops = Math.min(cap, c.troops + n);
     this.gainTechP(c.force, 25); // 커맨드 실행 기교P
@@ -507,12 +531,13 @@ export class Game {
   recruitOfficer(cityId, officerIdx) { // 재야 무장 등용: 금 100, AP 20 (자체 규칙)
     const c = this.cityById[cityId], f = this.forces[c.force];
     if (this._blocked(c)) return false; // 군단 소속
-    if (c.gold < 100 || f.ap < 20) return false;
+    const apc = Math.ceil(20 * this.apMult(c, 'personnel')); // R13 인재부
+    if (c.gold < 100 || f.ap < apc) return false;
     const p = this.recruitChance(cityId, officerIdx);
     if (p <= 0) return false;
     const t = this.officers[officerIdx];
     const envoy = Math.max(...c.officers.map(i => this.officers[i].chr));
-    c.gold -= 100; f.ap -= 20;
+    c.gold -= 100; f.ap -= apc;
     if (Math.random() < p) {
       const envoyIdx = c.officers.length ? [...c.officers].sort((a, b) => this.officers[b].chr - this.officers[a].chr)[0] : null;
       if (envoyIdx != null) this.gainMerit(envoyIdx, MERIT.recruit);
@@ -527,8 +552,9 @@ export class Game {
   }
   moveOfficers(fromCity, toCity, idxs) {
     const a = this.cityById[fromCity], b = this.cityById[toCity], f = this.forces[a.force];
-    if (f.ap < 20 || this._blocked(a)) return false; // 군단 소속 도시는 수동 이동 불가
-    f.ap -= 20;
+    const apc = Math.ceil(20 * this.apMult(a, 'personnel')); // R13 인재부
+    if (f.ap < apc || this._blocked(a)) return false; // 군단 소속 도시는 수동 이동 불가
+    f.ap -= apc;
     a.officers = a.officers.filter(i => !idxs.includes(i));
     for (const i of new Set(idxs)) { if (!b.officers.includes(i)) b.officers.push(i); this.officers[i].state.city = toCity; }
     this.log(`${a.name_ko} → ${b.name_ko} 무장 ${idxs.length}명 이동`, a.force === this.playerForce);
@@ -540,8 +566,9 @@ export class Game {
     const spec = SIEGE_BUILD[kind];
     if (!spec || !this.cityFac(c, '공방').length) return false;
     const cost = Math.round(spec.gold * ((c.specialty ?? []).includes('병기') ? 0.75 : 1));
-    if (f.ap < 10 || c.gold < cost) return false;
-    c.gold -= cost; f.ap -= 10;
+    const apc = Math.ceil(10 * this.apMult(c, 'military')); // R13 군사부
+    if (f.ap < apc || c.gold < cost) return false;
+    c.gold -= cost; f.ap -= apc;
     c[spec.store] = (c[spec.store] ?? 0) + 1;
     this.log(`${c.name_ko}에서 ${spec.name} 생산 (금 ${cost})`, c.force === this.playerForce);
     return true;
@@ -552,8 +579,9 @@ export class Game {
     const spec = SHIP_BUILD[kind];
     if (!spec || !this.cityFac(c, '조선소').length) return false;
     const cost = Math.round(spec.gold * ((c.specialty ?? []).includes('선박') ? 0.75 : 1));
-    if (f.ap < 10 || c.gold < cost) return false;
-    c.gold -= cost; f.ap -= 10;
+    const apc = Math.ceil(10 * this.apMult(c, 'military')); // R13 군사부
+    if (f.ap < apc || c.gold < cost) return false;
+    c.gold -= cost; f.ap -= apc;
     c[spec.store] = (c[spec.store] ?? 0) + 1;
     this.log(`${c.name_ko}에서 ${spec.name} 건조 (금 ${cost})`, c.force === this.playerForce);
     return true;
@@ -562,7 +590,8 @@ export class Game {
     officerIdxs = [...new Set(officerIdxs)];
     const c = this.cityById[cityId], f = this.forces[c.force];
     if (this._blocked(c)) return false; // 군단 소속
-    if (f.ap < 40 || c.troops < troops || officerIdxs.length === 0) return false;
+    const apc = Math.ceil(40 * this.apMult(c, 'military')); // R13 군사부
+    if (f.ap < apc || c.troops < troops || officerIdxs.length === 0) return false;
     if (officerIdxs.some(i => (this.officers[i]?.state?.injuredUntil ?? 0) > this.turn)) return false; // R10: 부상 무장 출진 불가
     const ut = UNIT_TYPES[type];
     for (const [k, per] of Object.entries(ut.cost)) { // 병기·선박은 부대당 1대 (perUnit), 병장은 병사당 1개
@@ -570,7 +599,7 @@ export class Game {
       if ((c[k] ?? 0) < need) return false;
     }
     for (const [k, per] of Object.entries(ut.cost)) c[k] -= ut.perUnit ? per : per * troops;
-    c.troops -= troops; f.ap -= 40;
+    c.troops -= troops; f.ap -= apc;
     c.officers = c.officers.filter(i => !officerIdxs.includes(i));
     for (const i of officerIdxs) this.officers[i].state.city = null;
     const unit = { id: this.nextUnitId++, force: c.force, officers: officerIdxs, troops, type,
@@ -592,7 +621,10 @@ export class Game {
   endTurn(aiThink) {
     if (this.pendingDuel || this.pendingDebate) return; // R10/R11: 일기토·설전 결판 전 턴 진행 불가
     // 전 부대 기력 회복
-    for (const u of this.units) u.qi = Math.min(100, (u.qi ?? 100) + 10);
+    for (const u of this.units) { // R13: 훈련장 주둔 부대 +5
+      const home = this.cities.find(c => c.force != null && c.force === u.force && c.lon === u.x && c.lat === u.z);
+      u.qi = Math.min(100, (u.qi ?? 100) + 10 + (home && this.cityFac(home, '훈련장').length ? 5 : 0));
+    }
     // 부대 이동·전투
     for (const u of [...this.units]) { if (u.force === -1) this.banditAct(u); else this.stepUnit(u); }
     // 도시 공성 처리는 stepUnit 내부
@@ -602,10 +634,10 @@ export class Game {
     if (this.dan === 3) {
       for (const c of this.cities) {
         if (c.force == null || !this.forces[c.force]?.alive) continue;
-        const mk = this.cityFac(c, '시장').length * (this.cityFac(c, '조폐').length ? 1.5 : 1);
-        const fm = this.cityFac(c, '농장').length * (this.cityFac(c, '곡창').length ? 1.5 : 1);
-        c.gold += Math.round((50 + c.commerce * 8 * (c.metropolis ? 1.5 : 1)) * (this.cityHasSkill(c, '통상') ? 1.3 : 1) * (1 + 0.25 * mk));
-        c.food += Math.round((300 + c.farm * 80) * (this.cityHasSkill(c, '부농') ? 1.3 : 1) * (1 + 0.25 * fm));
+        const mk = this.cityFacLv(c, '시장') * (this.cityFac(c, '조폐').length ? 1.5 : 1); // R13: 레벨 합산
+        const fm = this.cityFacLv(c, '농장') * (this.cityFac(c, '곡창').length ? 1.5 : 1);
+        c.gold += Math.round((50 + c.commerce * 8 * (c.metropolis ? 1.5 : 1)) * (this.cityHasSkill(c, '통상') ? 1.3 : 1) * (1 + 0.25 * mk) * (this.cityFac(c, '회계청').length ? 1.1 : 1)); // R13 회계청
+        c.food += Math.round((300 + c.farm * 80) * (this.cityHasSkill(c, '부농') ? 1.3 : 1) * (1 + 0.25 * fm) * (this.cityFac(c, '곡물창고').length ? 1.1 : 1)); // R13 곡물창고
         c.hp = Math.min(c.maxhp, c.hp + 200);
         // 병장 자동 생산: 대장간·마구간 (특색 도시는 대량)
         if (this.cityFac(c, '대장간').length) {
@@ -626,7 +658,8 @@ export class Game {
           }
         }
         // R9: 재해·치안 (설계안 100-101행, 자체 수치)
-        c.security = Math.max(0, Math.min(100, (c.security ?? 80) + (this.cityHasSkill(c, '치안') ? 0 : -1))); // 치안 특기 주둔 시 감소 없음
+        c.security = Math.max(0, Math.min(100, (c.security ?? 80) + (this.cityHasSkill(c, '치안') ? 0 : -1) + (this.cityFac(c, '감찰소').length ? 2 : 0))); // 치안 특기 주둔 시 감소 없음 · R13 감찰소 +2
+        if (this.cityFac(c, '의관').length) for (const i of c.officers) { const st = this.officers[i]?.state; if (st && (st.injuredUntil ?? 0) > this.turn) st.injuredUntil -= 1; } // R13 의관: 부상 회복 2배
         if (c.disaster) { // 역병 지속: 병사·금·병량 감소
           c.troops = Math.max(0, Math.round(c.troops * 0.95));
           c.gold = Math.max(0, Math.round(c.gold * 0.9));
@@ -690,6 +723,23 @@ export class Game {
         if (cand.length >= 2) { this.swearBrotherhood(c.id, cand.slice(0, 3)); break; }
       }
     }
+    // R13: 서재 기교P + AI 능력연구·흡수합병 — 플레이어와 같은 비용·규칙 (월 평가)
+    for (const f of Object.values(this.forces)) {
+      if (!f.alive) continue;
+      const sj = Math.min(3, this.forceFacLv(f.id, '서재'));
+      if (sj) this.gainTechP(f.id, sj * 10);
+      f.ab = f.ab ?? { '공격': 0, '방어': 0, '계략': 0, '내정': 0 };
+      const abTodo = Object.keys(AB_BRANCHES).filter(b => (f.ab[b] ?? 0) < 3 && (f.techP ?? 0) >= AB_P[f.ab[b] ?? 0] + 300).sort((a, b) => AB_P[f.ab[a] ?? 0] - AB_P[f.ab[b] ?? 0]);
+      if (abTodo.length && f.id !== this.playerForce) this.researchAbility(f.id, abTodo[0]); // AI만 자동, 플레이어는 수동
+      if (f.id === this.playerForce) continue; // 플레이어 합병은 수동
+      for (const c of this.forceCities(f.id)) {
+        if (c.gold < 400) continue;
+        const byType = {};
+        (c.facilities ?? []).forEach((x, i) => { if (x.done && (x.level ?? 1) < 3) (byType[x.type] = byType[x.type] ?? []).push(i); });
+        const pair = Object.values(byType).find(v => v.length >= 2);
+        if (pair) { this.absorbFacility(c.id, pair[0], pair[1]); break; }
+      }
+    }
     }
     // 신규 등장 무장
     for (const o of Object.values(this.officers)) {
@@ -701,7 +751,7 @@ export class Game {
     // 세력 AP 회복·AI
     for (const f of Object.values(this.forces)) {
       if (!f.alive) continue;
-      f.ap = Math.min(255, f.ap + 30);
+      f.ap = Math.min(255, f.ap + 30 + Math.min(3, this.forceFacLv(f.id, '부절대')) * 10); // R13: 부절대 (합산 최대 +30)
       if (f.id !== this.playerForce || this.delegated) aiThink(this, f.id);
       else for (const l of f.legions ?? []) { this._legionActing = true; aiThink(this, f.id, l); this._legionActing = false; } // 플레이어 군단은 도독이 운영
     }
@@ -994,6 +1044,47 @@ export class Game {
     const os = u.officers;
     for (let i = 0; i < os.length; i++) for (let j = i + 1; j < os.length; j++) if (this.isBonded(os[i], os[j])) return 1.1;
     return 1;
+  }
+  // === R13: PK 3요소 ===
+  cityFacLv(c, t) { return this.cityFac(c, t).reduce((s, x) => s + (x.level ?? 1), 0); } // 흡수합병 레벨 합산
+  forceFacLv(fid, t) { return this.cities.filter(c => c.force === fid).reduce((s, c) => s + this.cityFacLv(c, t), 0); }
+  apMult(c, cat) { // R13: 군사부·인재부·외교부 — 해당 커맨드 행동력 25% 절감 (자체)
+    const fac = { military: '군사부', personnel: '인재부', diplo: '외교부' }[cat];
+    return fac && this.cityFac(c, fac).length ? 0.75 : 1;
+  }
+  absorbFacility(cityId, fi1, fi2) { // R13 흡수합병: 같은 완성 시설 2개를 합쳐 Lv+1 (최대 3), 금 200·AP 10 (자체 수치)
+    const c = this.cityById[cityId], f = this.forces[c?.force];
+    if (!c || this._blocked(c) || c.gold < 200 || f.ap < 10) return false;
+    const a = c.facilities?.[fi1], b = c.facilities?.[fi2];
+    if (!a || !b || fi1 === fi2 || a.type !== b.type || !a.done || !b.done) return false;
+    if ((a.level ?? 1) >= 3) return false;
+    a.level = (a.level ?? 1) + 1;
+    c.facilities.splice(fi2, 1);
+    c.gold -= 200; f.ap -= 10;
+    this.log(`【합병】${c.name_ko}의 ${a.type}을(를) 흡수합병해 Lv${a.level}(으)로 강화했습니다 (금 200·AP 10, 개발지 1개 회수)`, c.force === this.playerForce);
+    return true;
+  }
+  researchAbility(fid, branch) { // R13 능력연구: 기교P 소비 → 소속 무장 전원 해당 능력 +2 (상한 100), 3단계 완료 시 특기 습득 (자체 수치)
+    const f = this.forces[fid]; if (!f?.alive) return false;
+    f.ab = f.ab ?? { '공격': 0, '방어': 0, '계략': 0, '내정': 0 };
+    const stat = AB_BRANCHES[branch], lv = f.ab[branch] ?? 0;
+    if (!stat || lv >= 3 || (f.techP ?? 0) < AB_P[lv]) return false;
+    f.techP -= AB_P[lv]; f.ab[branch] = lv + 1;
+    const statNm = { war: '무력', ldr: '통솔', int: '지력', pol: '정치' }[stat];
+    for (const o of this.forceOfficers(fid)) {
+      o[stat] = Math.min(100, (o[stat] ?? 50) + 2);
+      if (o.state) { o.state.bonus = o.state.bonus ?? {}; o.state.bonus[stat] = (o.state.bonus[stat] ?? 0) + 2; } // 저장 영속용
+    }
+    this.log(`【연구】${this.forceName(fid)} 능력연구 「${branch}」 ${lv + 1}단계 완료 (기교P ${AB_P[lv]} 소비, 소속 무장 전원 ${statNm} +2)`, fid === this.playerForce);
+    if (lv + 1 === 3) {
+      const sk = AB_SKILL[branch];
+      const cand = this.forceOfficers(fid).filter(o => o && !o.skill && !o.state?.grantSkill).sort((a, b) => (b.state?.merit ?? 0) - (a.state?.merit ?? 0))[0];
+      if (cand) {
+        cand.skill = sk; if (cand.state) cand.state.grantSkill = sk; // 저장 영속용
+        this.log(`【연구】${cand.name_ko}이(가) 연구 성과로 특기 「${sk}」을(를) 습득했습니다!`, fid === this.playerForce);
+      }
+    }
+    return true;
   }
   swearBrotherhood(cityId, idxs) { // 의형제 결연: 같은 도시·세력 무장 2~3명, 각 공적 500+, 세력 기교P 500 (설계안 55행 비용) · 충성 +10 (자체)
     idxs = [...new Set(idxs)];
