@@ -1,4 +1,3 @@
-// ==== assets-3d.js ====
 // 3D 에셋 (Kenney Castle/Nature Kit, CC0) - GLB base64 임베드
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
@@ -37,9 +36,9 @@ function applyEnvironment(renderer, scene) {
   const pm = new THREE.PMREMGenerator(renderer);
   scene.environment = pm.fromScene(new RoomEnvironment(), 0.04).texture;
 }
-
-// ==== map3d.js ====
 // 3D 저폴리 지도 엔진 (Three.js) - 고정 등각 아이소메트릭 + 계단식 지형 + 성곽/숲
+
+
 
 const LON0 = 100, LON1 = 126.5, LAT0 = 21.5, LAT1 = 43;
 function toWorld(lon, lat) {
@@ -558,8 +557,6 @@ class Map3D {
     this.renderer.render(this.scene, this.camera);
   }
 }
-
-// ==== game.js ====
 // 게임 상태·턴 엔진 (삼국지11 기본 구조의 단순화 1차 구현)
 const SAVE_KEY = 'cheonha-xi-web.save.v1';
 const FORCE_COLORS = ['#4a7fd4','#d44a4a','#4ad47f','#d4a44a','#9a4ad4','#4ad4d4','#d44a8f','#8fd44a','#d47f4a','#6a6ad4','#d4d44a','#4a9a6a','#c46a4a','#7a4a2a','#2a7a8a','#8a2a4a','#5a8a2a','#aa6aaa','#4a5a9a','#9a8a3a','#3a7a4a','#b45a7a','#6aaac4','#c48a3a','#7a3a9a','#3a9a8a','#aa4a3a','#5a7a2a','#8a6aaa','#4a8aaa','#ca7a5a','#3a6a3a','#9a4a6a','#6a8a4a','#4a4aaa','#aa9a3a','#3a8a6a','#b46a8a','#5a9aca'];
@@ -588,6 +585,18 @@ const STRATS = {
   confuse: { name: '혼란', cooldown: 3, minInt: 80, turns: 2 }, // 수비측: 공격 부대 행동 정지
 };
 
+// === 기교 연구 (자체 수치) ===
+const TECH_BRANCHES = ['창병','극병','노병','기병','연병','발명','방위','화공'];
+const TECH_P = [1000, 2000, 3000, 5000];      // 단계별 필요 기교P
+const TECH_GOLD = [1000, 2000, 5000, 10000];  // 단계별 연구 비용 (금)
+const TECH_DESC = {
+  '창병': '창병 부대 공격력 단계당 +5%', '극병': '극병 부대 공격력 단계당 +5%',
+  '노병': '노병 부대 공격력 단계당 +5%', '기병': '기병 부대 공격력 단계당 +5%',
+  '연병': '부대가 받는 피해 단계당 -3%', '발명': '공성(성 공격) 피해 단계당 +10%',
+  '방위': '도시가 받는 피해 단계당 -5%', '화공': '화계 피해 단계당 +15%',
+};
+const TYPE2TECH = { spear: '창병', pike: '극병', bow: '노병', cav: '기병' };
+
 class Game {
   constructor(scen, officers, skills, playerForceId) {
     this.officers = officers; // by idx
@@ -598,7 +607,7 @@ class Game {
     this.cities = scen.cities.map(c => ({ ...c, commerce: Math.round(c.revenue/10), farm: Math.round(c.harvest/100), hp: c.maxhp, officers: [], troops: c.troops }));
     this.cityById = {}; this.cities.forEach(c => this.cityById[c.id] = c);
     this.forces = {};
-    for (const f of scen.forces) this.forces[f.id] = { id: f.id, ruler: f.ruler, alive: true, ap: 60 };
+    for (const f of scen.forces) this.forces[f.id] = { id: f.id, ruler: f.ruler, alive: true, ap: 60, techP: 0, techs: Object.fromEntries(TECH_BRANCHES.map(b => [b, 0])) };
     for (const o of scen.officers) {
       const rec = { idx: o.idx, status: o.status, force: o.force ?? null, city: o.city ?? null, loyal: o.loyal };
       this.officers[o.idx].state = rec;
@@ -639,6 +648,20 @@ class Game {
     return m;
   }
   unitDefMult(u) { return this.unitHasSkill(u, '강직') ? 0.85 : 1; }
+  // === 기교 (자체 수치) ===
+  techLv(fid, b) { return this.forces[fid]?.techs?.[b] ?? 0; }
+  unitTechAtk(u) { const b = TYPE2TECH[u.type]; return b ? 1 + 0.05 * this.techLv(u.force, b) : 1; }
+  gainTechP(fid, n) { const f = this.forces[fid]; if (f?.alive) f.techP = (f.techP ?? 0) + n; }
+  researchTech(fid, b) { // 기교P + 금 소비, 계통당 4단계
+    const f = this.forces[fid];
+    if (!f?.alive || !TECH_BRANCHES.includes(b)) return false;
+    const lv = this.techLv(fid, b); if (lv >= 4) return false;
+    const cap = this.forceCities(fid).sort((x, y) => y.gold - x.gold)[0];
+    if ((f.techP ?? 0) < TECH_P[lv] || !cap || cap.gold < TECH_GOLD[lv]) return false;
+    f.techP -= TECH_P[lv]; cap.gold -= TECH_GOLD[lv]; f.techs[b] = lv + 1;
+    this.log(`【기교】${this.forceName(fid)} ${b} ${lv + 1}단계 연구 완료 (기교P ${TECH_P[lv]}·금 ${TECH_GOLD[lv]} 소비)`, fid === this.playerForce);
+    return true;
+  }
   develop(cityId, kind) { // kind: 'commerce' | 'farm', 비용 금 300, AP 30
     const c = this.cityById[cityId], f = this.forces[c.force];
     if (c.gold < 300 || f.ap < 30 || c[kind] >= 100) return false;
@@ -646,6 +669,7 @@ class Game {
     c.gold -= 300; f.ap -= 30;
     const gain = Math.round(4 + best/20);
     c[kind] = Math.min(100, c[kind] + gain);
+    this.gainTechP(c.force, 25); // 커맨드 실행 기교P
     this.log(`${c.name_ko} ${kind==='commerce'?'상업':'농업'} 개발 +${gain} (담당 정치 ${best})`, c.force === this.playerForce);
     return true;
   }
@@ -657,6 +681,7 @@ class Game {
     c.gold -= 200; c.food -= 1000; f.ap -= 30;
     const cap = c.metropolis ? 150000 : 100000;
     c.troops = Math.min(cap, c.troops + n);
+    this.gainTechP(c.force, 25); // 커맨드 실행 기교P
     this.log(`${c.name_ko} 징병 +${n} (담당 매력 ${best})`, c.force === this.playerForce);
     return true;
   }
@@ -807,7 +832,7 @@ class Game {
     }
     // 공성: 도시 내구/병사 공격
     const lead = this.officers[u.officers[0]];
-    let dmg = Math.round(u.troops * 0.12 * ut.atk * (0.7 + lead.war/150) * this.aptMult(u) * this.unitDmgMult(u, true));
+    let dmg = Math.round(u.troops * 0.12 * ut.atk * (0.7 + lead.war/150) * this.aptMult(u) * this.unitDmgMult(u, true) * this.unitTechAtk(u) * (1 + 0.1 * this.techLv(u.force, '발명')));
     let loss = Math.round(c.troops * 0.06 / ut.def + 150);
     // 전법: 병종 적성 B 이상 + 기력 소모, 무력이 높을수록 발동 잘됨
     const tac = TACTICS[u.type];
@@ -822,7 +847,7 @@ class Game {
     const caster = u.officers.map(i => this.officers[i]).sort((a, b) => b.int - a.int)[0];
     if (caster && caster.int >= STRATS.fire.minInt && u.qi >= STRATS.fire.qi && Math.random() < Math.min(0.5, 0.1 + caster.int/300 + (this.unitHasSkill(u, '풍계') ? 0.15 : 0))) {
       u.qi -= STRATS.fire.qi;
-      const burn = Math.round(c.troops * 0.08);
+      const burn = Math.round(c.troops * 0.08 * (1 + 0.15 * this.techLv(u.force, '화공')));
       c.troops = Math.max(0, c.troops - burn);
       c.hp = Math.max(0, c.hp - Math.round(burn * 0.5));
       this.log(`【계략】${caster.name_ko}의 화계! ${c.name_ko} 수비병 -${burn}`, u.force === this.playerForce);
@@ -837,15 +862,18 @@ class Game {
       }
     }
     if (this.cityHasSkill(c, '수성')) dmg = Math.round(dmg * 0.85); // 수성: 주둔 도시 방어 보정
+    if (c.force != null) dmg = Math.round(dmg * (1 - 0.05 * this.techLv(c.force, '방위'))); // 방위 기교: 도시 방어
     c.troops = Math.max(0, c.troops - dmg);
     c.hp = Math.max(0, c.hp - Math.round(dmg*0.5));
     u.troops = Math.max(0, u.troops - loss);
+    this.gainTechP(u.force, Math.min(50, Math.floor(dmg / 100))); // 전투 기교P
     this.log(`${u.label}이(가) ${c.name_ko}을(를) 공격 (적병 -${dmg}, 아군 -${loss})`, u.force === this.playerForce);
     if (u.troops <= 0) { this.units = this.units.filter(x => x !== u); this.log(`${u.label} 부대가 전멸했습니다`, false); return; }
     if (c.troops <= 0 || c.hp <= 0) {
       const old = c.force;
       c.force = u.force; c.district = null;
       c.hp = Math.round(c.maxhp * 0.4);
+      this.gainTechP(u.force, 200); // 도시 함락 기교P
       this.log(`【${c.name_ko}】함락! ${old != null ? this.forceName(old) : '공백지'} → ${this.forceName(u.force)}`, true);
       // 수비 무장 일부 포로/퇴각은 후속 구현 — 일단 공격측 도시에 그대로 둠
       u.tx = null; u.targetCity = null;
@@ -867,7 +895,7 @@ class Game {
       if ((att.conf ?? 0) > 0) return 0; // 혼란은 stepUnit에서 감소 처리됨
       const utA = UNIT_TYPES[att.type], utD = UNIT_TYPES[def.type];
       const lead = this.officers[att.officers[0]];
-      let dmg = Math.round(att.troops * 0.05 * utA.atk * (0.7 + lead.war/150) / utD.def * this.aptMult(att) * this.unitDmgMult(att) * this.unitDefMult(def));
+      let dmg = Math.round(att.troops * 0.05 * utA.atk * (0.7 + lead.war/150) / utD.def * this.aptMult(att) * this.unitDmgMult(att) * this.unitDefMult(def) * this.unitTechAtk(att) * (1 - 0.03 * this.techLv(def.force, '연병')));
       // 전법 (공성과 같은 규칙)
       const tac = TACTICS[att.type];
       const aptLv = att.type === 'sword' ? 1 : APT_LV(lead.apt?.[APT_IDX[att.type]]);
@@ -885,7 +913,7 @@ class Game {
       // 계략: 화계
       if (caster && caster.int >= STRATS.fire.minInt && !this.unitHasSkill(def, '위장') && (att.qi ?? 100) >= STRATS.fire.qi && Math.random() < Math.min(0.5, 0.1 + caster.int/300 + (this.unitHasSkill(att, '풍계') ? 0.15 : 0))) {
         att.qi -= STRATS.fire.qi;
-        const burn = Math.round(def.troops * 0.06);
+        const burn = Math.round(def.troops * 0.06 * (1 + 0.15 * this.techLv(att.force, '화공')));
         def.troops = Math.max(0, def.troops - burn);
         this.log(`【계략】${caster.name_ko}의 화계! ${def.label} 병력 -${burn}`, att.force === this.playerForce);
       }
@@ -897,6 +925,7 @@ class Game {
     if (b._guard) da = Math.round(da * TACTICS[b.type].guard);
     a.troops = Math.max(0, a.troops - db);
     b.troops = Math.max(0, b.troops - da);
+    this.gainTechP(a.force, Math.min(40, Math.floor(db / 100))); this.gainTechP(b.force, Math.min(40, Math.floor(da / 100))); // 전투 기교P
     this.log(`【야전】${a.label} ↔ ${b.label} 교전 (${a.label} -${db} / ${b.label} -${da})`, a.force === this.playerForce || b.force === this.playerForce);
     for (const u of [a, b]) {
       if (u.troops <= 0) {
@@ -928,8 +957,6 @@ function josa(name, pair) { // [을,를] 형태
   const jong = (code >= 0xAC00 && code <= 0xD7A3) ? (code-0xAC00)%28 : 0;
   return name + (jong ? pair[0] : pair[1]);
 }
-
-// ==== ai.js ====
 // 세력 AI — 위임 시 플레이어 세력도 이 AI가 운영 (위임·샌드박스의 실질 주체)
 function aiThink(game, fid) {
   const f = game.forces[fid];
@@ -997,9 +1024,10 @@ function aiThink(game, fid) {
     else if (homes.length) game.orderUnit(u.id, homes[0].id);  // 귀환·합류
   }
 }
-
-// ==== main.js ====
 // 진입점: 화면 전환·UI·지도 연결
+
+
+
 
 const $ = id => document.getElementById(id);
 let DATA = null, game = null, map = null, selectedUnit = null, autoTimer = null;
@@ -1091,7 +1119,7 @@ function refreshHud() {
   const f = game.forces[game.playerForce];
   $('hud-date').textContent = `${game.year}년 ${game.month}월 ${['상','중','하'][game.dan-1]}순 (${game.turn}턴)`;
   $('hud-force').textContent = game.playerForce != null && f?.alive ? `【${game.forceName(game.playerForce)}】${game.delegated ? ' (위임 중)' : ''}` : '관전 중';
-  $('hud-ap').textContent = f?.alive ? `행동력 ${f.ap}` : '';
+  $('hud-ap').textContent = f?.alive ? `행동력 ${f.ap} · 기교P ${f.techP ?? 0}` : '';
   $('hud-gold').textContent = f?.alive ? `금 ${game.totalGold(game.playerForce)}` : '';
   $('hud-food').textContent = f?.alive ? `병량 ${game.totalFood(game.playerForce)}` : '';
   $('btn-endturn').disabled = game.delegated || game.over;
@@ -1166,11 +1194,30 @@ function onPick(nx, ny) {
   selectedUnit = null;
   showCityPanel(c);
 }
+function showTech() {
+  const f = game.forces[game.playerForce];
+  const p = $('panel'); p.classList.remove('hidden');
+  let html = `<h3>기교 연구 <small>(기교P ${f?.techP ?? 0})</small></h3>`;
+  for (const b of TECH_BRANCHES) {
+    const lv = game.techLv(game.playerForce, b);
+    const done = lv >= 4;
+    html += `<div class="officer"><div><div class="nm">${b} ${'●'.repeat(lv)}${'○'.repeat(4 - lv)}</div><div class="st">${TECH_DESC[b]}</div></div>${done ? '<span class="st">최고 단계</span>' : `<button class="cmd cmd-techr" data-b="${b}">연구 (P${TECH_P[lv]}·금${TECH_GOLD[lv]})</button>`}</div>`;
+  }
+  html += `<button class="cmd" id="cmd-tech-back">← 도시 패널로</button>`;
+  p.innerHTML = html;
+  p.querySelectorAll('.cmd-techr').forEach(btn => btn.onclick = () => {
+    game.researchTech(game.playerForce, btn.dataset.b);
+    refreshAll(); showTech();
+  });
+  $('cmd-tech-back').onclick = () => { const c = lastCityId != null && game.cityById[lastCityId]; if (c) showCityPanel(c); else p.classList.add('hidden'); };
+}
 function officerRow(idx) {
   const o = DATA.officers[idx];
   return `<div class="officer"><span class="pimg" style="${portraitCss(idx)}"></span><div><div class="nm">${o.name_ko} <span class="st">${o.name_zh}</span></div><div class="st">통${o.ldr} 무${o.war} 지${o.int} 정${o.pol} 매${o.chr} · ${o.skill ? o.skill + ' — ' + (DATA.skills[o.skill] || '') : '특기 없음'} · 충성 ${o.state?.loyal ?? '-'}</div></div></div>`;
 }
+let lastCityId = null;
 function showCityPanel(c) {
+  lastCityId = c.id;
   const p = $('panel'); p.classList.remove('hidden');
   const mine = c.force === game.playerForce && !game.delegated;
   const owner = c.force != null && game.forces[c.force]?.alive ? game.forceName(c.force) : '공백지';
@@ -1190,6 +1237,7 @@ function showCityPanel(c) {
       <button class="cmd" id="cmd-recruit">징병 (금200·병량1000)</button>
       <button class="cmd" id="cmd-dispatch">출진</button>
       <button class="cmd" id="cmd-move">무장 이동</button>
+      <button class="cmd" id="cmd-tech">기교 연구</button>
     </div>`;
   }
   html += `<h3 style="margin-top:10px">주둔 무장 (${c.officers.length})</h3>`;
@@ -1209,6 +1257,7 @@ function showCityPanel(c) {
     $('cmd-recruit').onclick = () => { game.recruit(c.id); refreshAll(); showCityPanel(c); };
     $('cmd-dispatch').onclick = () => showDispatch(c);
     $('cmd-move').onclick = () => showMove(c);
+    $('cmd-tech').onclick = () => showTech();
     p.querySelectorAll('.cmd-rec').forEach(b => b.onclick = () => { game.recruitOfficer(c.id, Number(b.dataset.i)); refreshAll(); showCityPanel(c); });
   }
   const join = $('cmd-join');
