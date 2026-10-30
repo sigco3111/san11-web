@@ -1,6 +1,6 @@
 // 3D 저폴리 지도 엔진 (Three.js) - 고정 등각 아이소메트릭 + 계단식 지형 + 성곽/숲
 import * as THREE from 'three';
-import { loadGLBAssets, applyEnvironment } from './assets-3d.js?v=r26';
+import { loadGLBAssets, applyEnvironment } from './assets-3d.js?v=r27';
 
 const LON0 = 100, LON1 = 126.5, LAT0 = 21.5, LAT1 = 43;
 export function toWorld(lon, lat) {
@@ -509,6 +509,26 @@ export class Map3D {
     const y = this.levelAtWorld(unit.x, unit.z) * STEP;
     m.group.position.set(unit.x, Math.max(y, WATER_Y + 0.2), unit.z);
     if (colorHex) m.banner.material.color.set(colorHex);
+  }
+  syncFieldFacs(list) { // R26: 야전 시설 표시 (list: {id,type,x,z,color,done}) - 낮은 폴리 자체 모델
+    this.fieldMeshes = this.fieldMeshes ?? {};
+    const keep = new Set(list.map(f => f.id));
+    for (const id of Object.keys(this.fieldMeshes)) if (!keep.has(Number(id))) { this.unitGroup.remove(this.fieldMeshes[id].g); delete this.fieldMeshes[id]; }
+    for (const f of list) {
+      let m = this.fieldMeshes[f.id];
+      if (m && m.type === f.type && m.done === f.done) { m.g.position.set(f.x, Math.max(this.levelAtWorld(f.x, f.z) * STEP, WATER_Y + 0.2), f.z); continue; }
+      if (m) this.unitGroup.remove(m.g);
+      const g = new THREE.Group(); const col = new THREE.Color(f.color);
+      const mat = new THREE.MeshLambertMaterial({ color: f.done ? 0x8a6a45 : 0xb9a47e, transparent: !f.done, opacity: f.done ? 1 : 0.55 });
+      const flag = new THREE.MeshBasicMaterial({ color: col });
+      const box = (w, h, d, x, y, z, mt = mat) => { const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mt); b.position.set(x, y, z); g.add(b); return b; };
+      if (f.type === '토루') { box(1.6, 0.35, 0.6, 0, 0.18, 0); box(0.6, 0.35, 1.6, 0, 0.18, 0); }
+      else if (f.type === '진') { box(1.4, 0.18, 1.4, 0, 0.09, 0); box(0.08, 1.3, 0.08, 0, 0.8, 0); box(0.6, 0.35, 0.04, 0.34, 1.2, 0, flag); }
+      else if (f.type === '채') { for (const [x, z] of [[-.8, -.8], [.8, -.8], [-.8, .8], [.8, .8]]) box(0.18, 0.8, 0.18, x, 0.4, z); box(1.8, 0.3, 0.12, 0, 0.55, -.8); box(1.8, 0.3, 0.12, 0, 0.55, .8); box(0.12, 0.3, 1.8, -.8, 0.55, 0); box(0.12, 0.3, 1.8, .8, 0.55, 0); box(0.08, 1.6, 0.08, 0, 0.9, 0); box(0.6, 0.35, 0.04, 0.34, 1.5, 0, flag); }
+      else { box(1.0, 0.5, 1.0, 0, 0.25, 0); box(0.9, 0.12, 0.2, 0, 0.7, 0).rotation.z = 0.5; box(0.35, 0.35, 0.35, 0.3, 0.95, 0, flag); }
+      g.position.set(f.x, Math.max(this.levelAtWorld(f.x, f.z) * STEP, WATER_Y + 0.2), f.z);
+      this.unitGroup.add(g); this.fieldMeshes[f.id] = { g, type: f.type, done: f.done };
+    }
   }
   removeUnit(id) { const m = this.unitMeshes[id]; if (m) { this.unitGroup.remove(m.group); delete this.unitMeshes[id]; } }
 
