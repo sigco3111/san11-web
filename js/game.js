@@ -700,4 +700,4 @@ export function josa(name, pair) { // [을,를] 형태
   const code = name.charCodeAt(name.length-1);
   const jong = (code >= 0xAC00 && code <= 0xD7A3) ? (code-0xAC00)%28 : 0;
   return name + (jong ? pair[0] : pair[1]);
-                    }
+}
