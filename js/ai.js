@@ -11,6 +11,20 @@ export function aiThink(game, fid) {
       game.develop(c.id, c.commerce <= c.farm ? 'commerce' : 'farm');
     }
   }
+  // 1.5) 수색: 미발견 재야가 있는 도시, 같은 비용(AP20·금100) — 40% 확률
+  for (const c of cities) {
+    if (f.ap < 20 || c.gold < 100 || !c.officers.length) continue;
+    const hasHidden = Object.values(game.officers).some(o => o.state?.status === 'free' && o.state.city === c.id && o.state.found === false);
+    if (hasHidden && Math.random() < 0.4) game.searchCity(c.id);
+  }
+  // 1.6) 상인: 같은 환율·비용(AP10) — 병량 부족 시 매입, 금 부족 시 매각
+  {
+    const rate = game.tradeRate();
+    const needFood = cities.filter(c => c.food < 3000 && c.gold >= 3000).sort((x, y) => x.food - y.food)[0];
+    if (needFood && f.ap >= 10) game.trade(needFood.id, 'buy', 2);
+    const richFood = cities.filter(c => c.food > 50000 && c.gold < 500 && c.food >= rate).sort((x, y) => y.food - x.food)[0];
+    if (richFood && f.ap >= 10) game.trade(richFood.id, 'sell', 2);
+  }
   // 2) 징병: 병력이 적은 도시
   for (const c of cities) {
     if (f.ap < 30) break;
