@@ -72,6 +72,7 @@ export class Game {
       if ((o.status === 'ruler' || o.status === 'taesu' || o.status === 'serving') && o.city != null && this.cityById[o.city]) this.cityById[o.city].officers.push(o.idx);
     }
     this.units = []; this.nextUnitId = 1;
+    this.diplo = {}; // 세력 간 외교: 'a_b'(a<b) → { v: 관계 0-100, allianceUntil, aidTurn }
     this.playerForce = playerForceId;
     this.delegated = false;   // 플레이어 세력 위임 여부
     this.pendingJoin = null;  // 턴 경계에서 인계할 세력
@@ -132,6 +133,97 @@ export class Game {
     let r = null;
     for (const [need, name] of RANKS) if (n >= need) r = name;
     return r;
+  }
+  // === 외교 (5단계: 친밀>호의>중립>불화>험악 — 설계안, 수치는 자체) ===
+  diploKey(a, b) { return a < b ? `${a}_${b}` : `${b}_${a}`; }
+  diploOf(a, b) { const k = this.diploKey(a, b); return (this.diplo ??= {})[k] ??= { v: 50, allianceUntil: 0, aidTurn: -99 }; }
+  relation(a, b) { return a === b ? 100 : this.diploOf(a, b).v; }
+  relStage(v) { return v >= 80 ? '친밀' : v >= 60 ? '호의' : v >= 40 ? '중립' : v >= 20 ? '불화' : '험악'; }
+  isAllied(a, b) { return a !== b && (this.diploOf(a, b).allianceUntil ?? 0) >= this.turn; }
+  changeRelation(a, b, n) { const d = this.diploOf(a, b); d.v = Math.max(0, Math.min(100, d.v + n)); return d.v; }
+  envoy(fid, tid, cityId) { // 친선 사절: 금 500·AP 20, 정치 보정 + 논객 특기 우위 (자체 수치)
+    const c = this.cityById[cityId], f = this.forces[c?.force], t = this.forces[tid];
+    if (!c || c.force !== fid || !f?.alive || !t?.alive || f.ap < 20 || c.gold < 500) return false;
+    c.gold -= 500; f.ap -= 20;
+    const pol = Math.max(50, ...c.officers.map(i => this.officers[i].pol));
+    const negotiator = c.officers.some(i => this.officers[i].skill === '논객');
+    const gain = Math.round((8 + pol / 10) * (negotiator ? 1.5 : 1));
+    const v = this.changeRelation(fid, tid, gain);
+    this.log(`【외교】${this.forceName(fid)} → ${this.forceName(tid)} 친선 사절 (관계 +${gain} → ${v} ${this.relStage(v)}${negotiator ? ', 논객' : ''})`, fid === this.playerForce || tid === this.playerForce);
+    return true;
+  }
+  proposeAlliance(fid, tid, cityId) { // 동맹 제의: 호의(60) 이상, 금 1000·AP 30, 24턴 (자체 수치)
+    const c = this.cityById[cityId], f = this.forces[c?.force], t = this.forces[tid];
+    if (!c || c.force !== fid || !f?.alive || !t?.alive || f.ap < 30 || c.gold < 1000) return false;
+    const d = this.diploOf(fid, tid);
+    if (d.v < 60 || this.isAllied(fid, tid)) return false;
+    c.gold -= 1000; f.ap -= 30;
+    const pol = Math.max(50, ...c.officers.map(i => this.officers[i].pol));
+    const p = Math.min(0.9, 0.4 + (d.v - 50) / 100 + pol / 300);
+    if (Math.random() < p) {
+      d.allianceUntil = this.turn + 24;
+      this.log(`【외교】${this.forceName(fid)}과(와) ${this.forceName(tid)}이(가) 24턴 동맹을 맺었습니다!`, true);
+      return true;
+    }
+    this.log(`【외교】${this.forceName(tid)}이(가) ${this.forceName(fid)}의 동맹 제의를 거절했습니다`, fid === this.playerForce || tid === this.playerForce);
+    return false;
+  }
+  requestTruce(fid, tid, cityId) { // 정전 요청: 불화 이하 대상, 금 2000·AP 30, 성공 시 관계 +30 (자체 수치)
+    const c = this.cityById[cityId], f = this.forces[c?.force], t = this.forces[tid];
+    if (!c || c.force !== fid || !f?.alive || !t?.alive || f.ap < 30 || c.gold < 2000) return false;
+    const d = this.diploOf(fid, tid);
+    if (d.v > 39) return false;
+    c.gold -= 2000; f.ap -= 30;
+    const pol = Math.max(50, ...c.officers.map(i => this.officers[i].pol));
+    if (Math.random() < Math.min(0.8, 0.3 + pol / 300 + d.v / 200)) {
+      const v = this.changeRelation(fid, tid, 30);
+      this.log(`【외교】${this.forceName(fid)}과(와) ${this.forceName(tid)}이(가) 정전했습니다 (관계 → ${v} ${this.relStage(v)})`, true);
+      return true;
+    }
+    this.log(`【외교】${this.forceName(tid)}이(가) 정전 요청을 거절했습니다`, fid === this.playerForce || tid === this.playerForce);
+    return false;
+  }
+  demandSurrender(fid, tid, cityId) { // 항복 권고: 대상 도시 2개 이하, 금 1000·AP 30, 매력 보정 (자체 수치)
+    const c = this.cityById[cityId], f = this.forces[c?.force], t = this.forces[tid];
+    if (!c || c.force !== fid || !f?.alive || !t?.alive || f.ap < 30 || c.gold < 1000) return false;
+    const tCities = this.cities.filter(x => x.force === tid);
+    if (tCities.length > 2) return false;
+    c.gold -= 1000; f.ap -= 30;
+    const chr = Math.max(50, ...c.officers.map(i => this.officers[i].chr));
+    const myN = this.cities.filter(x => x.force === fid).length;
+    const p = Math.min(0.5, 0.05 + (chr - 50) / 200 + (myN - tCities.length) * 0.05);
+    if (Math.random() < p) {
+      for (const tc of tCities) { tc.force = fid; }
+      for (const o of Object.values(this.officers)) if (o.state?.force === tid) { o.state.force = fid; if (o.state.city != null) { const nc = this.cityById[o.state.city]; if (nc && !nc.officers.includes(o.idx)) nc.officers.push(o.idx); } }
+      t.alive = false;
+      this.log(`【항복】${this.forceName(tid)}이(가) ${this.forceName(fid)}에 항복했습니다! 도시 ${tCities.length}개와 무장이 귀속됩니다`, true);
+      return true;
+    }
+    this.changeRelation(fid, tid, -20);
+    this.log(`【외교】${this.forceName(tid)}이(가) 항복 권고를 거부했습니다 (관계 악화)`, fid === this.playerForce || tid === this.playerForce);
+    return false;
+  }
+  requestAid(fid, tid, cityId) { // 원군 요청: 동맹국, 18턴 쿨(설계안), 병사 3000 지원 (자체 단순화)
+    const c = this.cityById[cityId], f = this.forces[c?.force], t = this.forces[tid];
+    if (!c || c.force !== fid || !f?.alive || !t?.alive || f.ap < 20 || !this.isAllied(fid, tid)) return false;
+    const d = this.diploOf(fid, tid);
+    if (this.turn - (d.aidTurn ?? -99) < 18) return false;
+    const src = this.cities.filter(x => x.force === tid && x.troops >= 6000).sort((a, b) => b.troops - a.troops)[0];
+    if (!src) return false;
+    f.ap -= 20;
+    src.troops -= 3000;
+    const dst = this.cities.filter(x => x.force === fid).sort((a, b) => a.troops - b.troops)[0];
+    dst.troops = Math.min(dst.metropolis ? 150000 : 100000, dst.troops + 3000);
+    d.aidTurn = this.turn;
+    this.log(`【외교】동맹국 ${this.forceName(tid)}이(가) 원군 3000을 ${dst.name_ko}에 보냈습니다`, true);
+    return true;
+  }
+  breakAlliance(fid, tid) { // 동맹 파기: 관계 -40
+    if (!this.isAllied(fid, tid)) return false;
+    this.diploOf(fid, tid).allianceUntil = 0;
+    const v = this.changeRelation(fid, tid, -40);
+    this.log(`【외교】${this.forceName(fid)}이(가) ${this.forceName(tid)}과(와)의 동맹을 파기했습니다 (관계 → ${v} ${this.relStage(v)})`, true);
+    return true;
   }
   checkRanks() { // 관작 자동 승진: 승진 시 전 소속 무장 충성 +5 (자체 수치)
     for (const f of Object.values(this.forces)) {
@@ -255,6 +347,7 @@ export class Game {
     const u = this.units.find(u => u.id === unitId);
     const c = this.cityById[targetCityId];
     if (!u || !c) return;
+    if (c.force != null && c.force !== u.force && this.isAllied(u.force, c.force)) { this.log(`${this.forceName(c.force)}은(는) 동맹국이라 공격할 수 없습니다`, u.force === this.playerForce); return; }
     u.targetCity = targetCityId; u.tx = c.lon; u.tz = c.lat;
   }
 
@@ -294,6 +387,15 @@ export class Game {
             this.log(`${c.name_ko}의 ${this.officers[i].name_ko}에게 봉록 ${sal}금을 주지 못했습니다 (충성 하락)`, c.force === this.playerForce);
           }
         }
+      }
+      // 외교: 동맹 만료 확인 + 관계는 매달 중립(50)으로 1씩 회귀 (자체 수치)
+      for (const [k, d] of Object.entries(this.diplo ?? {})) {
+        const [a, b] = k.split('_').map(Number);
+        if ((d.allianceUntil ?? 0) > 0 && d.allianceUntil < this.turn) {
+          d.allianceUntil = 0;
+          this.log(`【외교】${this.forceName(a)}과(와) ${this.forceName(b)}의 동맹이 만료되었습니다`, true);
+        }
+        if (d.v > 50) d.v--; else if (d.v < 50) d.v++;
       }
       // 충성 25 이하 무장은 월 15% 확률로 하야 (자체 수치)
       for (const c of this.cities) {
@@ -379,6 +481,10 @@ export class Game {
     // 도착: 도시 처리
     const c = this.cityById[u.targetCity];
     if (!c) { u.tx = null; return; }
+    if (c.force != null && c.force !== u.force && this.isAllied(u.force, c.force)) { // 동맹 도시 공격 불가
+      u.tx = null; u.targetCity = null;
+      return;
+    }
     if (c.force === u.force) { // 아군 도시 합류
       const cap = c.metropolis ? 150000 : 100000;
       c.troops = Math.min(cap, c.troops + u.troops);
@@ -445,6 +551,7 @@ export class Game {
       const a = us[i], b = us[j];
       if (!this.units.includes(a) || !this.units.includes(b)) continue;
       if (a.force === b.force) continue;
+      if (this.isAllied(a.force, b.force)) continue;
       if (Math.hypot(a.x-b.x, a.z-b.z) >= 2.2) continue;
       this.fieldBattle(a, b);
     }
@@ -504,7 +611,7 @@ export class Game {
       const data = {
         scenId: this.scenId, year: this.year, month: this.month, dan: this.dan, turn: this.turn,
         cities: this.cities, forces: this.forces, units: this.units, nextUnitId: this.nextUnitId,
-        playerForce: this.playerForce, delegated: this.delegated, deadAck: this.deadAck, logs: this.logs.slice(-60),
+        playerForce: this.playerForce, delegated: this.delegated, deadAck: this.deadAck, logs: this.logs.slice(-60), diplo: this.diplo,
         officerStates: Object.fromEntries(Object.entries(this.officers).filter(([,o]) => o.state).map(([i,o]) => [i, o.state])),
       };
       localStorage.setItem(SAVE_KEY, JSON.stringify(data));
@@ -515,4 +622,4 @@ export function josa(name, pair) { // [을,를] 형태
   const code = name.charCodeAt(name.length-1);
   const jong = (code >= 0xAC00 && code <= 0xD7A3) ? (code-0xAC00)%28 : 0;
   return name + (jong ? pair[0] : pair[1]);
-    }
+                                    }
