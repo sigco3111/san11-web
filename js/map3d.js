@@ -82,7 +82,7 @@ function instancedFromScene(srcScene, placements) {
     if (!m.isMesh) return;
     const mats = Array.isArray(m.material) ? m.material : [m.material];
     for (const mat of mats) {
-      if (mat && mat.isMeshStandardMaterial) { mat.envMapIntensity = 0.55; }
+      if (mat && mat.isMeshStandardMaterial) { mat.envMapIntensity = 0.35; }
     }
     const im = new THREE.InstancedMesh(m.geometry, m.material, placements.length);
     const tmp = new THREE.Matrix4();
