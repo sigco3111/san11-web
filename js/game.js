@@ -51,6 +51,16 @@ export const FACILITIES = {
   '조선소': { cost: 300, turns: 3, desc: '선박 생산 (수군 라운드에서 활성)' },
 };
 
+// === 명품 (설계안 분류: 명마·활·검·서적·장병·옥새, 명칭·수치 자체) ===
+export const ITEMS = [
+  { id: 'fangtian', name: '방천화극', kind: 'weapon' }, { id: 'qinglong', name: '청룡언월도', kind: 'weapon' }, { id: 'shemao', name: '사모', kind: 'weapon' },
+  { id: 'chitu', name: '적토마', kind: 'horse' }, { id: 'dilu', name: '적로', kind: 'horse' }, { id: 'jiaohuang', name: '조황', kind: 'horse' },
+  { id: 'yangbow', name: '양기궁', kind: 'bow' },
+  { id: 'qinggang', name: '청강검', kind: 'sword' }, { id: 'yitian', name: '의천검', kind: 'sword' },
+  { id: 'laozi', name: '노자', kind: 'book' }, { id: 'sunzi', name: '손자병법', kind: 'book' },
+  { id: 'yuxi', name: '전국옥새', kind: 'seal' },
+]; // weapon=부대 공격 +5% · seal=군주 보유 시 기교P 월+10 (즉시 효과) / horse·bow·sword·book은 일기토(R10)·설전(R11) 연결 예정
+
 // === 공적·관작 (자체 수치) ===
 const RANKS = [[2,'주자사'],[4,'주목'],[6,'우림중랑장'],[8,'오관중랑장'],[12,'대장군'],[14,'대사마'],[18,'공'],[20,'왕']]; // 설계안 사다리(황제는 R14 통합). 황건 세력은 작위 불가
 const MERIT = { develop: 30, recruit: 80, facility: 100, tactic: 40, stratagem: 30, capture: 150 }; // 공적 부여량 (자체 수치)
@@ -67,12 +77,13 @@ export class Game {
     this.forces = {};
     for (const f of scen.forces) this.forces[f.id] = { id: f.id, ruler: f.ruler, alive: true, ap: 60, techP: 0, techs: Object.fromEntries(TECH_BRANCHES.map(b => [b, 0])) };
     for (const o of scen.officers) {
-      const rec = { idx: o.idx, status: o.status, force: o.force ?? null, city: o.city ?? null, loyal: o.loyal };
+      const rec = { idx: o.idx, status: o.status, force: o.force ?? null, city: o.city ?? null, loyal: o.loyal, found: o.status === 'free' ? false : true, items: [] };
       this.officers[o.idx].state = rec;
       if ((o.status === 'ruler' || o.status === 'taesu' || o.status === 'serving') && o.city != null && this.cityById[o.city]) this.cityById[o.city].officers.push(o.idx);
     }
     this.units = []; this.nextUnitId = 1;
-    this.diplo = {}; // 세력 간 외교: 'a_b'(a<b) → { v: 관계 0-100, allianceUntil, aidTurn }
+    this.diplo = {}; // 세력 간 외교
+    this.itemPool = ITEMS.map(i => i.id); // 미발견 명품: 'a_b'(a<b) → { v: 관계 0-100, allianceUntil, aidTurn }
     this.playerForce = playerForceId;
     this.delegated = false;   // 플레이어 세력 위임 여부
     this.pendingJoin = null;  // 턴 경계에서 인계할 세력
@@ -133,6 +144,57 @@ export class Game {
     let r = null;
     for (const [need, name] of RANKS) if (n >= need) r = name;
     return r;
+  }
+  // === 수색·상인·명품 (자체 수치) ===
+  searchCity(cityId) { // 수색: AP 20·금 100. 미발견 재야 발견(정치·수완 보정) 또는 명품 발견
+    const c = this.cityById[cityId], f = this.forces[c?.force];
+    if (!c || c.force == null || !f?.alive || f.ap < 20 || c.gold < 100 || !c.officers.length) return false;
+    c.gold -= 100; f.ap -= 20;
+    const bestOff = [...new Set(c.officers)].sort((a, b) => this.officers[b].pol - this.officers[a].pol)[0];
+    const pol = this.officers[bestOff].pol;
+    const suwan = this.officers[bestOff].skill === '수완';
+    const hidden = Object.values(this.officers).filter(o => o.state?.status === 'free' && o.state.city === cityId && o.state.found === false);
+    if (hidden.length && Math.random() < Math.min(0.9, 0.4 + pol / 200 + (suwan ? 0.2 : 0))) {
+      const t = hidden[Math.floor(Math.random() * hidden.length)];
+      t.state.found = true;
+      this.gainMerit(bestOff, 20);
+      this.log(`【수색】${c.name_ko}에서 재야 무장 ${t.name_ko}을(를) 발견했습니다! 등용할 수 있습니다`, c.force === this.playerForce);
+      return true;
+    }
+    this.itemPool = this.itemPool ?? ITEMS.map(i => i.id);
+    if (this.itemPool.length && Math.random() < 0.25 + (suwan ? 0.15 : 0)) {
+      const id = this.itemPool.splice(Math.floor(Math.random() * this.itemPool.length), 1)[0];
+      const item = ITEMS.find(i => i.id === id);
+      const st = this.officers[bestOff].state;
+      st.items = (st.items ?? []).concat(id).slice(0, 3); // 무장당 최대 3개 (자체)
+      this.gainMerit(bestOff, 20);
+      this.log(`【수색】${c.name_ko}에서 명품 ${item.name}을(를) 발견했습니다! ${this.officers[bestOff].name_ko}이(가) 소유합니다`, true);
+      return true;
+    }
+    this.log(`${c.name_ko}을(를) 수색했지만 아무것도 발견하지 못했습니다`, c.force === this.playerForce);
+    return true;
+  }
+  tradeRate() { return 4000 + ((this.year * 12 + this.month) * 7 % 4) * 1000; } // 1000금당 병량 4000~7000, 월별 변동 (자체 수치)
+  trade(cityId, dir, lots = 1) { // 상인: 금↔병량, AP 10, 1회 최대 5롯트 (자체)
+    const c = this.cityById[cityId], f = this.forces[c?.force];
+    lots = Math.max(1, Math.min(5, lots | 0));
+    if (!c || c.force == null || !f?.alive || f.ap < 10) return false;
+    const rate = this.tradeRate();
+    if (dir === 'buy') { // 금 → 병량
+      if (c.gold < 1000 * lots) return false;
+      c.gold -= 1000 * lots; c.food += rate * lots;
+    } else { // 병량 → 금
+      if (c.food < rate * lots) return false;
+      c.food -= rate * lots; c.gold += 1000 * lots;
+    }
+    f.ap -= 10;
+    this.log(`${c.name_ko} 상인과 거래: ${dir === 'buy' ? `금 ${1000 * lots} → 병량 ${rate * lots}` : `병량 ${rate * lots} → 금 ${1000 * lots}`} (환율 1:${rate / 1000})`, c.force === this.playerForce);
+    return true;
+  }
+  unitItemAtk(u) { // 장병(weapon) 명품: 부대 공격 +5%/개 (자체)
+    let n = 0;
+    for (const i of u.officers) for (const id of (this.officers[i]?.state?.items ?? [])) if (ITEMS.find(x => x.id === id)?.kind === 'weapon') n++;
+    return 1 + 0.05 * n;
   }
   // === 외교 (5단계: 친밀>호의>중립>불화>험악 — 설계안, 수치는 자체) ===
   diploKey(a, b) { return a < b ? `${a}_${b}` : `${b}_${a}`; }
@@ -294,6 +356,7 @@ export class Game {
     const c = this.cityById[cityId], t = this.officers[officerIdx];
     if (!c || c.force == null || !this.forces[c.force]?.alive || !c.officers.length) return 0;
     if (!t?.state || t.state.status !== 'free' || t.state.city !== cityId) return 0;
+    if (t.state.found === false) return 0; // 미발견 재야는 수색 필요
     const envoy = Math.max(...c.officers.map(i => this.officers[i].chr));
     const ruler = this.officers[this.forces[c.force].ruler]?.chr ?? 50;
     const loyal = t.state.loyal ?? 70;
@@ -392,6 +455,13 @@ export class Game {
           }
         }
       }
+      // 옥새: 소유 세력 기교P 월 +10 (자체 수치)
+      for (const f of Object.values(this.forces)) {
+        if (!f.alive) continue;
+        if (Object.values(this.officers).some(o => o.state?.force === f.id && (o.state.items ?? []).includes('yuxi'))) {
+          f.techP = (f.techP ?? 0) + 10;
+        }
+      }
       // 외교: 동맹 만료 확인 + 관계는 매달 중립(50)으로 1씩 회귀 (자체 수치)
       for (const [k, d] of Object.entries(this.diplo ?? {})) {
         const [a, b] = k.split('_').map(Number);
@@ -411,7 +481,7 @@ export class Game {
           const st = this.officers[i]?.state;
           if (!st || (st.status !== 'serving' && st.status !== 'taesu')) continue;
           if ((st.loyal ?? 70) <= 25 && Math.random() < 0.15) {
-            st.status = 'free'; st.force = null; st.city = null;
+            st.status = 'free'; st.force = null; st.city = null; st.found = false;
             c.officers = c.officers.filter(x => x !== i);
             this.log(`【하야】${this.officers[i].name_ko}이(가) 충성이 낮아 【${this.forceName(c.force)}】을(를) 떠났습니다`, true);
           }
@@ -439,7 +509,7 @@ export class Game {
       if (!hasCity && !hasUnit) {
         f.alive = false;
         this.log(`【${this.forceName(f.id)}】이(가) 멸망했습니다!`, true);
-        for (const o of this.forceOfficers(f.id)) { o.state.force = null; o.state.status = 'free'; }
+        for (const o of this.forceOfficers(f.id)) { o.state.force = null; o.state.status = 'free'; o.state.found = false; }
       }
     }
     // 시계
@@ -502,7 +572,7 @@ export class Game {
     }
     // 공성: 도시 내구/병사 공격
     const lead = this.officers[u.officers[0]];
-    let dmg = Math.round(u.troops * 0.12 * ut.atk * (0.7 + lead.war/150) * this.aptMult(u) * this.unitDmgMult(u, true) * this.unitTechAtk(u) * (1 + 0.1 * this.techLv(u.force, '발명')));
+    let dmg = Math.round(u.troops * 0.12 * ut.atk * (0.7 + lead.war/150) * this.aptMult(u) * this.unitDmgMult(u, true) * this.unitItemAtk(u) * this.unitTechAtk(u) * (1 + 0.1 * this.techLv(u.force, '발명')));
     let loss = Math.round(c.troops * 0.06 / ut.def + 150);
     // 전법: 병종 적성 B 이상 + 기력 소모, 무력이 높을수록 발동 잘됨
     const tac = TACTICS[u.type];
@@ -569,7 +639,7 @@ export class Game {
       if ((att.conf ?? 0) > 0) return 0; // 혼란은 stepUnit에서 감소 처리됨
       const utA = UNIT_TYPES[att.type], utD = UNIT_TYPES[def.type];
       const lead = this.officers[att.officers[0]];
-      let dmg = Math.round(att.troops * 0.05 * utA.atk * (0.7 + lead.war/150) / utD.def * this.aptMult(att) * this.unitDmgMult(att) * this.unitDefMult(def) * this.unitTechAtk(att) * (1 - 0.03 * this.techLv(def.force, '연병')));
+      let dmg = Math.round(att.troops * 0.05 * utA.atk * (0.7 + lead.war/150) / utD.def * this.aptMult(att) * this.unitDmgMult(att) * this.unitItemAtk(att) * this.unitDefMult(def) * this.unitTechAtk(att) * (1 - 0.03 * this.techLv(def.force, '연병')));
       // 전법 (공성과 같은 규칙)
       const tac = TACTICS[att.type];
       const aptLv = att.type === 'sword' ? 1 : APT_LV(lead.apt?.[APT_IDX[att.type]]);
@@ -619,7 +689,7 @@ export class Game {
       const data = {
         scenId: this.scenId, year: this.year, month: this.month, dan: this.dan, turn: this.turn,
         cities: this.cities, forces: this.forces, units: this.units, nextUnitId: this.nextUnitId,
-        playerForce: this.playerForce, delegated: this.delegated, deadAck: this.deadAck, logs: this.logs.slice(-60), diplo: this.diplo,
+        playerForce: this.playerForce, delegated: this.delegated, deadAck: this.deadAck, logs: this.logs.slice(-60), diplo: this.diplo, itemPool: this.itemPool,
         officerStates: Object.fromEntries(Object.entries(this.officers).filter(([,o]) => o.state).map(([i,o]) => [i, o.state])),
       };
       localStorage.setItem(SAVE_KEY, JSON.stringify(data));
@@ -630,4 +700,4 @@ export function josa(name, pair) { // [을,를] 형태
   const code = name.charCodeAt(name.length-1);
   const jong = (code >= 0xAC00 && code <= 0xD7A3) ? (code-0xAC00)%28 : 0;
   return name + (jong ? pair[0] : pair[1]);
-}
+                    }
