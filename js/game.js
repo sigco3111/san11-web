@@ -631,12 +631,65 @@ export class Game {
     this.log(`${c.name_ko}에서 ${this.officers[officerIdxs[0]].name_ko}의 ${ut.name} ${troops} 출진`, c.force === this.playerForce);
     return unit;
   }
+  findPath(u, tx, tz) { // R17: A* 경로 탐색 (자체 구현) — 육군: 바다 불가·강은 비용 3배 도하(여울 특정 타일·난소행군 기교 미구현에 따른 자체 단순화), 수군: 수로만. 0.15° 그리드
+    const ship = SHIP_TYPES.has(u.type);
+    const st = 0.15, lon0 = 100, lat0 = 20, W = 226, H = 146;
+    const ci = x => Math.round((x - lon0) / st), cj = z => Math.round((z - lat0) / st);
+    const pass = (i, j) => ship ? isWaterAt(lon0 + i * st, lat0 + j * st) : !isSeaAt(lon0 + i * st, lat0 + j * st);
+    const stepCost = (i, j) => (!ship && isRiverAt(lon0 + i * st, lat0 + j * st)) ? 3 : 1;
+    const snap = (i, j) => { // 가장 가까운 통과 가능 셀 (반경 8)
+      if (i >= 0 && i <= W && j >= 0 && j <= H && pass(i, j)) return [i, j];
+      for (let r = 1; r <= 8; r++) for (let di = -r; di <= r; di++) for (let dj = -r; dj <= r; dj++) {
+        if (Math.max(Math.abs(di), Math.abs(dj)) !== r) continue;
+        const ni = i + di, nj = j + dj;
+        if (ni >= 0 && ni <= W && nj >= 0 && nj <= H && pass(ni, nj)) return [ni, nj];
+      }
+      return null;
+    };
+    const sc = snap(ci(u.x), cj(u.z)), tc = snap(ci(tx), cj(tz));
+    if (!sc || !tc) return null;
+    const Hcap = 90000;
+    const g = new Map(), came = new Map();
+    const heap = [[0, sc[0], sc[1]]];
+    const push = (f, i, j) => { heap.push([f, i, j]); let k = heap.length - 1; while (k > 0) { const p = (k - 1) >> 1; if (heap[p][0] <= heap[k][0]) break; [heap[p], heap[k]] = [heap[k], heap[p]]; k = p; } };
+    const pop = () => { const top = heap[0], last = heap.pop(); if (heap.length) { heap[0] = last; let k = 0; for (;;) { const l = 2*k+1, r = 2*k+2; let m = k; if (l < heap.length && heap[l][0] < heap[m][0]) m = l; if (r < heap.length && heap[r][0] < heap[m][0]) m = r; if (m === k) break; [heap[m], heap[k]] = [heap[k], heap[m]]; k = m; } } return top; };
+    const kk = (i, j) => i * 1000 + j;
+    g.set(kk(sc[0], sc[1]), 0);
+    let pops = 0, found = false;
+    while (heap.length && pops++ < Hcap) {
+      const [, i, j] = pop();
+      if (i === tc[0] && j === tc[1]) { found = true; break; }
+      const gi = g.get(kk(i, j));
+      for (let di = -1; di <= 1; di++) for (let dj = -1; dj <= 1; dj++) {
+        if (!di && !dj) continue;
+        const ni = i + di, nj = j + dj;
+        if (ni < 0 || ni > W || nj < 0 || nj > H || !pass(ni, nj)) continue;
+        const ng = gi + stepCost(ni, nj) * (di && dj ? 1.4 : 1);
+        const k2 = kk(ni, nj);
+        if (ng < (g.get(k2) ?? 1e18)) {
+          g.set(k2, ng); came.set(k2, [i, j]);
+          push(ng + Math.hypot(tc[0] - ni, tc[1] - nj), ni, nj);
+        }
+      }
+    }
+    if (!found) return null;
+    const cells = [];
+    let cur = tc;
+    while (cur) { cells.push(cur); cur = came.get(kk(cur[0], cur[1])); }
+    cells.reverse();
+    const pts = [];
+    for (let k = 4; k < cells.length; k += 5) pts.push([lon0 + cells[k][0] * st, lat0 + cells[k][1] * st]);
+    pts.push([tx, tz]);
+    return pts;
+  }
+
   orderUnit(unitId, targetCityId) {
     const u = this.units.find(u => u.id === unitId);
     const c = this.cityById[targetCityId];
     if (!u || !c) return;
     if (c.force != null && c.force !== u.force && this.isPeace(u.force, c.force)) { this.log(`${this.forceName(c.force)}은(는) 동맹·정전 중이라 공격할 수 없습니다`, u.force === this.playerForce); return; }
     u.targetCity = targetCityId; u.tx = c.lon; u.tz = c.lat;
+    u.path = this.findPath(u, c.lon, c.lat) ?? []; // R17: 경로 미탐색 시 기존 직선 이동 폴백
   }
 
   // === 턴 진행 ===
@@ -846,18 +899,21 @@ export class Game {
     }
     const ut = UNIT_TYPES[u.type];
     const spdMult = this.unitHasSkill(u, '질풍') ? 1.25 : (this.unitHasSkill(u, '신행') ? 1.15 : 1); // R17: 신행 = 이동 +15% (자체 재정의 — 야간·날씨 시스템 부재, 질풍 우선)
-    const speed = 0.55 * ut.move * spdMult;
-    const dx = u.tx - u.x, dz = u.tz - u.z;
+    let speed = 0.55 * ut.move * spdMult;
+    if (u.path?.length && Math.hypot(u.path[0][0] - u.x, u.path[0][1] - u.z) < 0.35) { u.x = u.path[0][0]; u.z = u.path[0][1]; u.path.shift(); } // R17: 경유지 통과
+    const aimX = u.path?.length ? u.path[0][0] : u.tx, aimZ = u.path?.length ? u.path[0][1] : u.tz;
+    const dx = aimX - u.x, dz = aimZ - u.z;
     const d = Math.hypot(dx, dz);
-    if (d > 1.2) {
+    if (u.path?.length || d > 1.2) {
+      if (!SHIP_TYPES.has(u.type) && isRiverAt(u.x, u.z)) speed *= 0.5; // R17: 육군 강 도하 감속 (자체 수치)
       const nx = u.x + dx/d*speed, nz = u.z + dz/d*speed;
       if (SHIP_TYPES.has(u.type) && !isWaterAt(nx, nz)) { // 수군: 강·바다에서만 기동
         if (!u._landWarn) { u._landWarn = true; this.log(`${josa(u.label, ['이','가'])} 수로를 벗어나 더 이상 나아갈 수 없습니다`, u.force === this.playerForce); }
-        return;
+        u.path = []; return;
       }
-      if (!SHIP_TYPES.has(u.type) && isWaterAt(nx, nz)) { // R17: 육군은 강·바다 진입 불가 (설계안 64행 수군 규칙의 대칭 — 여울 타일 없음·난소행군 미구현). AI도 같은 이동 경로라 같은 제약
-        if (!u._waterWarn) { u._waterWarn = true; this.log(`${josa(u.label, ['은','는'])} 수로를 건널 수 없어 진격을 멈췄습니다`, u.force === this.playerForce); }
-        return;
+      if (!SHIP_TYPES.has(u.type) && isSeaAt(nx, nz)) { // R17: 육군은 바다 진입 불가 (강은 도하 가능, 설계안 64행)
+        if (!u._waterWarn) { u._waterWarn = true; this.log(`${josa(u.label, ['은','는'])} 바다를 건널 수 없어 진격을 멈췄습니다`, u.force === this.playerForce); }
+        u.path = []; return;
       }
       u._waterWarn = false;
       u._landWarn = false;
