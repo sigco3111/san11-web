@@ -690,7 +690,7 @@ class Game {
     c.facilities = c.facilities ?? [];
     if (c.facilities.length >= this.facSlots(c)) return false;
     if (c.gold < spec.cost) return false;
-    const valid = (builders ?? []).filter(i => c.officers.includes(i)).slice(0, 3);
+    const valid = [...new Set((builders ?? []).filter(i => c.officers.includes(i)))].slice(0, 3);
     c.gold -= spec.cost; f.ap -= 20;
     c.facilities.push({ type, progress: 0, builders: valid, done: false });
     this.log(`${c.name_ko}에 ${type} 건설 시작 (금 ${spec.cost}, 담당 ${valid.length}명)`, c.force === this.playerForce);
@@ -1049,7 +1049,7 @@ function aiThink(game, fid) {
     const have = t => c.facilities.some(x => x.type === t);
     const pick = !have('시장') ? '시장' : !have('농장') ? '농장' : !have('병영') && c.gold > 2000 ? '병영' : null;
     if (pick) {
-      const builders = [...c.officers].sort((x, y) => (game.officers[y]?.pol ?? 0) - (game.officers[x]?.pol ?? 0)).slice(0, 3);
+      const builders = [...new Set(c.officers)].sort((x, y) => (game.officers[y]?.pol ?? 0) - (game.officers[x]?.pol ?? 0)).slice(0, 3);
       game.buildFacility(c.id, pick, builders);
     }
   }
@@ -1299,7 +1299,7 @@ function showFacilities(c) {
     }).join('');
   } else html += '<p>건설된 시설이 없습니다.</p>';
   html += '<h3 style="margin-top:10px">건설</h3>';
-  const polTop = [...c.officers].sort((a, b) => (DATA.officers[b]?.pol ?? 0) - (DATA.officers[a]?.pol ?? 0)).slice(0, 3);
+  const polTop = [...new Set(c.officers)].sort((a, b) => (DATA.officers[b]?.pol ?? 0) - (DATA.officers[a]?.pol ?? 0)).slice(0, 3);
   for (const [t, spec] of Object.entries(FACILITIES)) {
     html += `<div class="officer"><div><div class="nm">${t} <span class="st">금${spec.cost} · 공기 ${spec.turns}턴</span></div><div class="st">${spec.desc}</div></div><button class="cmd cmd-build" data-t="${t}">건설</button></div>`;
   }
