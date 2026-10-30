@@ -838,7 +838,7 @@ export class Game {
     if (d > 1.2) {
       const nx = u.x + dx/d*speed, nz = u.z + dz/d*speed;
       if (SHIP_TYPES.has(u.type) && !isWaterAt(nx, nz)) { // 수군: 강·바다에서만 기동
-        if (!u._landWarn) { u._landWarn = true; this.log(`${u.label}이(가) 수로를 벗어나 더 이상 나아갈 수 없습니다`, u.force === this.playerForce); }
+        if (!u._landWarn) { u._landWarn = true; this.log(`${josa(u.label, ['이','가'])} 수로를 벗어나 더 이상 나아갈 수 없습니다`, u.force === this.playerForce); }
         return;
       }
       u._landWarn = false;
@@ -892,7 +892,7 @@ export class Game {
       const p = Math.max(0.05, Math.min(0.45, 0.15 + (def.int - lead.int)/250));
       if (def.int >= STRATS.confuse.minInt && !this.unitHasSkill(u, '위장') && Math.random() < p * (1 - this.mindDefense(u.force))) {
         c.lastStrat = this.turn; u.conf = STRATS.confuse.turns;
-        this.log(`【계략】${def.name_ko}의 혼란! ${u.label}이(가) ${STRATS.confuse.turns}턴간 움직이지 못합니다`, c.force === this.playerForce);
+        this.log(`【계략】${def.name_ko}의 혼란! ${josa(u.label, ['이','가'])} ${STRATS.confuse.turns}턴간 움직이지 못합니다`, c.force === this.playerForce);
       }
     }
     if (ut.siege) dmg = Math.round(dmg * ut.siege); // 병기: 대도시 피해 배율 (자체 수치)
@@ -903,7 +903,7 @@ export class Game {
     c.hp = Math.max(0, c.hp - Math.round(dmg*0.5));
     u.troops = Math.max(0, u.troops - loss);
     this.gainTechP(u.force, Math.min(50, Math.floor(dmg / 100))); // 전투 기교P
-    this.log(`${u.label}이(가) ${c.name_ko}을(를) 공격 (적병 -${dmg}, 아군 -${loss})`, u.force === this.playerForce);
+    this.log(`${josa(u.label, ['이','가'])} ${josa(c.name_ko, ['을','를'])} 공격 (적병 -${dmg}, 아군 -${loss})`, u.force === this.playerForce);
     if (u.troops <= 0) { this.units = this.units.filter(x => x !== u); this.log(`${u.label} 부대가 전멸했습니다`, false); return; }
     if (c.troops <= 0 || c.hp <= 0) {
       const old = c.force;
@@ -949,7 +949,7 @@ export class Game {
       const caster = att.officers.map(i => this.officers[i]).sort((x, y) => y.int - x.int)[0];
       if (caster && (att._stratTurn ?? -1) !== this.turn && caster.int >= STRATS.confuse.minInt && !this.unitHasSkill(def, '위장') && (att.qi ?? 100) >= 25 && Math.random() < Math.min(0.35, 0.08 + caster.int/400) * (1 - this.mindDefense(def.force))) {
         att.qi -= 25; def.conf = Math.max(def.conf ?? 0, STRATS.confuse.turns);
-        this.log(`【계략】${caster.name_ko}의 혼란! ${def.label}이(가) ${STRATS.confuse.turns}턴간 움직이지 못합니다`, att.force === this.playerForce);
+        this.log(`【계략】${caster.name_ko}의 혼란! ${josa(def.label, ['이','가'])} ${STRATS.confuse.turns}턴간 움직이지 못합니다`, att.force === this.playerForce);
       }
       // 계략: 화계
       if (caster && (att._stratTurn ?? -1) !== this.turn && caster.int >= STRATS.fire.minInt && !this.unitHasSkill(def, '위장') && (att.qi ?? 100) >= STRATS.fire.qi && Math.random() < Math.min(0.5, 0.1 + caster.int/300 + (this.unitHasSkill(att, '풍계') ? 0.15 : 0)) * (1 - this.mindDefense(def.force))) {
@@ -986,7 +986,7 @@ export class Game {
         const home = this.forceCities(u.force).sort((pp, qq) => Math.hypot(pp.lon-u.x, pp.lat-u.z) - Math.hypot(qq.lon-u.x, qq.lat-u.z))[0];
         if (home) {
           u.targetCity = home.id; u.tx = home.lon; u.tz = home.lat;
-          this.log(`${u.label}이(가) ${home.name_ko}(으)로 퇴각합니다`, u.force === this.playerForce);
+          this.log(`${josa(u.label, ['이','가'])} ${josa(home.name_ko, ['으로','로'])} 퇴각합니다`, u.force === this.playerForce);
         }
       }
     }
@@ -1101,7 +1101,7 @@ export class Game {
       u.qi -= 25;
       this.gainMerit(caster.idx, MERIT.stratagem);
       d.conf = Math.max(d.conf ?? 0, STRATS.confuse.turns);
-      this.log(`【계략】${caster.name_ko}의 혼란! ${d.label}이(가) ${STRATS.confuse.turns}턴간 움직이지 못합니다`, u.force === this.playerForce);
+      this.log(`【계략】${caster.name_ko}의 혼란! ${josa(d.label, ['이','가'])} ${STRATS.confuse.turns}턴간 움직이지 못합니다`, u.force === this.playerForce);
       this.autosave();
       return true;
     }
