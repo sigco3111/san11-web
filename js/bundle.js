@@ -704,6 +704,8 @@ class Game {
   relation(a, b) { return a === b ? 100 : this.diploOf(a, b).v; }
   relStage(v) { return v >= 80 ? '친밀' : v >= 60 ? '호의' : v >= 40 ? '중립' : v >= 20 ? '불화' : '험악'; }
   isAllied(a, b) { return a !== b && (this.diploOf(a, b).allianceUntil ?? 0) >= this.turn; }
+  isTruce(a, b) { return a !== b && (this.diploOf(a, b).truceUntil ?? 0) >= this.turn; }
+  isPeace(a, b) { return this.isAllied(a, b) || this.isTruce(a, b); } // 동맹·정전 중 공격 금지
   changeRelation(a, b, n) { const d = this.diploOf(a, b); d.v = Math.max(0, Math.min(100, d.v + n)); return d.v; }
   envoy(fid, tid, cityId) { // 친선 사절: 금 500·AP 20, 정치 보정 + 논객 특기 우위 (자체 수치)
     const c = this.cityById[cityId], f = this.forces[c?.force], t = this.forces[tid];
@@ -740,8 +742,9 @@ class Game {
     c.gold -= 2000; f.ap -= 30;
     const pol = Math.max(50, ...c.officers.map(i => this.officers[i].pol));
     if (Math.random() < Math.min(0.8, 0.3 + pol / 300 + d.v / 200)) {
+      d.truceUntil = this.turn + 12; // 정전 12턴간 양측 공격 금지 (자체 수치)
       const v = this.changeRelation(fid, tid, 30);
-      this.log(`【외교】${this.forceName(fid)}과(와) ${this.forceName(tid)}이(가) 정전했습니다 (관계 → ${v} ${this.relStage(v)})`, true);
+      this.log(`【외교】${this.forceName(fid)}과(와) ${this.forceName(tid)}이(가) 정전했습니다 (12턴간 공격 금지, 관계 → ${v} ${this.relStage(v)})`, true);
       return true;
     }
     this.log(`【외교】${this.forceName(tid)}이(가) 정전 요청을 거절했습니다`, fid === this.playerForce || tid === this.playerForce);
@@ -758,6 +761,7 @@ class Game {
     const p = Math.min(0.5, 0.05 + (chr - 50) / 200 + (myN - tCities.length) * 0.05);
     if (Math.random() < p) {
       for (const tc of tCities) { tc.force = fid; }
+      for (const u of this.units) if (u.force === tid) u.force = fid; // 야전 부대도 귀속
       for (const o of Object.values(this.officers)) if (o.state?.force === tid) { o.state.force = fid; if (o.state.city != null) { const nc = this.cityById[o.state.city]; if (nc && !nc.officers.includes(o.idx)) nc.officers.push(o.idx); } }
       t.alive = false;
       this.log(`【항복】${this.forceName(tid)}이(가) ${this.forceName(fid)}에 항복했습니다! 도시 ${tCities.length}개와 무장이 귀속됩니다`, true);
@@ -911,7 +915,7 @@ class Game {
     const u = this.units.find(u => u.id === unitId);
     const c = this.cityById[targetCityId];
     if (!u || !c) return;
-    if (c.force != null && c.force !== u.force && this.isAllied(u.force, c.force)) { this.log(`${this.forceName(c.force)}은(는) 동맹국이라 공격할 수 없습니다`, u.force === this.playerForce); return; }
+    if (c.force != null && c.force !== u.force && this.isPeace(u.force, c.force)) { this.log(`${this.forceName(c.force)}은(는) 동맹·정전 중이라 공격할 수 없습니다`, u.force === this.playerForce); return; }
     u.targetCity = targetCityId; u.tx = c.lon; u.tz = c.lat;
   }
 
@@ -958,6 +962,10 @@ class Game {
         if ((d.allianceUntil ?? 0) > 0 && d.allianceUntil < this.turn) {
           d.allianceUntil = 0;
           this.log(`【외교】${this.forceName(a)}과(와) ${this.forceName(b)}의 동맹이 만료되었습니다`, true);
+        }
+        if ((d.truceUntil ?? 0) > 0 && d.truceUntil < this.turn) {
+          d.truceUntil = 0;
+          this.log(`【외교】${this.forceName(a)}과(와) ${this.forceName(b)}의 정전이 끝났습니다`, true);
         }
         if (d.v > 50) d.v--; else if (d.v < 50) d.v++;
       }
@@ -1045,7 +1053,7 @@ class Game {
     // 도착: 도시 처리
     const c = this.cityById[u.targetCity];
     if (!c) { u.tx = null; return; }
-    if (c.force != null && c.force !== u.force && this.isAllied(u.force, c.force)) { // 동맹 도시 공격 불가
+    if (c.force != null && c.force !== u.force && this.isPeace(u.force, c.force)) { // 동맹·정전 도시 공격 불가
       u.tx = null; u.targetCity = null;
       return;
     }
@@ -1115,7 +1123,7 @@ class Game {
       const a = us[i], b = us[j];
       if (!this.units.includes(a) || !this.units.includes(b)) continue;
       if (a.force === b.force) continue;
-      if (this.isAllied(a.force, b.force)) continue;
+      if (this.isPeace(a.force, b.force)) continue;
       if (Math.hypot(a.x-b.x, a.z-b.z) >= 2.2) continue;
       this.fieldBattle(a, b);
     }
@@ -1208,12 +1216,32 @@ function aiThink(game, fid) {
     const avgNbr = cities.reduce((s,x) => s + x.troops, 0) / cities.length;
     if (c.troops < Math.min(avgNbr, 12000) && c.gold > 500 && c.food > 3000) game.recruit(c.id);
   }
-  // 2.7) 외교: 험악한 이웃에게 친선 사절 (같은 비용·효과, 30% 확률)
-  if (f.ap >= 20 && Math.random() < 0.3) {
-    const worst = Object.values(game.forces).filter(t => t.alive && t.id !== fid)
-      .map(t => ({ t, v: game.relation(fid, t.id) })).filter(x => x.v < 40).sort((x, y) => x.v - y.v)[0];
+  // 2.7) 외교: 친선 사절·동맹 제의·정전 요청을 같은 조건·비용으로 사용
+  {
     const from = cities.filter(c => c.gold >= 500 && c.officers.length).sort((x, y) => y.gold - x.gold)[0];
-    if (worst && from) game.envoy(fid, worst.t.id, from.id);
+    if (from) {
+      // 험악 이웃에 친선 사절 (30% 확률)
+      if (f.ap >= 20 && Math.random() < 0.3) {
+        const worst = Object.values(game.forces).filter(t => t.alive && t.id !== fid)
+          .map(t => ({ t, v: game.relation(fid, t.id) })).filter(x => x.v < 40).sort((x, y) => x.v - y.v)[0];
+        if (worst) game.envoy(fid, worst.t.id, from.id);
+      }
+      // 호의 이상 세력에 동맹 제의 (20% 확률, 이미 동맹이면 패스)
+      if (f.ap >= 30 && from.gold >= 1000 && Math.random() < 0.2) {
+        const cand = Object.values(game.forces).filter(t => t.alive && t.id !== fid && !game.isAllied(fid, t.id) && game.relation(fid, t.id) >= 60)
+          .sort((x, y) => game.relation(fid, y.id) - game.relation(fid, x.id))[0];
+        if (cand) game.proposeAlliance(fid, cand.id, from.id);
+      }
+      // 불화 이하 + 수세(도시 2개 이하 또는 위협 도시)면 정전 요청 (50% 확률)
+      if (f.ap >= 30 && from.gold >= 2000 && Math.random() < 0.5) {
+        const threatened = cities.some(c => game.units.some(u => u.force !== fid && u.targetCity === c.id));
+        if (cities.length <= 2 || threatened) {
+          const foe = Object.values(game.forces).filter(t => t.alive && t.id !== fid && !game.isPeace(fid, t.id) && game.relation(fid, t.id) <= 39)
+            .sort((x, y) => game.relation(fid, x.id) - game.relation(fid, y.id))[0];
+          if (foe) game.requestTruce(fid, foe.id, from.id);
+        }
+      }
+    }
   }
   // 2.6) 시설 건설: 개발지가 남고 금이 넉넉하면 시장·농장 우선, 이후 병영
   for (const c of cities) {
