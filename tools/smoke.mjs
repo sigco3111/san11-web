@@ -76,7 +76,7 @@ console.log('tactics fired:', tacN, '| stratagems fired:', stratN, '| field batt
     {
       const sc = g.forceCities(gateF.id).find(c => c.officers.length) ?? g.forceCities(gateF.id)[0]; sc.gold += 500; gateF.ap = 100;
       Object.values(g.officers).forEach(o => { if (o.state?.status === 'free') o.state.found = true; }); // 모든 재야 발견 처리 → 명품 분기 결정적
-      g.itemPool = g.itemPool ?? ITEMS.map(i => i.id); const pool0 = g.itemPool.length;
+      g.itemPool = g.itemPool ?? ITEMS.map(i => i.id); if (g.itemPool.length === 0) { g.itemPool = ITEMS.map(i => i.id); g.itemPoolRefilled = true; } /* 사전조건 보정: 앞선 임의 이벤트로 풀이 비면 실패하던 간헐 원인 */ const pool0 = g.itemPool.length;
       const o0 = Math.random; Math.random = () => 0.001; // hidden 없음 → 명품 분기 (0.001 < 0.25)
       g.searchCity(sc.id); Math.random = o0;
       const holder = Object.values(g.officers).find(o => (o.state?.items ?? []).length > 0);
