@@ -4,6 +4,8 @@ export function aiThink(game, fid, legion = null) { // legion 지정 시 그 군
   if (!f || !f.alive) return;
   let cities = game.forceCities(fid);
   if (legion) cities = cities.filter(c => legion.cities.includes(c.id));
+  // R9: 치안 순찰 — 치안 80 미만 도시, 플레이어와 동일 비용 (금100·AP20)
+  for (const c of cities) if ((c.security ?? 80) < 80) game.patrol(c.id);
   if (cities.length === 0) return;
   // 1) 내정: 여유 금이 있으면 개발
   for (const c of cities) {
