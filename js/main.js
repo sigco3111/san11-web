@@ -96,6 +96,7 @@ function refreshAll() {
 }
 function worldUnit(u) { const [x, z] = toWorld(u.x, u.z); return { id: u.id, x, z, label: u.label }; }
 function refreshHud() {
+  document.documentElement.style.setProperty('--hud-h', ($('hud-top').offsetHeight + 6) + 'px'); // R14: 패널 상단을 실제 HUD 높이 아래로
   const f = game.forces[game.playerForce];
   $('hud-date').textContent = `${game.year}년 ${game.month}월 ${['상','중','하'][game.dan-1]}순 (${game.turn}턴)`;
   const rank = game.playerForce != null && f?.alive ? game.forceRank(game.playerForce) : null;
