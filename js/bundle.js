@@ -147,6 +147,9 @@ class Map3D {
     this.scene.add(new THREE.HemisphereLight(0xcfe8ff, 0x3a2f1a, 1.25));
     const sun = new THREE.DirectionalLight(0xfff2d8, 1.35);
     sun.position.set(50, 70, 25);
+    const fill = new THREE.DirectionalLight(0xdfe8ff, 0.85);
+    fill.position.set(-60, 40, -35);
+    this.scene.add(fill);
     sun.castShadow = true;
     sun.shadow.mapSize.set(2048, 2048);
     Object.assign(sun.shadow.camera, { left: -55, right: 55, top: 55, bottom: -55, near: 10, far: 260 });
