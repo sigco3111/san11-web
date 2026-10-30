@@ -602,6 +602,19 @@ const TECH_DESC = {
 };
 const TYPE2TECH = { spear: '창병', pike: '극병', bow: '노병', cav: '기병' };
 
+// === 내정시설 (자체 수치) ===
+const FACILITIES = {
+  '시장':   { cost: 200, turns: 2, desc: '매월 금 수입 +25%' },
+  '농장':   { cost: 200, turns: 2, desc: '매월 병량 수입 +25%' },
+  '조폐':   { cost: 300, turns: 3, desc: '이 도시 시장 효과 1.5배' },
+  '곡창':   { cost: 300, turns: 3, desc: '이 도시 농장 효과 1.5배' },
+  '병영':   { cost: 300, turns: 3, desc: '징병량 +30%' },
+  '대장간': { cost: 300, turns: 3, desc: '매월 창·극·노 자동 생산 (특색 병장은 대량)' },
+  '마구간': { cost: 400, turns: 3, desc: '매월 군마 자동 생산 (특색 군마는 대량)' },
+  '공방':   { cost: 300, turns: 3, desc: '병기 생산 (병기 라운드에서 활성)' },
+  '조선소': { cost: 300, turns: 3, desc: '선박 생산 (수군 라운드에서 활성)' },
+};
+
 class Game {
   constructor(scen, officers, skills, playerForceId) {
     this.officers = officers; // by idx
@@ -609,7 +622,7 @@ class Game {
     this.scenId = scen.id;
     this.year = scen.year; this.month = scen.month; this.dan = 1; // 1~3 (旬)
     this.turn = 1;
-    this.cities = scen.cities.map(c => ({ ...c, commerce: Math.round(c.revenue/10), farm: Math.round(c.harvest/100), hp: c.maxhp, officers: [], troops: c.troops }));
+    this.cities = scen.cities.map(c => ({ ...c, commerce: Math.round(c.revenue/10), farm: Math.round(c.harvest/100), hp: c.maxhp, officers: [], troops: c.troops, facilities: [] }));
     this.cityById = {}; this.cities.forEach(c => this.cityById[c.id] = c);
     this.forces = {};
     for (const f of scen.forces) this.forces[f.id] = { id: f.id, ruler: f.ruler, alive: true, ap: 60, techP: 0, techs: Object.fromEntries(TECH_BRANCHES.map(b => [b, 0])) };
@@ -668,6 +681,28 @@ class Game {
     this.log(`【기교】${this.forceName(fid)} ${b} ${lv + 1}단계 연구 완료 (기교P ${TECH_P[lv]}·금 ${TECH_GOLD[lv]} 소비)`, fid === this.playerForce);
     return true;
   }
+  // === 내정시설 ===
+  facSlots(c) { return c.metropolis ? 12 : 8; } // 개발지 수 (자체 수치)
+  cityFac(c, t) { return (c.facilities ?? []).filter(f => f.type === t && f.done); }
+  buildFacility(cityId, type, builders) { // 비용 금 + 담당 최대 3명, 정치 합산으로 공기 단축
+    const c = this.cityById[cityId], f = this.forces[c.force], spec = FACILITIES[type];
+    if (!spec || !f?.alive || f.ap < 20) return false;
+    c.facilities = c.facilities ?? [];
+    if (c.facilities.length >= this.facSlots(c)) return false;
+    if (c.gold < spec.cost) return false;
+    const valid = (builders ?? []).filter(i => c.officers.includes(i)).slice(0, 3);
+    c.gold -= spec.cost; f.ap -= 20;
+    c.facilities.push({ type, progress: 0, builders: valid, done: false });
+    this.log(`${c.name_ko}에 ${type} 건설 시작 (금 ${spec.cost}, 담당 ${valid.length}명)`, c.force === this.playerForce);
+    return true;
+  }
+  demolishFacility(cityId, fi) {
+    const c = this.cityById[cityId];
+    if (!c?.facilities?.[fi]) return false;
+    const [rm] = c.facilities.splice(fi, 1);
+    this.log(`${c.name_ko}의 ${rm.type}을(를) 철거했습니다`, c.force === this.playerForce);
+    return true;
+  }
   develop(cityId, kind) { // kind: 'commerce' | 'farm', 비용 금 300, AP 30
     const c = this.cityById[cityId], f = this.forces[c.force];
     if (c.gold < 300 || f.ap < 30 || c[kind] >= 100) return false;
@@ -683,7 +718,7 @@ class Game {
     const c = this.cityById[cityId], f = this.forces[c.force];
     if (c.gold < 200 || c.food < 1000 || f.ap < 30) return false;
     const best = Math.max(50, ...c.officers.map(i => this.officers[i].chr));
-    const n = Math.round((1500 + best*30) * (this.cityHasSkill(c, '명성') ? 1.3 : 1));
+    const n = Math.round((1500 + best*30) * (this.cityHasSkill(c, '명성') ? 1.3 : 1) * (this.cityFac(c, '병영').length ? 1.3 : 1));
     c.gold -= 200; c.food -= 1000; f.ap -= 30;
     const cap = c.metropolis ? 150000 : 100000;
     c.troops = Math.min(cap, c.troops + n);
@@ -768,9 +803,18 @@ class Game {
     if (this.dan === 3) {
       for (const c of this.cities) {
         if (c.force == null || !this.forces[c.force]?.alive) continue;
-        c.gold += Math.round((50 + c.commerce * 8 * (c.metropolis ? 1.5 : 1)) * (this.cityHasSkill(c, '통상') ? 1.3 : 1));
-        c.food += Math.round((300 + c.farm * 80) * (this.cityHasSkill(c, '부농') ? 1.3 : 1));
+        const mk = this.cityFac(c, '시장').length * (this.cityFac(c, '조폐').length ? 1.5 : 1);
+        const fm = this.cityFac(c, '농장').length * (this.cityFac(c, '곡창').length ? 1.5 : 1);
+        c.gold += Math.round((50 + c.commerce * 8 * (c.metropolis ? 1.5 : 1)) * (this.cityHasSkill(c, '통상') ? 1.3 : 1) * (1 + 0.25 * mk));
+        c.food += Math.round((300 + c.farm * 80) * (this.cityHasSkill(c, '부농') ? 1.3 : 1) * (1 + 0.25 * fm));
         c.hp = Math.min(c.maxhp, c.hp + 200);
+        // 병장 자동 생산: 대장간·마구간 (특색 도시는 대량)
+        if (this.cityFac(c, '대장간').length) {
+          const sp = c.specialty ?? [];
+          if (sp.includes('창')) c.spears += 400; else if (sp.includes('극')) c.pikes += 400; else if (sp.includes('노')) c.bows += 400;
+          else { c.spears += 100; c.pikes += 100; c.bows += 100; }
+        }
+        if (this.cityFac(c, '마구간').length) c.horses += (c.specialty ?? []).includes('군마') ? 400 : 100;
       }
     }
     // 신규 등장 무장
@@ -798,6 +842,19 @@ class Game {
       }
     }
     // 시계
+    // 시설 공사 진행: 담당 정치 합산 250 이상이면 2배 속도 (자체 수치)
+    for (const c of this.cities) {
+      for (const fc of (c.facilities ?? [])) {
+        if (fc.done) continue;
+        fc.builders = (fc.builders ?? []).filter(i => c.officers.includes(i)); // 도시를 떠난 담당은 해제
+        const polSum = fc.builders.reduce((s, i) => s + (this.officers[i]?.pol ?? 0), 0);
+        fc.progress += polSum >= 250 ? 2 : 1;
+        if (fc.progress >= FACILITIES[fc.type].turns) {
+          fc.done = true;
+          this.log(`${c.name_ko}에 ${fc.type} 완성!`, c.force === this.playerForce);
+        }
+      }
+    }
     this.dan++;
     if (this.dan > 3) { this.dan = 1; this.month++; if (this.month > 12) { this.month = 1; this.year++; } }
     this.turn++;
@@ -983,6 +1040,18 @@ function aiThink(game, fid) {
     if (f.ap < 30) break;
     const avgNbr = cities.reduce((s,x) => s + x.troops, 0) / cities.length;
     if (c.troops < Math.min(avgNbr, 12000) && c.gold > 500 && c.food > 3000) game.recruit(c.id);
+  }
+  // 2.6) 시설 건설: 개발지가 남고 금이 넉넉하면 시장·농장 우선, 이후 병영
+  for (const c of cities) {
+    if (f.ap < 20) break;
+    c.facilities = c.facilities ?? [];
+    if (c.facilities.length >= game.facSlots(c) || c.gold < 900) continue;
+    const have = t => c.facilities.some(x => x.type === t);
+    const pick = !have('시장') ? '시장' : !have('농장') ? '농장' : !have('병영') && c.gold > 2000 ? '병영' : null;
+    if (pick) {
+      const builders = [...c.officers].sort((x, y) => (game.officers[y]?.pol ?? 0) - (game.officers[x]?.pol ?? 0)).slice(0, 3);
+      game.buildFacility(c.id, pick, builders);
+    }
   }
   // 2.5) 인재 등용: 도시의 재야 무장을 같은 규칙으로 영입
   for (const c of cities) {
@@ -1215,6 +1284,36 @@ function onPick(nx, ny) {
   selectedUnit = null;
   showCityPanel(c);
 }
+function showFacilities(c) {
+  const p = $('panel'); p.classList.remove('hidden');
+  c.facilities = c.facilities ?? [];
+  const slots = game.facSlots(c);
+  let html = `<h3>${c.name_ko} 시설 <small>(개발지 ${c.facilities.length}/${slots})</small></h3>`;
+  if (c.facilities.length) {
+    html += c.facilities.map((f, i) => {
+      const spec = FACILITIES[f.type];
+      const body = f.done
+        ? `${f.type} — ${spec.desc}`
+        : `${f.type} 공사 중 ${f.progress}/${spec.turns} (담당 ${f.builders.map(b => DATA.officers[b]?.name_ko).join('·') || '없음'})`;
+      return `<div class="officer"><div><div class="st">${body}</div></div><button class="cmd cmd-demol" data-i="${i}">철거</button></div>`;
+    }).join('');
+  } else html += '<p>건설된 시설이 없습니다.</p>';
+  html += '<h3 style="margin-top:10px">건설</h3>';
+  const polTop = [...c.officers].sort((a, b) => (DATA.officers[b]?.pol ?? 0) - (DATA.officers[a]?.pol ?? 0)).slice(0, 3);
+  for (const [t, spec] of Object.entries(FACILITIES)) {
+    html += `<div class="officer"><div><div class="nm">${t} <span class="st">금${spec.cost} · 공기 ${spec.turns}턴</span></div><div class="st">${spec.desc}</div></div><button class="cmd cmd-build" data-t="${t}">건설</button></div>`;
+  }
+  html += `<p class="st">담당 무장 자동 배정 (정치 상위 3명: ${polTop.map(i => DATA.officers[i]?.name_ko).join('·') || '없음'}) · 정치 합산 250 이상이면 공기 2배</p>`;
+  html += `<button class="cmd" id="cmd-fac-back">← 도시 패널로</button>`;
+  p.innerHTML = html;
+  p.querySelectorAll('.cmd-build').forEach(btn => btn.onclick = () => {
+    if (game.buildFacility(c.id, btn.dataset.t, polTop)) { refreshAll(); showFacilities(c); }
+  });
+  p.querySelectorAll('.cmd-demol').forEach(btn => btn.onclick = () => {
+    if (game.demolishFacility(c.id, Number(btn.dataset.i))) { refreshAll(); showFacilities(c); }
+  });
+  $('cmd-fac-back').onclick = () => showCityPanel(c);
+}
 function showTech() {
   const f = game.forces[game.playerForce];
   const p = $('panel'); p.classList.remove('hidden');
@@ -1259,6 +1358,7 @@ function showCityPanel(c) {
       <button class="cmd" id="cmd-dispatch">출진</button>
       <button class="cmd" id="cmd-move">무장 이동</button>
       <button class="cmd" id="cmd-tech">기교 연구</button>
+      <button class="cmd" id="cmd-fac">시설 건설</button>
     </div>`;
   }
   html += `<h3 style="margin-top:10px">주둔 무장 (${c.officers.length})</h3>`;
@@ -1279,6 +1379,7 @@ function showCityPanel(c) {
     $('cmd-dispatch').onclick = () => showDispatch(c);
     $('cmd-move').onclick = () => showMove(c);
     $('cmd-tech').onclick = () => showTech();
+    $('cmd-fac').onclick = () => showFacilities(c);
     p.querySelectorAll('.cmd-rec').forEach(b => b.onclick = () => { game.recruitOfficer(c.id, Number(b.dataset.i)); refreshAll(); showCityPanel(c); });
   }
   const join = $('cmd-join');
