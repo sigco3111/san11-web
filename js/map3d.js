@@ -1,0 +1,461 @@
+// 3D 저폴리 지도 엔진 (Three.js) - 고정 등각 아이소메트릭 + 계단식 지형 + 성곽/숲
+import * as THREE from 'three';
+import { loadGLBAssets } from './assets-3d.js';
+
+const LON0 = 100, LON1 = 126.5, LAT0 = 21.5, LAT1 = 43;
+export function toWorld(lon, lat) {
+  const x = (lon - (LON0+LON1)/2) * 3.1;
+  const z = -((lat - (LAT0+LAT1)/2)) * 3.7;
+  return [x, z];
+}
+function toLonLat(x, z) {
+  return [x/3.1 + (LON0+LON1)/2, -z/3.7 + (LAT0+LAT1)/2];
+}
+
+// 대략적인 중국 윤곽 (lon,lat)
+const OUTLINE = [
+[101,28],[101.5,31],[103,33.5],[104,36],[105.5,37.5],[107,39],[109,40.2],[111,40.8],[114,41.2],[117,41.2],[120,41.8],[123,42.3],[125.5,41.5],[125,40.3],[124,39.7],[122.5,38.7],[121.5,38.8],[119,38.3],[117.8,38.5],[117.5,37.7],[118.5,37.3],[119.5,36.8],[120.8,36.5],[121,35.3],[120.2,34.4],[120.3,33],[120.8,31.8],[121.6,31.1],[121.6,29.8],[120.8,28.3],[119.8,27],[118.7,25.8],[117.5,24.6],[115.8,23.3],[113.8,22.6],[111.5,21.9],[109.8,21.8],[108.2,22.3],[106.5,23.2],[104.5,23.8],[102.5,24.8],[101.2,26.2]];
+const RIVERS = [
+  // 황하
+  [[102.5,36.5],[105,36.8],[106.5,38.5],[108.5,40.1],[110.5,40.1],[111.8,39.2],[112.3,37.8],[111.3,36],[110.6,34.7],[111.8,34.6],[113.5,34.9],[115,35.4],[116.5,36.6],[118,37.4],[118.9,37.7]],
+  // 장강
+  [[104.1,28.8],[105.5,29.2],[106.6,29.6],[107.8,30.3],[109.3,31],[110.5,30.8],[111.5,30.2],[112.6,29.9],[114.3,30.5],[115.8,29.7],[117,30.6],[118.2,31.4],[119.3,32.1],[120.6,32.1],[121.4,31.5]],
+  // 남쪽 강
+  [[110.5,26],[112,26.8],[113,28.2],[112.9,29.3]],
+];
+const MOUNTAINS = [
+[114,37.8,1.8,2.2],[109,33.6,2.4,2.6],[108.6,31.6,1.6,2.2],[110.6,30.6,1.2,1.6],[113,25,2.2,1.8],
+[110.5,27.3,1.5,1.5],[104.5,25.8,2.4,1.4],[123.8,41.2,1.2,1.8],[117,40.4,1.2,1.6],[115.5,31.1,1.1,1.5],
+[118.2,27.6,1.2,1.5],[108.3,36.6,2.2,0.9],[101.6,37.8,1.4,2.4],[106,34.3,1.2,2.0],[112.8,32.8,0.9,0.9]];
+
+function inOutline(lon, lat) {
+  let inside = false;
+  for (let i = 0, j = OUTLINE.length-1; i < OUTLINE.length; j = i++) {
+    const [xi,yi] = OUTLINE[i], [xj,yj] = OUTLINE[j];
+    if (((yi>lat)!==(yj>lat)) && (lon < (xj-xi)*(lat-yi)/(yj-yi)+xi)) inside = !inside;
+  }
+  return inside;
+}
+function hash(x, z) { const s = Math.sin(x*127.1+z*311.7)*43758.5453; return s - Math.floor(s); }
+function noise(x, z) { return hash(Math.floor(x*3.1), Math.floor(z*3.1))*0.6 + hash(Math.floor(x*7.7), Math.floor(z*7.7))*0.4; }
+
+// ---- 격자 지형 상수 ----
+const CELL = 1.8, STEP = 0.85, WATER_Y = 0.45;
+const GX0 = -41.4, GZ0 = -41.4, GN = 47;
+const CASTLE_SCALE = 0.075, CASTLE_CELL = 10 * CASTLE_SCALE; // Kenney 부품(10 유닛) -> 1.5 월드 유닛
+const CITY_FLAT_R = 2.3, CITY_RIVER_R = 2.4, RIVER_R = 1.35;
+
+// 강 폴리라인을 월드 좌표 점열로 전개
+const RIVER_PTS = [];
+for (const line of RIVERS) {
+  for (let i = 0; i < line.length-1; i++) {
+    const [x0,z0] = toWorld(line[i][0], line[i][1]);
+    const [x1,z1] = toWorld(line[i+1][0], line[i+1][1]);
+    const len = Math.hypot(x1-x0, z1-z0), n = Math.max(2, Math.ceil(len/0.4));
+    for (let k = 0; k < n; k++) RIVER_PTS.push([x0+(x1-x0)*k/n, z0+(z1-z0)*k/n]);
+  }
+}
+function rawHeight(lon, lat) {
+  let h = 0.25;
+  for (const [mlon,mlat,r,mh] of MOUNTAINS) {
+    const d = Math.hypot(lon-mlon, lat-mlat), rr = r*0.72;
+    if (d < rr) { const t = 1 - d/rr; h += mh * t*t * (0.7 + noise(lon,lat)*0.6) + (hash(lon*5.1, lat*7.3)-0.5)*0.5; }
+  }
+  return h + noise(lon*0.7, lat*0.7) * 0.35;
+}
+
+// GLB 씬을 Box3 기준으로 바닥 중앙 정렬한 래퍼
+function centered(node) {
+  const box = new THREE.Box3().setFromObject(node);
+  const c = box.getCenter(new THREE.Vector3());
+  node.position.set(-c.x, -box.min.y, -c.z);
+  const g = new THREE.Group(); g.add(node); return g;
+}
+// GLB 씬 + 변환 배열 -> 메시 종류별 InstancedMesh 묶음
+function instancedFromScene(srcScene, placements) {
+  srcScene.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(srcScene);
+  const c = box.getCenter(new THREE.Vector3());
+  const norm = new THREE.Matrix4().makeTranslation(-c.x, -box.min.y, -c.z);
+  const group = new THREE.Group();
+  srcScene.traverse(m => {
+    if (!m.isMesh) return;
+    const im = new THREE.InstancedMesh(m.geometry, m.material, placements.length);
+    const tmp = new THREE.Matrix4();
+    for (let i = 0; i < placements.length; i++) {
+      tmp.multiplyMatrices(placements[i], norm).multiply(m.matrixWorld);
+      im.setMatrixAt(i, tmp);
+    }
+    im.castShadow = true; im.receiveShadow = true;
+    group.add(im);
+  });
+  return group;
+}
+function placement(x, y, z, s, rotY) {
+  return new THREE.Matrix4().compose(
+    new THREE.Vector3(x, y, z),
+    new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0), rotY),
+    new THREE.Vector3(s, s, s));
+}
+
+export class Map3D {
+  constructor(canvas) {
+    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+    this.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.scene = new THREE.Scene();
+    this.scene.background = new THREE.Color(0x14293a);
+    // 고정 등각 직교 카메라
+    this.az = Math.PI/4;
+    this.el = Math.atan(1/Math.SQRT2);
+    this.view = 84;
+    this.camTarget = new THREE.Vector3(8, 0, 4);
+    this.camera = new THREE.OrthographicCamera();
+    this.scene.add(new THREE.HemisphereLight(0xcfe8ff, 0x3a2f1a, 1.25));
+    const sun = new THREE.DirectionalLight(0xfff2d8, 1.35);
+    sun.position.set(50, 70, 25);
+    sun.castShadow = true;
+    sun.shadow.mapSize.set(2048, 2048);
+    Object.assign(sun.shadow.camera, { left: -55, right: 55, top: 55, bottom: -55, near: 10, far: 260 });
+    sun.shadow.camera.updateProjectionMatrix();
+    sun.shadow.bias = -0.0004;
+    this.scene.add(sun); this.scene.add(sun.target);
+    this.sun = sun;
+    this.terrainGroup = new THREE.Group();
+    this.castleGroup = new THREE.Group();
+    this.forestGroup = new THREE.Group();
+    this.cityGroup = new THREE.Group();
+    this.unitGroup = new THREE.Group();
+    this.scene.add(this.terrainGroup, this.castleGroup, this.forestGroup, this.cityGroup, this.unitGroup);
+    this.raycaster = new THREE.Raycaster();
+    this.cityMeshes = {}; this.unitMeshes = {};
+    this.sig = null; this.cityList = []; this.levels = null;
+    this.buildWater();
+    this.assets = null;
+    loadGLBAssets().then(a => {
+      this.assets = a;
+      if (this.sig) { this.buildCastles(); this.buildForest(); }
+    }).catch(() => {});
+    this.bindInput(canvas);
+    this.resize(); addEventListener('resize', () => this.resize());
+    this.time = 0;
+  }
+
+  // ---- 시나리오 동기화: 도시 목록이 바뀔 때만 지형/성곽/숲 재구축 ----
+  syncScenario(cities) {
+    const sig = cities.map(c => c.id).join('|');
+    if (sig === this.sig) return;
+    this.sig = sig; this.cityList = cities;
+    this.buildTerrain();
+    if (this.assets) { this.buildCastles(); this.buildForest(); }
+  }
+
+  nearCity(x, z, r) {
+    for (const c of this.cityList) {
+      const [cx, cz] = toWorld(c.lon, c.lat);
+      if (Math.hypot(x-cx, z-cz) < r) return true;
+    }
+    return false;
+  }
+  levelAtWorld(x, z) {
+    if (!this.levels) return 1;
+    const ix = Math.round((x-GX0)/CELL - 0.5), iz = Math.round((z-GZ0)/CELL - 0.5);
+    if (ix < 0 || iz < 0 || ix >= GN || iz >= GN) return 0;
+    return this.levels[iz*GN+ix];
+  }
+
+  buildTerrain() {
+    this.terrainGroup.clear();
+    const levels = new Int8Array(GN*GN);
+    const colors = [];
+    const cPlain = new THREE.Color(0x6d8f4e), cLush = new THREE.Color(0x4d7a41), cDry = new THREE.Color(0x9a8f5a),
+          cMtn = new THREE.Color(0x7a7560), cSnow = new THREE.Color(0x8d8d84),
+          cSand = new THREE.Color(0xc2ab72), cBed = new THREE.Color(0x3d5a4a);
+    // 1패스: 레벨 산정
+    for (let iz = 0; iz < GN; iz++) for (let ix = 0; ix < GN; ix++) {
+      const x = GX0 + (ix+0.5)*CELL, z = GZ0 + (iz+0.5)*CELL;
+      const [lon, lat] = toLonLat(x, z);
+      let lv = 0;
+      if (inOutline(lon, lat)) {
+        lv = Math.min(3, Math.max(1, 1 + Math.floor((rawHeight(lon,lat)-0.25)/0.6)));
+        // 강 파내기 (도시 보호 반경 제외)
+        let dR = 1e9;
+        for (const [rx, rz] of RIVER_PTS) { const d = Math.hypot(x-rx, z-rz); if (d < dR) dR = d; }
+        if (dR < RIVER_R && !this.nearCity(x, z, CITY_RIVER_R)) lv = 0;
+        // 도시 주변 평탄화
+        if (lv > 1 && this.nearCity(x, z, CITY_FLAT_R)) lv = 1;
+      }
+      levels[iz*GN+ix] = lv;
+    }
+    this.levels = levels;
+    // 2패스: 인스턴스 + 색상 (해안 모래)
+    const geo = new THREE.BoxGeometry(CELL*0.98, 1, CELL*0.98);
+    const mat = new THREE.MeshLambertMaterial({ flatShading: true });
+    const im = new THREE.InstancedMesh(geo, mat, GN*GN);
+    const m4 = new THREE.Matrix4(), col = new THREE.Color();
+    const nearSea = (ix, iz) => {
+      for (const [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+        const jx = ix+dx, jz = iz+dz;
+        if (jx<0||jz<0||jx>=GN||jz>=GN||levels[jz*GN+jx]===0) return true;
+      }
+      return false;
+    };
+    for (let iz = 0; iz < GN; iz++) for (let ix = 0; ix < GN; ix++) {
+      const i = iz*GN+ix, lv = levels[i];
+      const x = GX0 + (ix+0.5)*CELL, z = GZ0 + (iz+0.5)*CELL;
+      const [lon, lat] = toLonLat(x, z);
+      const top = lv === 0 ? 0.1 : lv*STEP;
+      const h = top + 0.6;
+      m4.makeScale(1, h, 1).setPosition(x, top - h/2, z);
+      im.setMatrixAt(i, m4);
+      if (lv === 0) col.copy(cBed);
+      else if (lv === 3) col.copy(cSnow);
+      else if (lv === 2) col.copy(cMtn);
+      else if (lv === 1 && nearSea(ix, iz)) col.copy(cSand);
+      else if (lat > 34.5) col.copy(cDry).lerp(cPlain, noise(lon,lat));
+      else col.copy(cLush).lerp(cPlain, noise(lon,lat)*0.7);
+      im.setColorAt(i, col);
+      colors.push(col.r, col.g, col.b);
+    }
+    im.receiveShadow = true; im.castShadow = true;
+    this.terrainGroup.add(im);
+    this.terrainMesh = im;
+  }
+
+  buildWater() {
+    const w = (LON1-LON0)*3.1 + 8, d = (LAT1-LAT0)*3.7 + 8;
+    this.water = new THREE.Mesh(new THREE.PlaneGeometry(w, d),
+      new THREE.MeshPhongMaterial({ color: 0x2e6f9e, transparent: true, opacity: 0.82, shininess: 140, specular: 0x99ccee }));
+    this.water.rotation.x = -Math.PI/2; this.water.position.y = WATER_Y;
+    this.scene.add(this.water);
+    const w2 = new THREE.Mesh(new THREE.PlaneGeometry(w*1.02, d*1.02),
+      new THREE.MeshBasicMaterial({ color: 0x9fd4ee, transparent: true, opacity: 0.08, depthWrite: false }));
+    w2.rotation.x = -Math.PI/2; w2.position.y = WATER_Y + 0.05;
+    this.scene.add(w2);
+  }
+
+  buildCastles() {
+    this.castleGroup.clear();
+    const A = this.assets, S = CASTLE_SCALE, C = CASTLE_CELL;
+    const walls = [], towers = [], keeps = [], flags = [];
+    for (const c of this.cityList) {
+      const [x, z] = toWorld(c.lon, c.lat);
+      const y = STEP; // 도시 평탄화 레벨 1
+      const rot = 0;
+      for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) {
+        if (Math.max(Math.abs(dx), Math.abs(dz)) !== 1) continue;
+        if (dz === 1 && dx === 0) continue; // 남쪽 정문 개구부
+        const p = placement(x + dx*C, y, z + dz*C, S, rot);
+        if (Math.abs(dx) === 1 && Math.abs(dz) === 1) towers.push(p); else walls.push(p);
+      }
+      keeps.push(placement(x, y, z, S*1.3, Math.PI/4));
+      const fy = y + 13.1 * S;
+      flags.push(placement(x, y + 10.7*S, z, S*1.5, 0));
+      flags.push(placement(x - C, fy, z + C, S*1.1, 0));
+      flags.push(placement(x + C, fy, z + C, S*1.1, 0));
+    }
+    if (walls.length) this.castleGroup.add(instancedFromScene(A.wall, walls));
+    if (towers.length) this.castleGroup.add(instancedFromScene(A.towerSquareBaseColor, towers));
+    if (keeps.length) this.castleGroup.add(instancedFromScene(A.towerSquareBaseColor, keeps));
+    if (flags.length) this.castleGroup.add(instancedFromScene(A.flagBlueWide, flags));
+  }
+
+  buildForest() {
+    this.forestGroup.clear();
+    const A = this.assets;
+    const per = { tree_default: [], tree_cone_dark: [], tree_detailed_dark: [], plant_bush: [], grass_large: [], stone_tallE: [] };
+    const isForest = new Uint8Array(GN*GN);
+    const nearSeaCell = (ix, iz) => {
+      for (const [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1],[1,1],[-1,-1],[1,-1],[-1,1]]) {
+        const jx = ix+dx, jz = iz+dz;
+        if (jx<0||jz<0||jx>=GN||jz>=GN||this.levels[jz*GN+jx]===0) return true;
+      }
+      return false;
+    };
+    const eligible = (ix, iz) => {
+      if (ix<1||iz<1||ix>=GN-1||iz>=GN-1) return false;
+      if (this.levels[iz*GN+ix] !== 1) return false;
+      const x = GX0 + (ix+0.5)*CELL, z = GZ0 + (iz+0.5)*CELL;
+      if (this.nearCity(x, z, CITY_FLAT_R + 0.6)) return false;
+      if (nearSeaCell(ix, iz)) return false;
+      return true;
+    };
+    // 1) 클러스터 시드: 넓은 스케일 노이즈가 높은 셀
+    for (let iz = 1; iz < GN-1; iz++) for (let ix = 1; ix < GN-1; ix++) {
+      if (!eligible(ix, iz)) continue;
+      const x = GX0 + (ix+0.5)*CELL, z = GZ0 + (iz+0.5)*CELL;
+      const [lon, lat] = toLonLat(x, z);
+      const cf = 0.65*noise(lon*0.2+31, lat*0.2+17) + 0.35*noise(lon*0.45+3, lat*0.45+5);
+      if (cf > 0.60) isForest[iz*GN+ix] = 1;
+    }
+    // 2) 시드 주변 블롭 확장 (한 번의 성장 패스)
+    const grown = new Uint8Array(isForest);
+    for (let iz = 1; iz < GN-1; iz++) for (let ix = 1; ix < GN-1; ix++) {
+      if (isForest[iz*GN+ix]) continue;
+      if (!eligible(ix, iz)) continue;
+      let adj = 0;
+      for (const [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1],[1,1],[-1,-1],[1,-1],[-1,1]]) adj += isForest[(iz+dz)*GN+(ix+dx)];
+      const x = GX0 + (ix+0.5)*CELL, z = GZ0 + (iz+0.5)*CELL;
+      const [lon, lat] = toLonLat(x, z);
+      if (adj >= 1 && noise(lon*0.3+11, lat*0.3+23) > 0.38) grown[iz*GN+ix] = 1;
+    }
+    // 3) 배치: 숲 셀당 2~4그루 + 군집 밖 드문 고목/관목
+    for (let iz = 1; iz < GN-1; iz++) for (let ix = 1; ix < GN-1; ix++) {
+      const lv = this.levels[iz*GN+ix];
+      const x = GX0 + (ix+0.5)*CELL, z = GZ0 + (iz+0.5)*CELL;
+      const top = lv*STEP;
+      if (grown[iz*GN+ix]) {
+        const n = 2 + Math.floor(hash(ix*7, iz*3)*3);
+        for (let k = 0; k < n; k++) {
+          const kinds = ['tree_default','tree_default','tree_cone_dark','tree_detailed_dark'];
+          const t = kinds[Math.floor(hash(ix*5+k, iz*11)*kinds.length)];
+          per[t].push(placement(
+            x + (hash(ix+k*9, iz)-0.5)*CELL*0.85, top,
+            z + (hash(ix, iz+k*13)-0.5)*CELL*0.85,
+            0.46 + hash(ix*17+k, iz*5)*0.18, hash(ix+k, iz*7+k)*6.28));
+        }
+      } else if (lv === 1 && eligible(ix, iz) && hash(ix*3, iz*7) > 0.92) {
+        const t = hash(ix, 7) > 0.5 ? 'plant_bush' : 'grass_large';
+        per[t].push(placement(x, top, z, 0.42, hash(ix, iz*23)*6.28));
+        if (hash(ix*19, iz*2) > 0.8) per.tree_default.push(placement(x+(hash(ix,iz)-0.5)*CELL*0.6, top, z+(hash(iz,ix)-0.5)*CELL*0.6, 0.42, hash(ix,iz*31)*6.28));
+      }
+      if (lv === 2 && hash(ix*13, iz*17) > 0.9) per.stone_tallE.push(placement(x, top, z, 0.45, hash(ix, iz*29)*6.28));
+    }
+    for (const k of Object.keys(per)) if (per[k].length) this.forestGroup.add(instancedFromScene(A[k], per[k]));
+  }
+
+  makeLabel(text, scale=1) {
+    const cv = document.createElement('canvas'); cv.width = 256; cv.height = 64;
+    const ctx = cv.getContext('2d');
+    ctx.font = 'bold 40px "Noto Serif KR", serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.strokeStyle = 'rgba(0,0,0,.85)'; ctx.lineWidth = 7; ctx.strokeText(text, 128, 32);
+    ctx.fillStyle = '#fff'; ctx.fillText(text, 128, 32);
+    const tex = new THREE.CanvasTexture(cv);
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true }));
+    sp.scale.set(6*scale, 1.5*scale, 1); sp.renderOrder = 5;
+    return sp;
+  }
+
+  addCity(city, colorHex) {
+    const [x, z] = toWorld(city.lon, city.lat);
+    const y = STEP;
+    const g = new THREE.Group();
+    // 세력 깃발 (주탑 위)
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 1.8),
+      new THREE.MeshBasicMaterial({ color: 0xdddddd }));
+    pole.position.set(0, y + 1.7, 0); g.add(pole);
+    const flag = new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.5, 0.05),
+      new THREE.MeshBasicMaterial({ color: new THREE.Color(colorHex) }));
+    flag.position.set(0.45, y + 2.3, 0); g.add(flag);
+    const label = this.makeLabel(city.name_ko, 0.75); label.position.set(0, y + 3.1, 0); g.add(label);
+    // 클릭용 보이지 않는 기둥
+    const hit = new THREE.Mesh(new THREE.CylinderGeometry(1.9, 1.9, 6, 8),
+      new THREE.MeshBasicMaterial({ visible: false }));
+    hit.position.set(0, y + 2, 0); hit.userData.cityId = city.id; g.add(hit);
+    g.position.set(x, 0, z);
+    g.userData.cityId = city.id;
+    this.cityGroup.add(g);
+    this.cityMeshes[city.id] = { group: g, flag };
+  }
+  setCityColor(cityId, colorHex) {
+    const m = this.cityMeshes[cityId]; if (m) m.flag.material.color.set(colorHex);
+  }
+
+  addUnit(unit, colorHex) {
+    const g = new THREE.Group();
+    const body = new THREE.Mesh(new THREE.ConeGeometry(0.45, 1.0, 5),
+      new THREE.MeshLambertMaterial({ color: 0x5a4a3a, flatShading: true }));
+    body.position.y = 0.65; body.castShadow = true; g.add(body);
+    const banner = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.45, 0.05),
+      new THREE.MeshBasicMaterial({ color: new THREE.Color(colorHex) }));
+    banner.position.set(0.35, 1.45, 0); g.add(banner);
+    const label = this.makeLabel(unit.label, 0.6); label.position.y = 2.1; g.add(label);
+    const y = this.levelAtWorld(unit.x, unit.z) * STEP;
+    g.position.set(unit.x, Math.max(y, WATER_Y + 0.2), unit.z);
+    g.userData.unitId = unit.id; body.userData.unitId = unit.id;
+    this.unitGroup.add(g);
+    this.unitMeshes[unit.id] = { group: g, banner };
+  }
+  updateUnit(unit, colorHex) {
+    const m = this.unitMeshes[unit.id]; if (!m) return;
+    const y = this.levelAtWorld(unit.x, unit.z) * STEP;
+    m.group.position.set(unit.x, Math.max(y, WATER_Y + 0.2), unit.z);
+    if (colorHex) m.banner.material.color.set(colorHex);
+  }
+  removeUnit(id) { const m = this.unitMeshes[id]; if (m) { this.unitGroup.remove(m.group); delete this.unitMeshes[id]; } }
+
+  pick(nx, ny) {
+    this.raycaster.setFromCamera(new THREE.Vector2(nx, ny), this.camera);
+    const hits = this.raycaster.intersectObjects([this.cityGroup, this.unitGroup], true);
+    for (const h of hits) {
+      const o = h.object;
+      if (o.userData.cityId !== undefined) return { type: 'city', id: o.userData.cityId };
+      if (o.userData.unitId !== undefined) return { type: 'unit', id: o.userData.unitId };
+    }
+    return null;
+  }
+
+  rotate90(dir) { this.az += dir * Math.PI/2; }
+
+  bindInput(el) {
+    let dragging = false, px = 0, py = 0, moved = 0; let pinch = 0;
+    el.addEventListener('pointerdown', e => { dragging = true; px = e.clientX; py = e.clientY; moved = 0; el.setPointerCapture(e.pointerId); });
+    el.addEventListener('pointermove', e => {
+      if (!dragging) return;
+      const dx = e.clientX - px, dy = e.clientY - py; moved += Math.abs(dx)+Math.abs(dy);
+      const s = this.view / el.clientHeight;
+      const fwd = new THREE.Vector3(); this.camera.getWorldDirection(fwd); fwd.y = 0; fwd.normalize();
+      const right = new THREE.Vector3().crossVectors(fwd, new THREE.Vector3(0,1,0));
+      this.camTarget.addScaledVector(right, -dx*s).addScaledVector(fwd, dy*s);
+      this.camTarget.x = Math.max(-44, Math.min(44, this.camTarget.x));
+      this.camTarget.z = Math.max(-44, Math.min(44, this.camTarget.z));
+      px = e.clientX; py = e.clientY;
+    });
+    el.addEventListener('pointerup', e => {
+      dragging = false;
+      if (moved < 6 && this.onPick) {
+        const r = el.getBoundingClientRect();
+        this.onPick(((e.clientX-r.left)/r.width)*2-1, -(((e.clientY-r.top)/r.height)*2-1));
+      }
+    });
+    el.addEventListener('wheel', e => { e.preventDefault(); this.view = Math.min(96, Math.max(8, this.view * (1 + e.deltaY*0.001))); this.updateFrustum(); }, { passive: false });
+    el.addEventListener('contextmenu', e => e.preventDefault());
+    el.addEventListener('touchstart', e => { if (e.touches.length === 2) pinch = Math.hypot(e.touches[0].clientX-e.touches[1].clientX, e.touches[0].clientY-e.touches[1].clientY); }, { passive: true });
+    el.addEventListener('touchmove', e => {
+      if (e.touches.length === 2 && pinch > 0) {
+        const d = Math.hypot(e.touches[0].clientX-e.touches[1].clientX, e.touches[0].clientY-e.touches[1].clientY);
+        this.view = Math.min(96, Math.max(8, this.view * pinch / d)); pinch = d; this.updateFrustum();
+      }
+    }, { passive: true });
+    addEventListener('keydown', e => {
+      if (e.key === 'q' || e.key === 'Q') this.rotate90(1);
+      if (e.key === 'e' || e.key === 'E') this.rotate90(-1);
+    });
+  }
+
+  focusCity(city) { const [x,z] = toWorld(city.lon, city.lat); this.camTarget.set(x, 0, z); this.view = 26; this.updateFrustum(); }
+  updateFrustum() {
+    const aspect = innerWidth/innerHeight, v = this.view;
+    this.camera.left = -v*aspect/2; this.camera.right = v*aspect/2;
+    this.camera.top = v/2; this.camera.bottom = -v/2;
+    this.camera.near = -400; this.camera.far = 800;
+    this.camera.updateProjectionMatrix();
+  }
+  resize() {
+    const w = innerWidth, h = innerHeight;
+    this.renderer.setSize(w, h, false);
+    this.updateFrustum();
+  }
+  render() {
+    this.time += 0.016;
+    if (this.water) this.water.material.opacity = 0.80 + Math.sin(this.time*1.7)*0.05;
+    const d = 160;
+    this.camera.position.set(
+      this.camTarget.x + Math.sin(this.az)*Math.cos(this.el)*d,
+      this.camTarget.y + Math.sin(this.el)*d,
+      this.camTarget.z + Math.cos(this.az)*Math.cos(this.el)*d);
+    this.camera.lookAt(this.camTarget);
+    this.renderer.render(this.scene, this.camera);
+  }
+      }
