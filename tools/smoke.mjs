@@ -1893,7 +1893,7 @@ if (g.units.find(u => u.id === 9999) && g.units.find(u => u.id === 9999).qi === 
       const store = {}; globalThis.localStorage = { setItem: (k, v) => { store[k] = v; }, getItem: k => store[k] ?? null };
       Math.random = () => 0; try { g.fieldBattle(a, b); } finally { Math.random = rand0; }
       if (logs.length !== 1) fail(shipType + ' 수전 전법 1회 아님 ' + JSON.stringify(logs));
-      if (shipType === 'lou' && !(/격돌/.test(logs[0]) && b.x > bx0 && a.qi === 80)) fail('누선 격돌 격퇴/기력 ' + JSON.stringify({ logs, bx: [bx0, b.x], qi: a.qi }));
+      if (shipType === 'lou' && !(/격돌/.test(logs[0]) && Math.abs((b.x - bx0) - 0.9) < 0.02 && a.qi === 80)) fail('누선 격돌 1칸(0.9) 격퇴/기력 ' + JSON.stringify({ logs, bx: [bx0, b.x], qi: a.qi }));
       g.autosave(); const saved = JSON.parse(Object.values(store)[0] || '{}').units?.find(u => u.id === 1); if (!saved || saved.qi !== a.qi || saved._tacTurn !== g.turn) fail(shipType + ' 저장 레코드 ' + JSON.stringify(saved));
     } }
   console.log('R39 자동 전법 게이트 PASS (창 나선찌르기, 극병은 맞붙으면 무발동·거리 있으면 웅수·주변 적 있으면 광역, 노병 불화살/광역 선택, 누선 격돌 수전 격퇴·저장, 적성 B 미만/기력 부족/턴 1회 차단)');
