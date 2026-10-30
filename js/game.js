@@ -75,7 +75,7 @@ export class Game {
     this.cities = scen.cities.map(c => ({ ...c, commerce: Math.round(c.revenue/10), farm: Math.round(c.harvest/100), hp: c.maxhp, officers: [], troops: c.troops, facilities: [] }));
     this.cityById = {}; this.cities.forEach(c => this.cityById[c.id] = c);
     this.forces = {};
-    for (const f of scen.forces) this.forces[f.id] = { id: f.id, ruler: f.ruler, alive: true, ap: 60, techP: 0, techs: Object.fromEntries(TECH_BRANCHES.map(b => [b, 0])) };
+    for (const f of scen.forces) this.forces[f.id] = { id: f.id, ruler: f.ruler, alive: true, ap: 60, techP: 0, techs: Object.fromEntries(TECH_BRANCHES.map(b => [b, 0])), advisor: null, legions: [] };
     for (const o of scen.officers) {
       const rec = { idx: o.idx, status: o.status, force: o.force ?? null, city: o.city ?? null, loyal: o.loyal, found: o.status === 'free' ? false : true, items: [] };
       this.officers[o.idx].state = rec;
@@ -145,9 +145,51 @@ export class Game {
     for (const [need, name] of RANKS) if (n >= need) r = name;
     return r;
   }
+  // === 군사·군단 (설계안 96행: 군사 지력70+ 임명 / 군단: 도시 묶음을 도독에게 위임) ===
+  appointAdvisor(officerIdx) { // 군사 임명: 지력 70 이상만 (설계안 명시)
+    const o = this.officers[officerIdx];
+    if (!o || o.int < 70 || !o.state || o.state.force == null) return false;
+    const f = this.forces[o.state.force];
+    f.advisor = officerIdx;
+    this.log(`【군사】${this.forceName(f.id)}의 군사로 ${o.name_ko}을(를) 임명했습니다`, f.id === this.playerForce);
+    return true;
+  }
+  mindDefense(fid) { // 계략 방어: 대상 세력 군주·군사의 지력이 높을수록 계략 성공률 감소 (설계안 79행, 자체 수치)
+    const f = this.forces[fid];
+    if (!f?.alive) return 0;
+    const rulerInt = this.officers[f.ruler]?.int ?? 0;
+    const advInt = f.advisor != null ? (this.officers[f.advisor]?.int ?? 0) : 0;
+    return Math.max(rulerInt, advInt) / 500; // 최대 약 -20%
+  }
+  _blocked(c) { return c && c.force === this.playerForce && !this.delegated && !this._legionActing && !!this.cityLegion(c.id); } // 군단 소속 도시는 수동 명령 불가
+  cityLegion(cityId) { const f = this.forces[this.cityById[cityId]?.force]; return (f?.legions ?? []).find(l => l.cities.includes(cityId)) ?? null; }
+  createLegion(governorIdx, cityIds, policy, target = null) { // 제2군단 이후 편성 (제1군단=군주 직할은 항상 플레이어)
+    const o = this.officers[governorIdx];
+    const fid = o?.state?.force;
+    const f = this.forces[fid];
+    if (!o || fid == null || !f?.alive) return false;
+    if (!['delegate', 'attack_city', 'attack_force'].includes(policy)) return false;
+    const own = new Set(this.forceCities(fid).map(c => c.id));
+    const cities = [...new Set(cityIds)].filter(id => own.has(id) && !this.cityLegion(id));
+    if (!cities.length) return false;
+    f.legions = f.legions ?? [];
+    const id = f.legions.length + 2; // 제1군단은 군주 직할
+    f.legions.push({ id, name: `제${id}군단`, governor: governorIdx, cities, policy, target });
+    this.log(`【군단】${this.forceName(fid)} ${`제${id}군단`} 편성 — 도독 ${o.name_ko}, 도시 ${cities.length}개, 방침: ${{ delegate: '위임', attack_city: '도시공략', attack_force: '세력공략' }[policy]}`, fid === this.playerForce);
+    return true;
+  }
+  disbandLegion(fid, legionId) {
+    const f = this.forces[fid];
+    const i = (f?.legions ?? []).findIndex(l => l.id === legionId);
+    if (i < 0) return false;
+    const [l] = f.legions.splice(i, 1);
+    this.log(`【군단】${l.name} 해산 — 도시는 제1군단(직할)으로 복귀`, fid === this.playerForce);
+    return true;
+  }
   // === 수색·상인·명품 (자체 수치) ===
   searchCity(cityId) { // 수색: AP 20·금 100. 미발견 재야 발견(정치·수완 보정) 또는 명품 발견
     const c = this.cityById[cityId], f = this.forces[c?.force];
+    if (this._blocked(c)) return false; // 군단 소속
     if (!c || c.force == null || !f?.alive || f.ap < 20 || c.gold < 100 || !c.officers.length) return false;
     c.gold -= 100; f.ap -= 20;
     const bestOff = [...new Set(c.officers)].sort((a, b) => this.officers[b].pol - this.officers[a].pol)[0];
@@ -177,6 +219,7 @@ export class Game {
   tradeRate() { return 4000 + ((this.year * 12 + this.month) * 7 % 4) * 1000; } // 1000금당 병량 4000~7000, 월별 변동 (자체 수치)
   trade(cityId, dir, lots = 1) { // 상인: 금↔병량, AP 10, 1회 최대 5롯트 (자체)
     const c = this.cityById[cityId], f = this.forces[c?.force];
+    if (this._blocked(c)) return false; // 군단 소속
     lots = Math.max(1, Math.min(5, lots | 0));
     if (!c || c.force == null || !f?.alive || f.ap < 10) return false;
     const rate = this.tradeRate();
@@ -307,6 +350,7 @@ export class Game {
   cityFac(c, t) { return (c.facilities ?? []).filter(f => f.type === t && f.done); }
   buildFacility(cityId, type, builders) { // 비용 금 + 담당 최대 3명, 정치 합산으로 공기 단축
     const c = this.cityById[cityId], f = this.forces[c.force], spec = FACILITIES[type];
+    if (this._blocked(c)) return false; // 군단 소속
     if (!spec || !f?.alive || f.ap < 20) return false;
     c.facilities = c.facilities ?? [];
     if (c.facilities.length >= this.facSlots(c)) return false;
@@ -326,6 +370,7 @@ export class Game {
   }
   develop(cityId, kind) { // kind: 'commerce' | 'farm', 비용 금 300, AP 30
     const c = this.cityById[cityId], f = this.forces[c.force];
+    if (this._blocked(c)) return false; // 군단 소속
     if (c.gold < 300 || f.ap < 30 || c[kind] >= 100) return false;
     const bestOff = c.officers.length ? [...c.officers].sort((a, b) => this.officers[b].pol - this.officers[a].pol)[0] : null;
     const best = Math.max(50, ...c.officers.map(i => this.officers[i].pol));
@@ -339,6 +384,7 @@ export class Game {
   }
   recruit(cityId) { // 금 200 + 병량 1000 → 병사, AP 30
     const c = this.cityById[cityId], f = this.forces[c.force];
+    if (this._blocked(c)) return false; // 군단 소속
     if (c.gold < 200 || c.food < 1000 || f.ap < 30) return false;
     const best = Math.max(50, ...c.officers.map(i => this.officers[i].chr));
     const n = Math.round((1500 + best*30) * (this.cityHasSkill(c, '명성') ? 1.3 : 1) * (this.cityFac(c, '병영').length ? 1.3 : 1));
@@ -364,6 +410,7 @@ export class Game {
   }
   recruitOfficer(cityId, officerIdx) { // 재야 무장 등용: 금 100, AP 20 (자체 규칙)
     const c = this.cityById[cityId], f = this.forces[c.force];
+    if (this._blocked(c)) return false; // 군단 소속
     if (c.gold < 100 || f.ap < 20) return false;
     const p = this.recruitChance(cityId, officerIdx);
     if (p <= 0) return false;
@@ -383,7 +430,7 @@ export class Game {
   }
   moveOfficers(fromCity, toCity, idxs) {
     const a = this.cityById[fromCity], b = this.cityById[toCity], f = this.forces[a.force];
-    if (f.ap < 20) return false;
+    if (f.ap < 20 || this._blocked(a)) return false; // 군단 소속 도시는 수동 이동 불가
     f.ap -= 20;
     a.officers = a.officers.filter(i => !idxs.includes(i));
     for (const i of new Set(idxs)) { if (!b.officers.includes(i)) b.officers.push(i); this.officers[i].state.city = toCity; }
@@ -393,6 +440,7 @@ export class Game {
   dispatch(cityId, officerIdxs, troops, type) { // 부대 출진, AP 40
     officerIdxs = [...new Set(officerIdxs)];
     const c = this.cityById[cityId], f = this.forces[c.force];
+    if (this._blocked(c)) return false; // 군단 소속
     if (f.ap < 40 || c.troops < troops || officerIdxs.length === 0) return false;
     const ut = UNIT_TYPES[type];
     for (const [k, per] of Object.entries(ut.cost)) {
@@ -500,6 +548,7 @@ export class Game {
       if (!f.alive) continue;
       f.ap = Math.min(255, f.ap + 30);
       if (f.id !== this.playerForce || this.delegated) aiThink(this, f.id);
+      else for (const l of f.legions ?? []) { this._legionActing = true; aiThink(this, f.id, l); this._legionActing = false; } // 플레이어 군단은 도독이 운영
     }
     // 멸망 판정
     for (const f of Object.values(this.forces)) {
@@ -586,7 +635,7 @@ export class Game {
     }
     // 계략(공격측): 화계 — 부대 내 최고 지력 무장
     const caster = u.officers.map(i => this.officers[i]).sort((a, b) => b.int - a.int)[0];
-    if (caster && caster.int >= STRATS.fire.minInt && u.qi >= STRATS.fire.qi && Math.random() < Math.min(0.5, 0.1 + caster.int/300 + (this.unitHasSkill(u, '풍계') ? 0.15 : 0))) {
+    if (caster && caster.int >= STRATS.fire.minInt && u.qi >= STRATS.fire.qi && Math.random() < Math.min(0.5, 0.1 + caster.int/300 + (this.unitHasSkill(u, '풍계') ? 0.15 : 0)) * (1 - this.mindDefense(c.force))) {
       u.qi -= STRATS.fire.qi;
       this.gainMerit(caster.idx, MERIT.stratagem);
       const burn = Math.round(c.troops * 0.08 * (1 + 0.15 * this.techLv(u.force, '화공')));
@@ -598,7 +647,7 @@ export class Game {
     if (c.officers.length && (c.lastStrat ?? 0) + STRATS.confuse.cooldown <= this.turn) {
       const def = c.officers.map(i => this.officers[i]).sort((a, b) => b.int - a.int)[0];
       const p = Math.max(0.05, Math.min(0.45, 0.15 + (def.int - lead.int)/250));
-      if (def.int >= STRATS.confuse.minInt && !this.unitHasSkill(u, '위장') && Math.random() < p) {
+      if (def.int >= STRATS.confuse.minInt && !this.unitHasSkill(u, '위장') && Math.random() < p * (1 - this.mindDefense(u.force))) {
         c.lastStrat = this.turn; u.conf = STRATS.confuse.turns;
         this.log(`【계략】${def.name_ko}의 혼란! ${u.label}이(가) ${STRATS.confuse.turns}턴간 움직이지 못합니다`, c.force === this.playerForce);
       }
@@ -650,12 +699,12 @@ export class Game {
       }
       // 계략: 혼란
       const caster = att.officers.map(i => this.officers[i]).sort((x, y) => y.int - x.int)[0];
-      if (caster && caster.int >= STRATS.confuse.minInt && !this.unitHasSkill(def, '위장') && (att.qi ?? 100) >= 25 && Math.random() < Math.min(0.35, 0.08 + caster.int/400)) {
+      if (caster && caster.int >= STRATS.confuse.minInt && !this.unitHasSkill(def, '위장') && (att.qi ?? 100) >= 25 && Math.random() < Math.min(0.35, 0.08 + caster.int/400) * (1 - this.mindDefense(def.force))) {
         att.qi -= 25; def.conf = Math.max(def.conf ?? 0, STRATS.confuse.turns);
         this.log(`【계략】${caster.name_ko}의 혼란! ${def.label}이(가) ${STRATS.confuse.turns}턴간 움직이지 못합니다`, att.force === this.playerForce);
       }
       // 계략: 화계
-      if (caster && caster.int >= STRATS.fire.minInt && !this.unitHasSkill(def, '위장') && (att.qi ?? 100) >= STRATS.fire.qi && Math.random() < Math.min(0.5, 0.1 + caster.int/300 + (this.unitHasSkill(att, '풍계') ? 0.15 : 0))) {
+      if (caster && caster.int >= STRATS.fire.minInt && !this.unitHasSkill(def, '위장') && (att.qi ?? 100) >= STRATS.fire.qi && Math.random() < Math.min(0.5, 0.1 + caster.int/300 + (this.unitHasSkill(att, '풍계') ? 0.15 : 0)) * (1 - this.mindDefense(def.force))) {
         att.qi -= STRATS.fire.qi;
         const burn = Math.round(def.troops * 0.06 * (1 + 0.15 * this.techLv(att.force, '화공')));
         def.troops = Math.max(0, def.troops - burn);
@@ -700,4 +749,4 @@ export function josa(name, pair) { // [을,를] 형태
   const code = name.charCodeAt(name.length-1);
   const jong = (code >= 0xAC00 && code <= 0xD7A3) ? (code-0xAC00)%28 : 0;
   return name + (jong ? pair[0] : pair[1]);
-}
+  }
