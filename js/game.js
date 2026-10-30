@@ -87,6 +87,7 @@ export const TECH_P = [1000, 2000, 3000, 5000];      // 단계별 필요 기교P
 // === R13: 능력연구 4계통 (설계안 120행 PK 채택, 계통·단계·수치는 자체 설계) ===
 export const AB_BRANCHES = { '공격': 'war', '방어': 'ldr', '계략': 'int', '내정': 'pol' };
 export const AB_P = [500, 1500, 3000]; // 계통당 3단계 필요 기교P
+export const SORCERY_MIN_INT = 90; // 요술/낙뢰 습득 후보 최소 지력 (자체 잠정값)
 export const AB_SKILL = { '공격': '맹돌', '방어': '강직', '계략': '논객', '내정': '치안' }; // 3단계 완료 시 특기 습득 (자체 선택)
 export const TECH_GOLD = [1000, 2000, 5000, 10000];  // 단계별 연구 비용 (금)
 export const TECH_DESC = {
@@ -376,6 +377,7 @@ export class Game {
     c.gold -= 300; c.leveeBroken = false; c.flood = 0; c.leveeCool = this.turn + 12; this.log(`【수공】${c.name_ko} 제방 보수 완료 (금 300)`, c.force === this.playerForce); return true;
   }
   floodTurn() { for (const c of this.cities) if ((c.flood ?? 0) > 0) { if (c._floodOwner !== undefined && c._floodOwner !== c.force) { c.flood = 0; continue; } /* 점령되면 침수 종료(새 소유자에게 이어지지 않음) */ c.flood--; const d = Math.round(c.troops * 0.03); c.troops = Math.max(0, c.troops - d); this.log(`【수공】${josa(c.name_ko, ['이','가'])} 침수 중 — 병사 ${d} 감소`, c.force === this.playerForce); } }
+  cityBurnTurn() { for (const c of this.cities) if ((c.burn ?? 0) > 0) { if (c._burnOwner !== undefined && c._burnOwner !== c.force) { c.burn = 0; continue; } c.burn--; const d = Math.max(1, Math.round(c.troops * 0.03)); c.troops = Math.max(0, c.troops - d); c.hp = Math.max(0, c.hp - Math.round(c.maxhp * 0.015)); this.log(`【화계】${josa(c.name_ko, ['이','가'])} 불에 타 수비병 -${d}`, c.force === this.playerForce); } }
   fieldSlow(u) { // 토루 통행 방해 배율
     if (u.slowT > 0) { u.slowT--; return 0.5; } // R28: 낙석
     let m = 1;
@@ -880,7 +882,7 @@ export class Game {
     // 도시 공성 처리는 stepUnit 내부
     // 야전: 접촉한 적 부대끼리 교전
     this.resolveFieldBattles();
-    this.aiFieldBuild(); this.fieldTurn(); this.floodTurn(); // R26: 야전 시설
+    this.aiFieldBuild(); this.fieldTurn(); this.floodTurn(); this.cityBurnTurn(); // R26: 야전 시설
     // 수입: 매 3순(한 달)
     if (this.dan === 3) {
       for (const c of this.cities) {
@@ -1140,7 +1142,8 @@ export class Game {
       const burn = Math.round(c.troops * 0.08 * (1 + 0.15 * this.techLv(u.force, '화공')));
       c.troops = Math.max(0, c.troops - burn);
       c.hp = Math.max(0, c.hp - Math.round(burn * 0.5));
-      this.log(`【계략】${caster.name_ko}의 화계! ${c.name_ko} 수비병 -${burn}`, u.force === this.playerForce);
+      c.burn = 3; c._burnOwner = c.force; // 도시 지속불: 3턴간 턴당 수비병 -3%·내구 -1.5% (자체 잠정값, 소화로 끌 수 있음)
+      this.log(`【계략】${caster.name_ko}의 화계! ${c.name_ko} 수비병 -${burn} (불이 번져 3턴간 계속 탑니다)`, u.force === this.playerForce);
     }
     // 계략(수비측): 혼란 — 수비 도시 최고 지력 무장, 쿨다운 적용
     if (c.officers.length && (c.lastStrat ?? 0) + STRATS.confuse.cooldown <= this.turn) {
@@ -1418,7 +1421,8 @@ export class Game {
         const burn = Math.round(c.troops * 0.08 * (1 + 0.15 * this.techLv(u.force, '화공')));
         c.troops = Math.max(0, c.troops - burn);
         c.hp = Math.max(0, c.hp - Math.round(burn * 0.5));
-        this.log(`【계략】${caster.name_ko}의 화계! ${c.name_ko} 수비병 -${burn}`, u.force === this.playerForce);
+        c.burn = 3; c._burnOwner = c.force; // 도시 지속불: 3턴간 턴당 수비병 -3%·내구 -1.5% (자체 잠정값, 소화로 끌 수 있음)
+      this.log(`【계략】${caster.name_ko}의 화계! ${c.name_ko} 수비병 -${burn} (불이 번져 3턴간 계속 탑니다)`, u.force === this.playerForce);
         this.autosave();
         return true;
       }
@@ -1434,6 +1438,14 @@ export class Game {
       const hit = Math.round(d.troops * 0.07); d.troops = Math.max(0, d.troops - hit); d.qi = Math.max(0, (d.qi ?? 100) - 20);
       this.log(`【계략】${caster.name_ko}의 복병! ${d.label} 병력 -${hit}, 기력 -20`, u.force === this.playerForce);
       if (d.troops <= 0) { this.units = this.units.filter(x => x !== d); this.log(`${d.label} 부대가 전멸했습니다`, false); }
+      this.autosave();
+      return true;
+    }
+    if (kind === 'douse' && target.type === 'city') {
+      const c = this.cityById[target.id];
+      if (!c || c.force !== u.force || (c.burn ?? 0) <= 0 || !inRange(c.lon, c.lat) || caster.int < STRATS.douse.minInt || (u.qi ?? 100) < STRATS.douse.qi) return false;
+      u._stratTurn = this.turn; u.qi -= STRATS.douse.qi; c.burn = 0;
+      this.log(`【계략】${caster.name_ko}의 소화! ${c.name_ko}의 불을 껐습니다`, u.force === this.playerForce);
       this.autosave();
       return true;
     }
@@ -1619,8 +1631,13 @@ export class Game {
     }
     this.log(`【연구】${this.forceName(fid)} 능력연구 「${branch}」 ${lv + 1}단계 완료 (기교P ${AB_P[lv]} 소비, 소속 무장 전원 ${statNm} +2)`, fid === this.playerForce);
     if (lv + 1 === 3) {
-      const sk = AB_SKILL[branch];
-      const cand = this.forceOfficers(fid).filter(o => o && !o.skill && !o.state?.grantSkill).sort((a, b) => (b.state?.merit ?? 0) - (a.state?.merit ?? 0))[0];
+      let sk = AB_SKILL[branch];
+      const free = this.forceOfficers(fid).filter(o => o && !o.skill && !o.state?.grantSkill);
+      let cand = free.sort((a, b) => (b.state?.merit ?? 0) - (a.state?.merit ?? 0))[0];
+      if (branch === '계략') { // 자체 잠정규칙: 지력 90 이상 무특기 무장이 있으면 그 중 지력 최고에게 요술/낙뢰(세력 내 보유 수가 적은 쪽) 습득, 없으면 기존 논객
+        const sage = free.filter(o => o.int >= SORCERY_MIN_INT).sort((a, b) => b.int - a.int)[0];
+        if (sage) { const mine = this.forceOfficers(fid); const n1 = mine.filter(o => o.skill === '요술').length, n2 = mine.filter(o => o.skill === '낙뢰').length; cand = sage; sk = n1 <= n2 ? '요술' : '낙뢰'; }
+      }
       if (cand) {
         cand.skill = sk; if (cand.state) cand.state.grantSkill = sk; // 저장 영속용
         this.log(`【연구】${josa(cand.name_ko, ['이','가'])} 연구 성과로 특기 「${sk}」${josa(sk, ['을','를']).slice(-1)} 습득했습니다!`, fid === this.playerForce);
