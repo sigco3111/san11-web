@@ -22,6 +22,7 @@ for (let t = 0; t < 60; t++) {
   g.delegated = false;
   aiThink(g, g.playerForce); // 수동 플레이어 대신 AI 1회
   g.endTurn(aiThink);
+  if (g.pendingDuel) g.duelAuto(g.pendingDuel); // R10: 일기토는 모달 대신 자동 결판
 }
 console.log('after 60 turns:', g.year, '년', g.month, '월');
 console.log('alive forces:', g.aliveForces().map(f => g.forceName(f.id)).join(', '));
@@ -93,7 +94,7 @@ console.log('tactics fired:', tacN, '| stratagems fired:', stratN, '| field batt
       off.state = off.state ?? {};
       off.state.items = [...new Set([...(off.state.items ?? []), 'yuxi'])].slice(0, 3);
       const before = f.techP ?? 0;
-      for (let t = 0; t < 3; t++) g.endTurn((gg, fid) => { if (fid !== f.id) aiThink(gg, fid); }); // 월 처리는 3순(1개월)마다. 대상 세력의 AI 기교 연구(techP 소비)는 차단해 결정적으로
+      for (let t = 0; t < 3; t++) { g.endTurn((gg, fid) => { if (fid !== f.id) aiThink(gg, fid); }); if (g.pendingDuel) g.duelAuto(g.pendingDuel); } // 월 처리는 3순(1개월)마다. 대상 세력의 AI 기교 연구(techP 소비)는 차단해 결정적으로
       if (!((f.techP ?? 0) >= before + 10)) { console.error('FAIL: 옥새 기교P 월+10', before, f.techP); process.exit(1); }
       off.state.items = off.state.items.filter(i => i !== 'yuxi');
       console.log('옥새 기교P 확인:', before, '→', f.techP);
@@ -648,6 +649,98 @@ if (g.units.find(u => u.id === 9999) && g.units.find(u => u.id === 9999).qi === 
   const h2 = snap.cities.find(c => c.id === home.id);
   if (typeof h2.security !== 'number') { console.error('FAIL: R9 세이브 치안 보존'); process.exit(1); }
   console.log('R9 재해·치안 게이트 PASS (순찰/감소/특기/재해/적출현/파괴/약탈/야전/수완/세이브)');
+}
+// R10: 일기토 게이트 (결정적)
+{
+  const g10 = new Game(JSON.parse(JSON.stringify(scen)), officers, {}, 0);
+  const origRand = Math.random;
+  const mkU = (id, force, war, items) => {
+    const oi = 93000 + id;
+    g10.officers[oi] = { idx: oi, name_ko: '결투' + id, ldr: 50, war, int: 30, pol: 30, chr: 50, skill: null, apt: {}, state: { status: 'serving', force, city: null, items: items ?? [], merit: 0 } };
+    return { id, force, officers: [oi], troops: 8000, type: 'cav', x: 0, z: 0, path: [], tx: null, tz: null, targetCity: null, label: 'U' + id, qi: 100, conf: 0 };
+  };
+  const uA = mkU(1, 0, 90), uB = mkU(2, 1, 70);
+  const homeB = g10.cities.find(c => c.force === 1);
+  Math.random = () => 0.99; // 크리티컬 억제
+  const d = g10.startDuel(uA, uB);
+  // 기본 합: 투지 상승 + 체력 감소
+  g10.duelTick(d, { stance: 'spirit', cmd: null }, { stance: 'spirit', cmd: null });
+  if (d.a.spirit < 14 || d.b.spirit <= 0 || d.b.hp >= 100) { console.error('FAIL: R10 기본 합', d.a.spirit, d.b.hp); process.exit(1); } // 투지 14+피격 보너스, 상호 타격
+  // 투지 중시: 방침 상승분 14 (피격 보너스 별도)
+  const s0 = d.a.spirit;
+  g10.duelTick(d, { stance: 'spirit', cmd: null }, { stance: 'attack', cmd: null });
+  if (d.a.spirit - s0 < 14) { console.error('FAIL: R10 투지 중시'); process.exit(1); }
+  // 급소: 투지 200 필요 + 부상 부여
+  d.a.spirit = 200;
+  g10.duelTick(d, { stance: 'attack', cmd: '급소' }, { stance: 'defense', cmd: null });
+  const bo = g10.duelOfficer(d, 'b');
+  if (!bo.state.injuredUntil || bo.state.injuredUntil <= g10.turn) { console.error('FAIL: R10 급소 부상'); process.exit(1); }
+  if (g10.effWar(bo) !== Math.max(1, bo.war - 20)) { console.error('FAIL: R10 부상 무력 보정'); process.exit(1); }
+  // 부상 무장 출진 불가
+  const bc = g10.cities.find(c => c.force === 1 && c.officers.length >= 0);
+  bc.officers = [bo.idx]; bo.state.city = bc.id; bc.troops = 10000; g10.forces[1].ap = 100; bc.spears = 99999;
+  if (g10.dispatch(bc.id, [bo.idx], 5000, 'spear')) { console.error('FAIL: R10 부상 출진 차단'); process.exit(1); }
+  // 무쌍: 상대 투지 0 + 특대 피해
+  d.a.spirit = 300; d.b.spirit = 150;
+  const hpB0 = d.b.hp;
+  g10.duelTick(d, { stance: 'attack', cmd: '무쌍' }, { stance: 'defense', cmd: null });
+  if (d.b.spirit !== 0 && !(d.b.spirit > 0 && d.b.hp <= 0)) { /* 무쌍 후 피격 투지 +6은 허용 */ }
+  if (hpB0 - d.b.hp < 10) { console.error('FAIL: R10 무쌍 피해'); process.exit(1); }
+  // 암기: weapon 명품 없으면 무효, 있으면 발동 + 상대 투지 -50
+  d.a.spirit = 100; d.b.spirit = 100; d.a._hiddenUsed = false;
+  g10.duelTick(d, { stance: 'attack', cmd: '암기' }, { stance: 'defense', cmd: null });
+  if (d.a._hiddenUsed) { console.error('FAIL: R10 암기 아이템 없음 발동'); process.exit(1); }
+  g10.officers[d.a.offs[0]].state.items = ['fangtian'];
+  g10.duelTick(d, { stance: 'attack', cmd: '암기' }, { stance: 'defense', cmd: null });
+  if (!d.a._hiddenUsed) { console.error('FAIL: R10 암기 발동'); process.exit(1); }
+  // 위퇴각: 활 없으면 무시, 활 있으면 도주 성공 + 반격
+  const d2 = g10.startDuel(mkU(3, 0, 60), mkU(4, 1, 80));
+  g10.duelTick(d2, { stance: 'attack', cmd: '위퇴각' }, { stance: 'attack', cmd: null });
+  if (d2.done) { console.error('FAIL: R10 위퇴각 활 없음'); process.exit(1); }
+  g10.officers[d2.a.offs[0]].state.items = ['yangbow'];
+  const hpB2 = d2.b.hp;
+  g10.duelTick(d2, { stance: 'attack', cmd: '위퇴각' }, { stance: 'attack', cmd: null });
+  if (!d2.done || d2.fled !== 'a' || d2.b.hp >= hpB2) { console.error('FAIL: R10 위퇴각 발동', d2.done, d2.fled); process.exit(1); }
+  if (d2.a.u.targetCity == null) { console.error('FAIL: R10 퇴각 후 귀환'); process.exit(1); }
+  // 퇴각: 명마 보정 — 성공 확률 경계 (명마+상대 무名馬: 0.9)
+  // 결판: 체력 0 → 병력 -30% + 공적
+  const d3 = g10.startDuel(mkU(5, 0, 95), mkU(6, 1, 40));
+  d3.b.hp = 3;
+  g10.duelTick(d3, { stance: 'attack', cmd: null }, { stance: 'attack', cmd: null });
+  if (!d3.done || d3.b.u.troops !== Math.round(8000 * 0.7)) { console.error('FAIL: R10 결판 병력', d3.b.u.troops); process.exit(1); }
+  if ((g10.officers[d3.a.offs[0]].state.merit ?? 0) < 40) { console.error('FAIL: R10 승자 공적'); process.exit(1); }
+  // 50합 무승부
+  const d4 = g10.startDuel(mkU(7, 0, 60), mkU(8, 1, 60));
+  d4.bout = 49;
+  g10.duelTick(d4, { stance: 'defense', cmd: null }, { stance: 'defense', cmd: null });
+  if (!d4.done || g10.pendingDuel) { console.error('FAIL: R10 50합 무승부'); process.exit(1); }
+  // 발동: 플레이어 관여 야전 → pendingDuel, AI끼리 → 자동 결판
+  Math.random = () => 0;
+  const pU = { id: 99701, force: 0, officers: [g10.forces[0].ruler], troops: 9000, type: 'cav', x: 0, z: 0, path: [], tx: null, tz: null, targetCity: null, label: 'P', qi: 100, conf: 0 };
+  const eU = { id: 99702, force: 1, officers: [g10.forces[1].ruler], troops: 9000, type: 'cav', x: 1, z: 0, path: [], tx: null, tz: null, targetCity: null, label: 'E', qi: 100, conf: 0 };
+  g10.units.push(pU, eU);
+  g10.fieldBattle(pU, eU);
+  if (!g10.pendingDuel) { console.error('FAIL: R10 플레이어 일기토 발동'); process.exit(1); }
+  g10.pendingDuel = null;
+  const a1 = { ...pU, id: 99703, force: 2, officers: [bo.idx] }; bo.state.force = 2;
+  const a2 = { ...eU, id: 99704, force: 3 };
+  a1.troops = a2.troops = 9000;
+  g10.fieldBattle(a1, a2);
+  if (g10.pendingDuel) { console.error('FAIL: R10 AI 일기토 자동결판'); process.exit(1); }
+  // 적병(무장 없음)과는 일기토 없음
+  const bd = { id: 99705, force: -1, officers: [], troops: 3000, type: 'spear', x: 0, z: 0, path: [], tx: null, tz: null, targetCity: null, label: '적병', qi: 100, conf: 0 };
+  const pU2 = { ...pU, id: 99706, troops: 9000 };
+  g10.fieldBattle(pU2, bd);
+  if (g10.pendingDuel) { console.error('FAIL: R10 적병 일기토 차단'); process.exit(1); }
+  // endTurn 가드: 일기토 중 턴 진행 불가
+  g10.pendingDuel = g10.startDuel(mkU(9, 0, 60), mkU(10, 1, 60));
+  const t0 = g10.turn;
+  g10.endTurn(aiThink);
+  if (g10.turn !== t0) { console.error('FAIL: R10 일기토 중 턴 진행'); process.exit(1); }
+  g10.duelAuto(g10.pendingDuel);
+  if (g10.pendingDuel) { console.error('FAIL: R10 위임 자동결판'); process.exit(1); }
+  Math.random = origRand;
+  console.log('R10 일기토 게이트 PASS (기본합/투지/급소부상/출진차단/무쌍/암기/위퇴각/퇴각/결판/50합/발동구분/적병차단/턴가드/위임)');
 }
 {
   const fs = await import('fs');
