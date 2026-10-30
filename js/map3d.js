@@ -82,7 +82,7 @@ function instancedFromScene(srcScene, placements) {
     if (!m.isMesh) return;
     const mats = Array.isArray(m.material) ? m.material : [m.material];
     for (const mat of mats) {
-      if (mat && mat.isMeshStandardMaterial) { mat.envMapIntensity = 0.35; }
+      if (mat && mat.isMeshStandardMaterial) { mat.envMapIntensity = 0.2; }
     }
     const im = new THREE.InstancedMesh(m.geometry, m.material, placements.length);
     const tmp = new THREE.Matrix4();
@@ -117,7 +117,7 @@ export class Map3D {
     this.camTarget = new THREE.Vector3(8, 0, 4);
     this.camera = new THREE.OrthographicCamera();
     applyEnvironment(this.renderer, this.scene);
-    this.scene.add(new THREE.HemisphereLight(0xcfe8ff, 0x3a2f1a, 0.9));
+    this.scene.add(new THREE.HemisphereLight(0xcfe8ff, 0x3a2f1a, 1.0));
     const sun = new THREE.DirectionalLight(0xfff2d8, 1.25);
     sun.position.set(50, 70, 25);
     const fill = new THREE.DirectionalLight(0xf2ede2, 0.25);
