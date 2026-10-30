@@ -2536,5 +2536,5 @@ $('btn-menu').onclick = () => modal('메뉴', [
 ['계속', () => {}],
 ]);
 }
-window.addEventListener?.('resize', () => { if (game) document.documentElement.style.setProperty('--hud-h', ($('hud-top').offsetHeight + 6) + 'px'); });
+if (typeof ResizeObserver !== 'undefined') new ResizeObserver(() => document.documentElement.style.setProperty('--hud-h', ($('hud-top').offsetHeight + 6) + 'px')).observe($('hud-top'));
 boot();
