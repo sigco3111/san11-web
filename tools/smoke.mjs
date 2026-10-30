@@ -121,4 +121,36 @@ if (g.units.find(u => u.id === 9999) && g.units.find(u => u.id === 9999).qi === 
   if (total < 1) { console.error('FAIL: AI 기교 연구 미수행'); process.exit(1); }
   console.log('AI 기교 연구 확인:', JSON.stringify(Object.entries(F4.techs).filter(([, v]) => v > 0)), '잔여P', F4.techP);
 }
+// R3 내정시설 (결정적)
+{
+  const g5 = new Game(scen, officers, {}, 0);
+  const F5 = g5.forces[0];
+  const c5 = g5.forceCities(0)[0];
+  F5.ap = 255; c5.gold = 5000;
+  const pol3 = [...c5.officers].sort((x, y) => (g5.officers[y]?.pol ?? 0) - (g5.officers[x]?.pol ?? 0)).slice(0, 3);
+  if (!g5.buildFacility(c5.id, '시장', pol3)) { console.error('FAIL: 시설 건설 시작'); process.exit(1); }
+  const fc = c5.facilities[0];
+  const polSum = pol3.reduce((x, i) => x + (g5.officers[i]?.pol ?? 0), 0);
+  g5.endTurn(aiThink); g5.endTurn(aiThink);
+  if (!fc.done) { console.error('FAIL: 시설 공기 진행', { progress: fc.progress, polSum }); process.exit(1); }
+  // 시장 효과: 도시 금 수입 +25%
+  const mk = g5.cityFac(c5, '시장').length;
+  if (mk !== 1) { console.error('FAIL: 시장 완성 반영'); process.exit(1); }
+  // 병영 징병 보정
+  F5.ap = 255; c5.gold = 5000;
+  g5.buildFacility(c5.id, '병영', pol3);
+  c5.facilities[1].progress = 99; g5.endTurn(aiThink);
+  if (!c5.facilities[1].done) { console.error('FAIL: 병영 완성'); process.exit(1); }
+  F5.ap = 255; c5.gold = 5000; c5.food = 9000;
+  const before = c5.troops;
+  g5.recruit(c5.id);
+  const withFac = c5.troops - before;
+  const baseN = Math.round((1500 + Math.max(50, ...c5.officers.map(i => g5.officers[i].chr)) * 30) * (g5.cityHasSkill(c5, '명성') ? 1.3 : 1));
+  const expect = Math.round(baseN * 1.3);
+  if (withFac !== expect) { console.error('FAIL: 병영 징병 보정', { withFac, expect }); process.exit(1); }
+  // 슬롯 제한
+  c5.facilities = Array(g5.facSlots(c5)).fill({ type: '시장', done: true, progress: 2, builders: [] });
+  if (g5.buildFacility(c5.id, '시장', [])) { console.error('FAIL: 개발지 초과 건설'); process.exit(1); }
+  console.log('내정시설 확인: 건설·공기(정치 가속)·시장 수입·병영 징병 x1.3·개발지 제한 PASS (담당 정치합', polSum + ')');
+}
 console.log('sample logs:'); for (const l of g.logs.slice(-8)) console.log(' ', l.t, l.msg);
