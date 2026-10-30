@@ -1,6 +1,6 @@
 // 진입점: 화면 전환·UI·지도 연결
 import { Map3D, toWorld } from './map3d.js';
-import { Game, SAVE_KEY, forceColor, UNIT_TYPES, josa, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES } from './game.js';
+import { Game, SAVE_KEY, forceColor, UNIT_TYPES, josa, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS } from './game.js';
 import { aiThink } from './ai.js';
 
 const $ = id => document.getElementById(id);
@@ -170,6 +170,24 @@ function onPick(nx, ny) {
   selectedUnit = null;
   showCityPanel(c);
 }
+function showTrade(c) { // 상인: 월별 환율, 금↔병량 (자체 수치)
+  const p = $('panel');
+  const rate = game.tradeRate();
+  const myF = game.forces[c.force];
+  const render = () => {
+    p.innerHTML = `<h3>${c.name_ko} 상인</h3>
+      <p>이번 달 환율: 금 1000 ↔ 병량 ${rate.toLocaleString()} (매월 변동)</p>
+      <p>보유: 금 ${c.gold.toLocaleString()} · 병량 ${c.food.toLocaleString()} · 행동력 ${myF.ap}</p>
+      <p>거래량 (롯트): <select id="trd-lots">${[1,2,3,4,5].map(n => `<option value="${n}">${n}</option>`).join('')}</select></p>
+      <p><button class="cmd" id="trd-buy" ${myF.ap < 10 || c.gold < 1000 ? 'disabled' : ''}>병량 매입 (금→병량)</button>
+      <button class="cmd" id="trd-sell" ${myF.ap < 10 || c.food < rate ? 'disabled' : ''}>병량 매각 (병량→금)</button>
+      <button class="cmd" id="trd-back">← 도시 패널로</button></p>`;
+    $('trd-buy').onclick = () => { game.trade(c.id, 'buy', Number($('trd-lots').value)); refreshAll(); render(); };
+    $('trd-sell').onclick = () => { game.trade(c.id, 'sell', Number($('trd-lots').value)); refreshAll(); render(); };
+    $('trd-back').onclick = () => showCityPanel(c);
+  };
+  render();
+}
 function showDiplomacy(c) {
   const p = $('panel'); p.classList.remove('hidden');
   const myF = game.forces[c.force];
@@ -256,7 +274,7 @@ function showTech() {
 }
 function officerRow(idx) {
   const o = DATA.officers[idx];
-  return `<div class="officer"><span class="pimg" style="${portraitCss(idx)}"></span><div><div class="nm">${o.name_ko} <span class="st">${o.name_zh}</span></div><div class="st">통${o.ldr} 무${o.war} 지${o.int} 정${o.pol} 매${o.chr} · ${o.skill ? o.skill + ' — ' + (DATA.skills[o.skill] || '') : '특기 없음'} · 충성 ${o.state?.loyal ?? '-'} · 공적 ${o.state?.merit ?? 0}</div></div></div>`;
+  return `<div class="officer"><span class="pimg" style="${portraitCss(idx)}"></span><div><div class="nm">${o.name_ko} <span class="st">${o.name_zh}</span></div><div class="st">통${o.ldr} 무${o.war} 지${o.int} 정${o.pol} 매${o.chr} · ${o.skill ? o.skill + ' — ' + (DATA.skills[o.skill] || '') : '특기 없음'} · 충성 ${o.state?.loyal ?? '-'} · 공적 ${o.state?.merit ?? 0}${(o.state?.items ?? []).length ? ' · 명품: ' + o.state.items.map(id => ITEMS.find(i => i.id === id)?.name ?? id).join('·') : ''}</div></div></div>`;
 }
 let lastCityId = null;
 function showCityPanel(c) {
@@ -282,12 +300,16 @@ function showCityPanel(c) {
       <button class="cmd" id="cmd-move">무장 이동</button>
       <button class="cmd" id="cmd-tech">기교 연구</button>
       <button class="cmd" id="cmd-fac">시설 건설</button>
+      <button class="cmd" id="cmd-search">수색 (금100)</button>
+      <button class="cmd" id="cmd-trade">상인</button>
       <button class="cmd" id="cmd-diplo">외교</button>
     </div>`;
   }
   html += `<h3 style="margin-top:10px">주둔 무장 (${c.officers.length})</h3>`;
   html += c.officers.map(officerRow).join('') || '<p>무장 없음</p>';
-  const free = Object.values(DATA.officers).filter(o => o.state?.status === 'free' && o.state.city === c.id);
+  const free = Object.values(DATA.officers).filter(o => o.state?.status === 'free' && o.state.city === c.id && o.state.found !== false);
+  const hiddenFree = Object.values(DATA.officers).some(o => o.state?.status === 'free' && o.state.city === c.id && o.state.found === false);
+  if (mine && hiddenFree) html += `<p style="font-size:12px;color:#aa6">이 도시에 미발견 재야 무장이 있는 것 같습니다 — 수색으로 찾아보세요.</p>`;
   if (free.length) {
     html += `<h3 style="margin-top:10px">재야 무장 (${free.length})</h3>`;
     for (const o of free) {
@@ -305,6 +327,8 @@ function showCityPanel(c) {
     $('cmd-tech').onclick = () => showTech();
     $('cmd-fac').onclick = () => showFacilities(c);
     $('cmd-diplo').onclick = () => showDiplomacy(c);
+    $('cmd-search').onclick = () => { game.searchCity(c.id); refreshAll(); showCityPanel(c); };
+    $('cmd-trade').onclick = () => showTrade(c);
     p.querySelectorAll('.cmd-rec').forEach(b => b.onclick = () => { game.recruitOfficer(c.id, Number(b.dataset.i)); refreshAll(); showCityPanel(c); });
   }
   const join = $('cmd-join');
@@ -378,7 +402,9 @@ async function boot() {
       Object.assign(g, { year: d.year, month: d.month, dan: d.dan, turn: d.turn, cities: d.cities, forces: d.forces, units: d.units, nextUnitId: d.nextUnitId, playerForce: d.playerForce, delegated: d.delegated, logs: d.logs, deadAck: d.deadAck });
       g.cityById = {}; g.cities.forEach(c => g.cityById[c.id] = c);
       for (const c of g.cities) c.officers = [...new Set(c.officers ?? [])]; // 레거시 세이브 중복 무장 정리
-      g.diplo = d.diplo ?? {}; // 외교 상태 복원 (레거시 세이브는 공백)
+      g.diplo = d.diplo ?? {};
+      g.itemPool = d.itemPool ?? Object.values(ITEMS).map(i => i.id).filter(id => !Object.values(g.officers).some(o => (o.state.items ?? []).includes(id)));
+      for (const o of Object.values(g.officers)) { o.state.items = o.state.items ?? []; if (o.state.status === 'free' && o.state.found === undefined) o.state.found = true; } // 기존 세이브의 재야는 발견 상태 유지 // 외교 상태 복원 (레거시 세이브는 공백)
       for (const [i, st] of Object.entries(d.officerStates)) if (DATA.officers[i]) DATA.officers[i].state = st;
       game = g; enterGame(); refreshAll();
       if (game.delegated) setAuto(true);
