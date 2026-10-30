@@ -1,12 +1,12 @@
 // 진입점: 화면 전환·UI·지도 연결
-import { Map3D, toWorld } from './map3d.js?v=r45';
-import { Game, SAVE_KEY, forceColor, UNIT_TYPES, ARTS, FIELD_FACS, TRAPS, SHIP_TYPES, josa, josaRo, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL } from './game.js?v=r45';
-import { aiThink } from './ai.js?v=r45';
+import { Map3D, toWorld } from './map3d.js?v=r46';
+import { Game, SAVE_KEY, forceColor, UNIT_TYPES, ARTS, FIELD_FACS, TRAPS, SHIP_TYPES, josa, josaRo, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL } from './game.js?v=r46';
+import { aiThink } from './ai.js?v=r46';
 
 const $ = id => document.getElementById(id);
 let DATA = null, game = null, map = null, selectedUnit = null, autoTimer = null, pendingFire = null; // R15: 직접 전법·계략 대기
 
-const BUILD_ID = 'r45'; // 빌드 ID (index.html의 meta[name=build]와 같아야 함 - 오래된 캐시된 index와 새 스크립트의 혼합 감지)
+const BUILD_ID = 'r46'; // 빌드 ID (index.html의 meta[name=build]와 같아야 함 - 오래된 캐시된 index와 새 스크립트의 혼합 감지)
 function checkBuildSkew() {
   const idx = document.querySelector('meta[name="build"]')?.content;
   if (idx === BUILD_ID) { sessionStorage.removeItem('cheonha-xi-web.skew'); return; } // 일치하면 재시도 표식 해제
@@ -19,7 +19,7 @@ checkBuildSkew();
 async function loadData() {
   const [officers, skills, portraits, s184, s190, s251] = await Promise.all(
     ['data/officers670.json','data/skills.json','data/portraits.json','data/scenario-184.json','data/scenario-190.json','data/scenario-251.json']
-      .map(u => fetch(u + '?v=r45').then(r => r.json())));
+      .map(u => fetch(u + '?v=r46').then(r => r.json())));
   const byIdx = {};
   for (const o of officers) byIdx[o.idx] = o;
   DATA = { officers: byIdx, skills, portraits, scenarios: { '184': s184, '190': s190, '251': s251 } };
@@ -715,6 +715,7 @@ function showUnitPanel(uid) {
     ${mine && (u.conf ?? 0) <= 0 && (u._stratTurn ?? -1) !== game.turn && u.officers.some(i => (DATA.officers[i]?.int ?? 0) >= 75) && (u.qi ?? 100) >= 30 ? '<p><button class="cmd" id="up-fire">계략 화계 (기력 30)</button></p>' : ''}
     ${mine && (u.conf ?? 0) <= 0 && (u._stratTurn ?? -1) !== game.turn && u.officers.some(i => (DATA.officers[i]?.int ?? 0) >= 80) && (u.qi ?? 100) >= 25 ? '<p><button class="cmd" id="up-conf">계략 혼란 (기력 25)</button></p>' : ''}
     ${mine && (u.conf ?? 0) <= 0 && (u._stratTurn ?? -1) !== game.turn && u.officers.some(i => (DATA.officers[i]?.int ?? 0) >= 80) && (u.qi ?? 100) >= 15 ? '<button class="cmd" id="up-rumor">계략 위보 (기력 15)</button> <button class="cmd" id="up-calm">계략 진정 (기력 10)</button>' : ''}
+    ${mine && (u.conf ?? 0) <= 0 && (u._stratTurn ?? -1) !== game.turn && (u.qi ?? 100) >= 50 ? ['요술', '낙뢰'].filter(sk => u.officers.some(i => game.officers[i]?.skill === sk)).map(sk => `<p><button class="cmd" id="up-${sk === '요술' ? 'sorcery' : 'thunder'}">계략 ${sk} (기력 50, 광역)</button></p>`).join('') : ''}
     ${mine && !SHIP_TYPES.has(u.type) ? `<p>${u.building ? `<span style="color:#ffd700">${u.building} 건설 중 (이동 명령을 내리면 취소)</span>` : Object.entries(FIELD_FACS).map(([k, v]) => `<button class="cmd up-ff" data-k="${k}" title="${v.desc}">${k} 건설 (금 ${v.cost}·${v.turns}턴)</button>`).join(' ')}</p>` : ''}
     ${mine ? (() => { const nc = game.cities.find(c => game.canBreakLevee(u, c) === null); return nc ? `<p><button class="cmd" id="up-levee" data-c="${nc.id}">제방 파괴 — ${nc.name_ko} (내구 -15%·병사 -10%·2턴 침수)</button></p>` : ''; })() : ''}
     <p><button class="cmd" id="up-close">닫기</button></p>`;
@@ -736,6 +737,8 @@ function showUnitPanel(uid) {
   if ($('up-fire')) $('up-fire').onclick = () => armFire('fire', '계략 화계');
   if ($('up-conf')) $('up-conf').onclick = () => armFire('confuse', '계략 혼란');
   if ($('up-rumor')) $('up-rumor').onclick = () => armFire('rumor', '계략 위보');
+  if ($('up-sorcery')) $('up-sorcery').onclick = () => armFire('sorcery', '계략 요술');
+  if ($('up-thunder')) $('up-thunder').onclick = () => armFire('thunder', '계략 낙뢰');
   if ($('up-calm')) $('up-calm').onclick = () => armFire('calm', '계략 진정');
 }
 
