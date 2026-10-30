@@ -98,6 +98,12 @@ export const FIELD_FACS = {
   '토루':   { cost: 120, turns: 1, hp: 300, r: 1.4, desc: '적 육군이 반경 1.4 안에서 이동 속도 40%로 감소 (통행 방해)' },
   '투석대': { cost: 300, turns: 2, hp: 500, r: 3.0, desc: '매 턴 반경 3 안 적 부대 병력의 4%(최소 100) 피해' },
 };
+// R28: 함정 (설계 함정 항목: 불화살 함정·낙석 - 수치·효과 자체). 1회 발동 후 소멸, 적에게는 보이지 않음
+export const TRAPS = {
+  '불화살함정': { cost: 120, turns: 1, hp: 1, r: 0.9, desc: '밟은 적 육군 병력 8% 피해 + 혼란 1턴 (1회)' },
+  '낙석':       { cost: 100, turns: 1, hp: 1, r: 1.0, desc: '지나는 적 육군 병력 6% 피해 + 이동 속도 반감 1턴 (1회)' },
+};
+Object.assign(FIELD_FACS, TRAPS);
 export const FIELD_FAC_MAX = 10; // 세력당 최대 수
 export const FACILITIES = {
   '시장':   { cost: 200, turns: 2, desc: '매월 금 수입 +25%' },
@@ -311,9 +317,20 @@ export class Game {
         if (--f.left <= 0) { u.building = null; this.log(`【야전】${f.type} 건설 완료`, f.force === this.playerForce); }
         continue;
       }
-      for (const v of this.units) { // 적 육군이 시설을 공격 (병력의 2% 상당 소모)
+      if (!TRAPS[f.type]) for (const v of this.units) { // 적 육군이 시설을 공격 (병력의 2% 상당 소모)
         if (v.force === f.force || SHIP_TYPES.has(v.type) || Math.hypot(v.x - f.x, v.z - f.z) > 1.2) continue;
         f.hp -= Math.max(10, Math.round(v.troops * 0.02));
+      }
+      if (TRAPS[f.type]) { // R28: 함정 발동 (1회)
+        const v = this.units.find(x => x.force !== f.force && x.force >= 0 && !SHIP_TYPES.has(x.type) && Math.hypot(x.x - f.x, x.z - f.z) <= sp.r);
+        if (v) {
+          const d = Math.max(50, Math.round(v.troops * (f.type === '낙석' ? 0.06 : 0.08))); v.troops = Math.max(1, v.troops - d);
+          if (f.type === '불화살함정') v.conf = Math.max(v.conf ?? 0, 1); else v.slowT = 1;
+          this.log(`【야전】${v.label}이 ${f.type}에 걸려 ${d} 피해를 입었습니다`, f.force === this.playerForce || v.force === this.playerForce);
+          f.hp = 0;
+        }
+        if (f.hp <= 0) { list.splice(list.indexOf(f), 1); continue; }
+        continue;
       }
       if (f.type === '투석대') for (const v of this.units) {
         if (v.force === f.force || Math.hypot(v.x - f.x, v.z - f.z) > sp.r) continue;
@@ -324,7 +341,32 @@ export class Game {
       if (f.hp <= 0) { list.splice(list.indexOf(f), 1); this.log(`【야전】${f.type}이 파괴되었습니다`, f.force === this.playerForce); }
     }
   }
+  // === R28: 제방·수몰 (설계: 제방을 파괴하면 인근 도시 수몰 - 수치 자체) ===
+  hasLevee(c) { // 도시 반경 1.5 안에 강 타일이 있으면 제방 보유 (자체 판정)
+    if (c._lev === undefined) { c._lev = false; for (let dx = -1.5; dx <= 1.5 && !c._lev; dx += 0.3) for (let dz = -1.5; dz <= 1.5; dz += 0.3) if (isRiverAt(c.lon + dx, c.lat + dz)) { c._lev = true; break; } }
+    return c._lev;
+  }
+  canBreakLevee(u, c) {
+    if (!u || !c || u.force < 0 || c.force == null || c.force === u.force || SHIP_TYPES.has(u.type) || (u.conf ?? 0) > 0) return '제방을 파괴할 수 없는 부대/도시';
+    if (!this.hasLevee(c)) return '이 도시 근처에는 파괴할 제방이 없습니다';
+    if (c.leveeBroken) return '이미 제방이 무너져 있습니다';
+    if (Math.hypot(u.x - c.lon, u.z - c.lat) > 2.0) return '도시에서 너무 멉니다';
+    return null;
+  }
+  breakLevee(uid, cityId) {
+    const u = this.units.find(x => x.id === uid), c = this.cityById[cityId]; const why = this.canBreakLevee(u, c); if (why) { this.lastFieldWhy = why; return false; }
+    c.leveeBroken = true; c.flood = 2; const dh = Math.round(c.maxhp * 0.15), dt = Math.round(c.troops * 0.10);
+    c.hp = Math.max(1, c.hp - dh); c.troops = Math.max(0, c.troops - dt);
+    this.log(`【수공】${josa(u.label, ['이','가'])} ${c.name_ko}의 제방을 무너뜨렸습니다! 내구 -${dh}, 병사 -${dt} (이후 2턴 침수)`, u.force === this.playerForce || c.force === this.playerForce);
+    return true;
+  }
+  repairLevee(cityId) { // 금 300으로 복구 (소유 세력)
+    const c = this.cityById[cityId]; if (!c || c.force == null || !c.leveeBroken || c.gold < 300) return false;
+    c.gold -= 300; c.leveeBroken = false; c.flood = 0; this.log(`【수공】${c.name_ko} 제방 보수 완료 (금 300)`, c.force === this.playerForce); return true;
+  }
+  floodTurn() { for (const c of this.cities) if ((c.flood ?? 0) > 0) { c.flood--; const d = Math.round(c.troops * 0.03); c.troops = Math.max(0, c.troops - d); this.log(`【수공】${josa(c.name_ko, ['이','가'])} 침수 중 — 병사 ${d} 감소`, c.force === this.playerForce); } }
   fieldSlow(u) { // 토루 통행 방해 배율
+    if (u.slowT > 0) { u.slowT--; return 0.5; } // R28: 낙석
     for (const f of this.fieldFacs ?? []) if (f.type === '토루' && f.left <= 0 && f.force !== u.force && Math.hypot(u.x - f.x, u.z - f.z) <= FIELD_FACS['토루'].r) return 0.4;
     return 1;
   }
@@ -332,8 +374,10 @@ export class Game {
     if (this.turn % 4 !== 0) return;
     for (const u of this.units) {
       if (u.force < 0 || (u.force === this.playerForce && !this.delegated) || u.building || u.tx != null) continue;
+      const nc = this.cities.find(c => c.force != null && c.force !== u.force && this.canBreakLevee(u, c) === null);
+      if (nc && this.breakLevee(u.id, nc.id)) continue; // R28: AI도 같은 breakLevee
       if (!this.units.some(v => v.force !== u.force && v.force !== -1 && Math.hypot(v.x - u.x, v.z - u.z) < 4)) continue;
-      for (const t of ['투석대', '채', '진', '토루']) { if (this.buildField(u.id, t)) break; }
+      for (const t of ['투석대', '채', '진', '토루', '불화살함정', '낙석']) { if (this.buildField(u.id, t)) break; }
     }
   }
   // === 기교 (자체 수치) ===
@@ -823,7 +867,7 @@ export class Game {
     // 도시 공성 처리는 stepUnit 내부
     // 야전: 접촉한 적 부대끼리 교전
     this.resolveFieldBattles();
-    this.aiFieldBuild(); this.fieldTurn(); // R26: 야전 시설
+    this.aiFieldBuild(); this.fieldTurn(); this.floodTurn(); // R26: 야전 시설
     // 수입: 매 3순(한 달)
     if (this.dan === 3) {
       for (const c of this.cities) {
