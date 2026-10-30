@@ -1,7 +1,7 @@
 // 진입점: 화면 전환·UI·지도 연결
-import { Map3D, toWorld } from './map3d.js?v=r18';
-import { Game, SAVE_KEY, forceColor, UNIT_TYPES, josa, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL } from './game.js?v=r18';
-import { aiThink } from './ai.js?v=r18';
+import { Map3D, toWorld } from './map3d.js?v=r19';
+import { Game, SAVE_KEY, forceColor, UNIT_TYPES, josa, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL } from './game.js?v=r19';
+import { aiThink } from './ai.js?v=r19';
 
 const $ = id => document.getElementById(id);
 let DATA = null, game = null, map = null, selectedUnit = null, autoTimer = null, pendingFire = null; // R15: 직접 전법·계략 대기
@@ -9,7 +9,7 @@ let DATA = null, game = null, map = null, selectedUnit = null, autoTimer = null,
 async function loadData() {
   const [officers, skills, portraits, s184, s190, s251] = await Promise.all(
     ['data/officers670.json','data/skills.json','data/portraits.json','data/scenario-184.json','data/scenario-190.json','data/scenario-251.json']
-      .map(u => fetch(u + '?v=r18').then(r => r.json())));
+      .map(u => fetch(u + '?v=r19').then(r => r.json())));
   const byIdx = {};
   for (const o of officers) byIdx[o.idx] = o;
   DATA = { officers: byIdx, skills, portraits, scenarios: { '184': s184, '190': s190, '251': s251 } };
@@ -273,8 +273,8 @@ function onPick(nx, ny) {
   if (pendingFire) { // R15: 직접 전법·계략 대상 선택
     const pf = pendingFire; pendingFire = null;
     let ok = false;
-    if (hit && hit.type === 'unit') ok = pf.kind === 'tactic' ? game.fireTactic(pf.uid, { type: 'unit', id: hit.id }) : game.fireStrat(pf.uid, pf.kind, { type: 'unit', id: hit.id });
-    else if (hit && hit.type === 'city') ok = pf.kind === 'tactic' ? game.fireTactic(pf.uid, { type: 'city', id: hit.id }) : game.fireStrat(pf.uid, pf.kind, { type: 'city', id: hit.id });
+    if (hit && hit.type === 'unit') ok = pf.kind === 'tactic' ? game.fireTactic(pf.uid, { type: 'unit', id: hit.id }, pf.tid) : game.fireStrat(pf.uid, pf.kind, { type: 'unit', id: hit.id });
+    else if (hit && hit.type === 'city') ok = pf.kind === 'tactic' ? game.fireTactic(pf.uid, { type: 'city', id: hit.id }, pf.tid) : game.fireStrat(pf.uid, pf.kind, { type: 'city', id: hit.id });
     selectedUnit = null;
     if (ok) { refreshAll(); if (game.units.find(x => x.id === pf.uid)) { selectedUnit = pf.uid; showUnitPanel(pf.uid); } else $('panel').classList.add('hidden'); }
     else { game.log('대상이 유효하지 않습니다 (인접한 적 부대·도시만 가능)', true); refreshLog(); showUnitPanel(pf.uid); }
@@ -640,18 +640,18 @@ function showUnitPanel(uid) {
     <p>소속: ${game.forceName(u.force)} · 병력 ${u.troops.toLocaleString()}<br>
     부장: ${u.officers.map(i => DATA.officers[i].name_ko).join(', ')}<br>기력 ${u.qi ?? 100} / 100${(u.conf ?? 0) > 0 ? ` · <span style='color:#e66'>혼란 ${u.conf}턴</span>` : ''}</p>
     ${mine ? '<p style="color:#ffd700">목표 도시를 클릭하면 이동 명령을 내립니다.</p>' : ''}
-    ${mine && game.tacticInfo?.(u) ? `<p><button class="cmd" id="up-tac">전법 ${game.tacticInfo(u).tac.name} (기력 ${game.tacticInfo(u).tac.qi})</button></p>` : ''}
+    ${mine && game.tacticInfo?.(u) ? `<p>${game.tacticInfo(u).opts.map(o => `<button class="cmd up-tac" data-tid="${o.id}">전법 ${o.name} (기력 ${o.qi})</button>`).join(' ')}</p>` : ''}
     ${mine && (u.conf ?? 0) <= 0 && (u._stratTurn ?? -1) !== game.turn && u.officers.some(i => (DATA.officers[i]?.int ?? 0) >= 75) && (u.qi ?? 100) >= 30 ? '<p><button class="cmd" id="up-fire">계략 화계 (기력 30)</button></p>' : ''}
     ${mine && (u.conf ?? 0) <= 0 && (u._stratTurn ?? -1) !== game.turn && u.officers.some(i => (DATA.officers[i]?.int ?? 0) >= 80) && (u.qi ?? 100) >= 25 ? '<p><button class="cmd" id="up-conf">계략 혼란 (기력 25)</button></p>' : ''}
     ${mine && (u.conf ?? 0) <= 0 && (u._stratTurn ?? -1) !== game.turn && u.officers.some(i => (DATA.officers[i]?.int ?? 0) >= 80) && (u.qi ?? 100) >= 15 ? '<button class="cmd" id="up-rumor">계략 위보 (기력 15)</button> <button class="cmd" id="up-calm">계략 진정 (기력 10)</button>' : ''}
     <p><button class="cmd" id="up-close">닫기</button></p>`;
   $('up-close').onclick = () => { $('panel').classList.add('hidden'); selectedUnit = null; pendingFire = null; };
-  const armFire = (kind, label) => { // R15: 대상 선택 모드 진입
-    pendingFire = { uid: u.id, kind };
+  const armFire = (kind, label, tid = null) => { // R15: 대상 선택 모드 진입
+    pendingFire = { uid: u.id, kind, tid };
     p.innerHTML = `<h3>${u.label} — ${label}</h3><p style="color:#ffd700">인접한 적 부대나 도시를 클릭하면 발동합니다.</p><p><button class="cmd" id="up-cancel">취소</button></p>`;
     $('up-cancel').onclick = () => { pendingFire = null; showUnitPanel(u.id); };
   };
-  if ($('up-tac')) $('up-tac').onclick = () => armFire('tactic', `전법 ${game.tacticInfo(u).tac.name}`);
+  document.querySelectorAll('#panel .up-tac').forEach(b => { b.onclick = () => { const o = game.tacticInfo(u).opts.find(x => x.id === b.dataset.tid); armFire('tactic', `전법 ${o.name}`, o.id); }; });
   if ($('up-fire')) $('up-fire').onclick = () => armFire('fire', '계략 화계');
   if ($('up-conf')) $('up-conf').onclick = () => armFire('confuse', '계략 혼란');
   if ($('up-rumor')) $('up-rumor').onclick = () => armFire('rumor', '계략 위보');
