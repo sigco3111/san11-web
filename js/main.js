@@ -390,7 +390,7 @@ function showFacilities(c) {
   const mergePairs = Object.entries(mergeable).filter(([, v]) => v.length >= 2);
   if (mergePairs.length) {
     html += '<h3 style="margin-top:10px">흡수합병 <small>(같은 시설 2개 → Lv+1 · 금 200·AP 10 · 개발지 1개 회수, 최대 Lv3)</small></h3>';
-    for (const [t, v] of mergePairs) html += `<div class="officer"><div><div class="nm">${t} × ${v.length}</div><div class="st">${spec ? '' : ''}${FACILITIES[t].desc}</div></div><button class="cmd cmd-merge" data-t="${t}">합병</button></div>`;
+    for (const [t, v] of mergePairs) html += `<div class="officer"><div><div class="nm">${t} × ${v.length}</div><div class="st">${FACILITIES[t].desc}</div></div><button class="cmd cmd-merge" data-t="${t}">합병</button></div>`;
   }
   html += '<h3 style="margin-top:10px">건설</h3>';
   const polTop = [...new Set(c.officers)].sort((a, b) => (DATA.officers[b]?.pol ?? 0) - (DATA.officers[a]?.pol ?? 0)).slice(0, 3);
