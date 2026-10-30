@@ -344,7 +344,7 @@ function showCityPanel(c) {
     <p>소속: ${owner}${legionTag} · 태수: ${c.taesu != null ? DATA.officers[c.taesu].name_ko : '-'}<br>
     병사 ${c.troops.toLocaleString()} · 내구 ${c.hp}/${c.maxhp}<br>
     금 ${c.gold.toLocaleString()} · 병량 ${c.food.toLocaleString()}<br>
-    상업 ${c.commerce} · 농업 ${c.farm}${c.metropolis ? ' · 대도시' : ''}${c.specialty.length ? ' · 특색: '+c.specialty.join(',') : ''}<br>
+    상업 ${c.commerce} · 농업 ${c.farm}${c.metropolis ? ' · 대도시' : ''}${c.specialty.length ? ' · 특색: '+c.specialty.join(',') : ''} · 치안 ${c.security ?? 80}${c.disaster ? ` <span style="color:#f66">재해: ${c.disaster.type}</span>` : ''}<br>
     병장: 창${c.spears} 극${c.pikes} 노${c.bows} 군마${c.horses} · 병기: 충거${c.rams ?? 0} 정란${c.towers ?? 0} 목수${c.beasts ?? 0} 투석${c.catapults ?? 0} · 선박: 주가${c.junks ?? 0} 누선${c.lous ?? 0} 투함${c.dous ?? 0}</p>`;
   if (mine) {
     if (game.cityFac(c, '공방').length) {
@@ -373,6 +373,7 @@ function showCityPanel(c) {
       <button class="cmd" id="cmd-tech">기교 연구</button>
       <button class="cmd" id="cmd-fac">시설 건설</button>
       <button class="cmd" id="cmd-search">수색 (금100)</button>
+      <button class="cmd" id="cmd-patrol">치안 순찰 (금100·AP20)</button>
       <button class="cmd" id="cmd-trade">상인</button>
       <button class="cmd" id="cmd-diplo">외교</button>
       <button class="cmd" id="cmd-advisor">군사</button>
@@ -396,6 +397,7 @@ function showCityPanel(c) {
     $('cmd-dev-c').onclick = () => { game.develop(c.id, 'commerce'); refreshAll(); showCityPanel(c); };
     $('cmd-dev-f').onclick = () => { game.develop(c.id, 'farm'); refreshAll(); showCityPanel(c); };
     $('cmd-recruit').onclick = () => { game.recruit(c.id); refreshAll(); showCityPanel(c); };
+    $('cmd-patrol').onclick = () => { game.patrol(c.id); refreshAll(); showCityPanel(c); };
     p.querySelectorAll('.cmd-siege').forEach(b => b.onclick = () => { game.produceSiege(c.id, b.dataset.k); refreshAll(); showCityPanel(c); });
     p.querySelectorAll('.cmd-ship').forEach(b => b.onclick = () => { game.produceShip(c.id, b.dataset.k); refreshAll(); showCityPanel(c); });
     $('cmd-dispatch').onclick = () => showDispatch(c);
