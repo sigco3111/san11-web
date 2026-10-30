@@ -144,8 +144,9 @@ function showDuel() {
       <p><button class="cmd" id="duel-go">합 진행</button> <button class="cmd" id="duel-auto">위임 (자동)</button></p></div>`;
     let selStance = P.stance, selCmd = null;
     m.querySelectorAll('.duel-stance').forEach(b => b.onclick = () => { selStance = b.dataset.s; m.querySelectorAll('.duel-stance').forEach(x => x.style.borderColor = ''); b.style.borderColor = '#ffd700'; });
-    m.querySelectorAll('.duel-cmd').forEach(b => b.onclick = () => { selCmd = b.dataset.c; game.duelTick(d, { stance: selStance, cmd: selCmd }, game.duelPolicy(d, ek)); after(); });
-    $('duel-go').onclick = () => { game.duelTick(d, { stance: selStance, cmd: null }, game.duelPolicy(d, ek)); after(); };
+    const playerTick = sel => game.duelTick(d, pk === 'a' ? sel : game.duelPolicy(d, 'a'), pk === 'a' ? game.duelPolicy(d, 'b') : sel); // 플레이어 선택은 플레이어 측(pk)에 배정
+    m.querySelectorAll('.duel-cmd').forEach(b => b.onclick = () => { selCmd = b.dataset.c; playerTick({ stance: selStance, cmd: selCmd }); after(); });
+    $('duel-go').onclick = () => { playerTick({ stance: selStance, cmd: null }); after(); };
     $('duel-auto').onclick = () => { game.duelAuto(d); after(); };
   };
   const after = () => {
@@ -157,7 +158,7 @@ function showDuel() {
 function showDebate() { // R11: 설전 모달
   const d = game.pendingDebate; if (!d) return;
   const m = $('modal'); m.classList.remove('hidden');
-  const pk = game.officers[d.a.o].state?.force === game.playerForce ? 'a' : 'b', ek = pk === 'a' ? 'b' : 'a';
+  const pk = d.ctx?.fid === game.playerForce ? 'a' : (d.ctx?.tid === game.playerForce ? 'b' : 'a'), ek = pk === 'a' ? 'b' : 'a'; // 제의측/대상측 세력으로 플레이어 측 판정
   const render = () => {
     const P = d[pk], E = d[ek];
     const po = game.officers[P.o], eo = game.officers[E.o];
@@ -177,7 +178,7 @@ function showDebate() { // R11: 설전 모달
       <p>화술: ${Object.keys(game.debateCardList()).map(cardBtn).join(' ')}</p>
       <p style="font-size:11px;color:#999">반박=상대 공격 무효+반격 · 경청=논리 회복 · 도발=다음 화술 봉인 · 🔒는 지력 부족(서적 보유 시 해금)</p>
       <p><button class="cmd" id="debate-auto">위임 (자동)</button></p></div>`;
-    m.querySelectorAll('.debate-card').forEach(b => b.onclick = () => { game.debateTick(d, b.dataset.c, game.debatePolicy(d, ek)); after(); });
+    m.querySelectorAll('.debate-card').forEach(b => b.onclick = () => { const sel = b.dataset.c; game.debateTick(d, pk === 'a' ? sel : game.debatePolicy(d, 'a'), pk === 'a' ? game.debatePolicy(d, 'b') : sel); after(); }); // 플레이어 카드는 플레이어 측(pk)에 배정
     $('debate-auto').onclick = () => { game.debateAuto(d); after(); };
   };
   const after = () => {
