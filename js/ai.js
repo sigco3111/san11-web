@@ -65,11 +65,19 @@ export function aiThink(game, fid, legion = null) { // legion 지정 시 그 군
     c.facilities = c.facilities ?? [];
     if (c.facilities.length >= game.facSlots(c) || c.gold < 900) continue;
     const have = t => c.facilities.some(x => x.type === t);
-    const pick = !have('시장') ? '시장' : !have('농장') ? '농장' : !have('병영') && c.gold > 2000 ? '병영' : null;
+    const pick = !have('시장') ? '시장' : !have('농장') ? '농장' : !have('병영') && c.gold > 2000 ? '병영' : !have('대장간') && c.gold > 3000 ? '대장간' : !have('공방') && c.gold > 4500 ? '공방' : !have('조선소') && c.gold > 4500 ? '조선소' : null;
     if (pick) {
       const builders = [...new Set(c.officers)].sort((x, y) => (game.officers[y]?.pol ?? 0) - (game.officers[x]?.pol ?? 0)).slice(0, 3);
       game.buildFacility(c.id, pick, builders);
     }
+  }
+  // 2.4) 병기·선박 생산: 플레이어와 같은 비용·규칙 (금이 아주 넉넉할 때만)
+  for (const c of cities) {
+    if (f.ap < 20 || c.gold < 6000) continue;
+    if (game.cityFac(c, '공방').length && (c.rams ?? 0) + (c.towers ?? 0) + (c.beasts ?? 0) + (c.catapults ?? 0) < 4)
+      game.produceSiege(c.id, (c.catapults ?? 0) <= (c.rams ?? 0) ? 'catapult' : 'ram');
+    if (game.cityFac(c, '조선소').length && (c.junks ?? 0) + (c.lous ?? 0) + (c.dous ?? 0) < 3)
+      game.produceShip(c.id, (c.dous ?? 0) <= (c.lous ?? 0) ? 'dou' : 'lou');
   }
   // 2.5) 인재 등용: 도시의 재야 무장을 같은 규칙으로 영입
   for (const c of cities) {
@@ -118,6 +126,7 @@ export function aiThink(game, fid, legion = null) { // legion 지정 시 그 군
         if (pick.length > 0) {
           let type = 'sword';
           if (c.spears >= n) type = 'spear'; else if (c.horses >= n) type = 'cav'; else if (c.pikes >= n) type = 'pike'; else if (c.bows >= n) type = 'bow';
+          else if ((c.catapults ?? 0) > 0) type = 'catapult'; else if ((c.rams ?? 0) > 0) type = 'ram'; else if ((c.beasts ?? 0) > 0) type = 'beast'; else if ((c.towers ?? 0) > 0) type = 'tower'; // 병기: 공성 특화
           const u = game.dispatch(c.id, pick, n, type);
           if (u) game.orderUnit(u.id, best.id);
         }
