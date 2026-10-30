@@ -95,7 +95,7 @@ export function aiThink(game, fid, legion = null) { // legion 지정 시 그 군
     for (const u of game.units) if (u.force === fid && cnt[u.type] != null) cnt[u.type]++;
     const mainType = Object.entries(cnt).sort((x, y) => y[1] - x[1])[0][0];
     const pref = { spear: '창병', pike: '극병', bow: '노병', cav: '기병' }[mainType];
-    if (game.turn % 3 === 0 && game.researchArt(fid, '난소행군')) { /* R23: AI도 같은 비용으로 개별 기교 연구 */ }
+    if (game.turn % 3 === 0 && game.researchNextArt(fid)) { /* R23: AI도 같은 비용으로 개별 기교 연구 */ }
     else for (const b of [pref, '연병', '방위', '화공', '발명', '창병', '극병', '노병', '기병']) {
       if (game.researchTech(fid, b)) break;
     }
