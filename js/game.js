@@ -91,6 +91,14 @@ export const TECH_DESC = {
 const TYPE2TECH = { spear: '창병', pike: '극병', bow: '노병', cav: '기병' };
 
 // === 내정시설 (자체 수치) ===
+// R26: 야전 시설 (설계 군사시설·함정 항목의 일부 - 진·채·토루·투석대. 비용·수치·효과 모두 이 게임 자체 규칙)
+export const FIELD_FACS = {
+  '진':     { cost: 150, turns: 1, hp: 400, r: 3.0, desc: '반경 3 안 아군 부대가 받는 피해 -8%, 매 턴 기력 +3' },
+  '채':     { cost: 350, turns: 2, hp: 900, r: 3.5, desc: '반경 3.5 안 아군 부대가 받는 피해 -15%, 매 턴 기력 +5' },
+  '토루':   { cost: 120, turns: 1, hp: 300, r: 1.4, desc: '적 육군이 반경 1.4 안에서 이동 속도 40%로 감소 (통행 방해)' },
+  '투석대': { cost: 300, turns: 2, hp: 500, r: 3.0, desc: '매 턴 반경 3 안 적 부대 병력의 4%(최소 100) 피해' },
+};
+export const FIELD_FAC_MAX = 10; // 세력당 최대 수
 export const FACILITIES = {
   '시장':   { cost: 200, turns: 2, desc: '매월 금 수입 +25%' },
   '농장':   { cost: 200, turns: 2, desc: '매월 병량 수입 +25%' },
@@ -216,6 +224,7 @@ export class Game {
     const hanCap = this.cities.find(c => c.name_ko === '낙양'); // R17: 황제 옹립 (자체 설계, 설계안 97·102행) — 184·190은 후한 황제가 낙양에 존재, 251은 부재. 소재 도시 보유 세력이 옹립한 것으로 간주
     this.emperor = (this.scenId === '184' || this.scenId === '190') && hanCap ? { city: hanCap.id, holder: hanCap.force ?? null } : null;
     this.units = []; this.nextUnitId = 1;
+    this.fieldFacs = []; this.nextFacId = 1; // R26
     this.diplo = {}; // 세력 간 외교
     this.itemPool = ITEMS.map(i => i.id); // 미발견 명품: 'a_b'(a<b) → { v: 관계 0-100, allianceUntil, aidTurn }
     this.playerForce = playerForceId;
@@ -264,7 +273,69 @@ export class Game {
     if (u.type !== 'bow' && this.unitHasSkill(u, '격전')) m *= 1.1;
     return m;
   }
-  unitDefMult(u) { return this.unitHasSkill(u, '강직') ? 0.85 : 1; }
+
+  unitDefMult(u) { return (this.unitHasSkill(u, '강직') ? 0.85 : 1) * this.fieldDefMult(u); }
+  fieldDefMult(u) { // R26: 진·채 (중첩 없이 가장 큰 쪽)
+    let best = 1;
+    for (const f of this.fieldFacs ?? []) { if (f.force !== u.force || f.left > 0) continue; const sp = FIELD_FACS[f.type]; if (!sp || (f.type !== '진' && f.type !== '채') || Math.hypot(u.x - f.x, u.z - f.z) > sp.r) continue; best = Math.min(best, f.type === '채' ? 0.85 : 0.92); }
+    return best;
+  }
+  canBuildField(u, type) { // 야전 시설 건설 가능 여부 (불가 사유 반환, 가능하면 null)
+    const sp = FIELD_FACS[type]; if (!sp) return '알 수 없는 시설';
+    if (!u || u.force < 0 || SHIP_TYPES.has(u.type)) return '육군 부대만 건설할 수 있습니다';
+    if (u.building) return '이미 건설 중입니다';
+    if ((u.conf ?? 0) > 0) return '혼란 중에는 건설할 수 없습니다';
+    if (isWaterAt(u.x, u.z)) return '물 위에는 지을 수 없습니다';
+    if ((this.fieldFacs ?? []).filter(f => f.force === u.force).length >= FIELD_FAC_MAX) return `세력당 최대 ${FIELD_FAC_MAX}개입니다`;
+    if ((this.fieldFacs ?? []).some(f => Math.hypot(f.x - u.x, f.z - u.z) < 1.0)) return '다른 시설과 너무 가깝습니다';
+    if (this.units.some(v => v.force !== u.force && Math.hypot(v.x - u.x, v.z - u.z) < 1.0)) return '적 부대가 너무 가깝습니다';
+    const cap = this.forceCities(u.force).sort((a, b) => b.gold - a.gold)[0];
+    if (!cap || cap.gold < sp.cost) return `금이 부족합니다 (${sp.cost})`;
+    return null;
+  }
+  buildField(uid, type) { // 부대가 제자리에서 건설 (이동하면 취소). 성공 시 true
+    const u = this.units.find(x => x.id === uid); const why = this.canBuildField(u, type); if (why) { this.lastFieldWhy = why; return false; }
+    const sp = FIELD_FACS[type]; const cap = this.forceCities(u.force).sort((a, b) => b.gold - a.gold)[0];
+    cap.gold -= sp.cost; this.fieldFacs = this.fieldFacs ?? [];
+    this.fieldFacs.push({ id: this.nextFacId = (this.nextFacId ?? 1) + 1, type, force: u.force, x: u.x, z: u.z, hp: sp.hp, left: sp.turns, uid: u.id });
+    u.building = type; u.path = []; u.tx = null; u.tz = null; u.targetCity = null;
+    this.log(`【야전】${josa(u.label, ['이','가'])} ${josaRo(type)} 건설을 시작했습니다 (금 ${sp.cost}·${sp.turns}턴)`, u.force === this.playerForce);
+    return true;
+  }
+  fieldTurn() { // endTurn 말미: 건설 진행, 투석대 사격, 적 공성 소모, 지원 효과
+    const list = this.fieldFacs ?? [];
+    for (const f of [...list]) {
+      const sp = FIELD_FACS[f.type]; const u = this.units.find(x => x.id === f.uid);
+      if (f.left > 0) {
+        if (!u || u.tx != null || (u.conf ?? 0) > 0) { list.splice(list.indexOf(f), 1); if (u) u.building = null; this.log(`【야전】${f.type} 건설이 중단되었습니다`, f.force === this.playerForce); continue; }
+        if (--f.left <= 0) { u.building = null; this.log(`【야전】${f.type} 건설 완료`, f.force === this.playerForce); }
+        continue;
+      }
+      for (const v of this.units) { // 적 육군이 시설을 공격 (병력의 2% 상당 소모)
+        if (v.force === f.force || SHIP_TYPES.has(v.type) || Math.hypot(v.x - f.x, v.z - f.z) > 1.2) continue;
+        f.hp -= Math.max(10, Math.round(v.troops * 0.02));
+      }
+      if (f.type === '투석대') for (const v of this.units) {
+        if (v.force === f.force || Math.hypot(v.x - f.x, v.z - f.z) > sp.r) continue;
+        const d = Math.max(100, Math.round(v.troops * 0.04)); v.troops = Math.max(1, v.troops - d);
+        if (f._logT !== this.turn) { f._logT = this.turn; this.log(`【야전】투석대가 ${v.label}에 ${d} 피해를 입혔습니다`, f.force === this.playerForce || v.force === this.playerForce); }
+      }
+      if (f.type === '진' || f.type === '채') for (const v of this.units) if (v.force === f.force && Math.hypot(v.x - f.x, v.z - f.z) <= sp.r) v.qi = Math.min(100, (v.qi ?? 100) + (f.type === '채' ? 5 : 3));
+      if (f.hp <= 0) { list.splice(list.indexOf(f), 1); this.log(`【야전】${f.type}이 파괴되었습니다`, f.force === this.playerForce); }
+    }
+  }
+  fieldSlow(u) { // 토루 통행 방해 배율
+    for (const f of this.fieldFacs ?? []) if (f.type === '토루' && f.left <= 0 && f.force !== u.force && Math.hypot(u.x - f.x, u.z - f.z) <= FIELD_FACS['토루'].r) return 0.4;
+    return 1;
+  }
+  aiFieldBuild() { // AI도 같은 buildField로 건설: 적이 가까운 정지 부대가 4턴마다 투석대/채/진/토루 순으로 시도
+    if (this.turn % 4 !== 0) return;
+    for (const u of this.units) {
+      if (u.force < 0 || (u.force === this.playerForce && !this.delegated) || u.building || u.tx != null) continue;
+      if (!this.units.some(v => v.force !== u.force && v.force !== -1 && Math.hypot(v.x - u.x, v.z - u.z) < 4)) continue;
+      for (const t of ['투석대', '채', '진', '토루']) { if (this.buildField(u.id, t)) break; }
+    }
+  }
   // === 기교 (자체 수치) ===
   techLv(fid, b) { return this.forces[fid]?.techs?.[b] ?? 0; }
   unitTechAtk(u) { const b = TYPE2TECH[u.type]; return b ? 1 + 0.05 * this.techLv(u.force, b) : 1; }
@@ -752,6 +823,7 @@ export class Game {
     // 도시 공성 처리는 stepUnit 내부
     // 야전: 접촉한 적 부대끼리 교전
     this.resolveFieldBattles();
+    this.aiFieldBuild(); this.fieldTurn(); // R26: 야전 시설
     // 수입: 매 3순(한 달)
     if (this.dan === 3) {
       for (const c of this.cities) {
@@ -951,6 +1023,7 @@ export class Game {
     const dx = aimX - u.x, dz = aimZ - u.z;
     const d = Math.hypot(dx, dz);
     if ((u.path?.length || d > 1.2) && d > 1e-6) {
+      if (!SHIP_TYPES.has(u.type)) speed *= this.fieldSlow(u); // R26: 토루
       if (!SHIP_TYPES.has(u.type) && isRiverAt(u.x, u.z)) speed *= this.riverMult(u); // R17/R23: 육군 강 도하 감속 - 깊은 강 0.35·여울 0.6·난소행군 0.8 (자체 수치)
       const nx = u.x + dx/d*speed, nz = u.z + dz/d*speed;
       if (SHIP_TYPES.has(u.type) && !isWaterAt(nx, nz)) { // 수군: 강·바다에서만 기동
@@ -1637,7 +1710,7 @@ export class Game {
     try {
       const data = {
         scenId: this.scenId, year: this.year, month: this.month, dan: this.dan, turn: this.turn, emperor: this.emperor, // R17: 옹립 상태 영속 (구 세이브는 생성자 기본값으로 복원)
-        cities: this.cities, forces: this.forces, units: this.units, nextUnitId: this.nextUnitId,
+        cities: this.cities, forces: this.forces, units: this.units, nextUnitId: this.nextUnitId, fieldFacs: this.fieldFacs, nextFacId: this.nextFacId,
         playerForce: this.playerForce, delegated: this.delegated, deadAck: this.deadAck, logs: this.logs.slice(-60), diplo: this.diplo, itemPool: this.itemPool, chronicle: this.chronicle, over: this.over, unified: this.unified, // R14
         officerStates: Object.fromEntries(Object.entries(this.officers).filter(([,o]) => o.state).map(([i,o]) => [i, o.state])),
       };
