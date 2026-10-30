@@ -80,6 +80,35 @@ export class Game {
     this.log(`${c.name_ko} 징병 +${n} (담당 매력 ${best})`, c.force === this.playerForce);
     return true;
   }
+  freeOfficers(cityId) { // 그 도시에 머무는 재야 무장
+    return Object.values(this.officers).filter(o => o.state?.status === 'free' && o.state.city === cityId);
+  }
+  recruitChance(cityId, officerIdx) { // 등용 성공률 (자체 수치): 사자 매력·상대 매력·충성·군주 매력 반영
+    const c = this.cityById[cityId], t = this.officers[officerIdx];
+    if (!c || c.force == null || !this.forces[c.force]?.alive || !c.officers.length) return 0;
+    if (!t?.state || t.state.status !== 'free' || t.state.city !== cityId) return 0;
+    const envoy = Math.max(...c.officers.map(i => this.officers[i].chr));
+    const ruler = this.officers[this.forces[c.force].ruler]?.chr ?? 50;
+    const loyal = t.state.loyal ?? 70;
+    return Math.max(0.1, Math.min(0.9, 0.45 + (envoy - t.chr)/200 + (ruler - 50)/500 - loyal/400));
+  }
+  recruitOfficer(cityId, officerIdx) { // 재야 무장 등용: 금 100, AP 20 (자체 규칙)
+    const c = this.cityById[cityId], f = this.forces[c.force];
+    if (c.gold < 100 || f.ap < 20) return false;
+    const p = this.recruitChance(cityId, officerIdx);
+    if (p <= 0) return false;
+    const t = this.officers[officerIdx];
+    const envoy = Math.max(...c.officers.map(i => this.officers[i].chr));
+    c.gold -= 100; f.ap -= 20;
+    if (Math.random() < p) {
+      t.state.status = 'serving'; t.state.force = c.force;
+      c.officers.push(officerIdx);
+      this.log(`【등용】${t.name_ko}이(가) 【${this.forceName(c.force)}】에 등용되었습니다 (${c.name_ko}, 사자 매력 ${envoy})`, true);
+      return true;
+    }
+    this.log(`${c.name_ko}의 ${t.name_ko} 등용에 실패했습니다`, c.force === this.playerForce);
+    return false;
+  }
   moveOfficers(fromCity, toCity, idxs) {
     const a = this.cityById[fromCity], b = this.cityById[toCity], f = this.forces[a.force];
     if (f.ap < 20) return false;
