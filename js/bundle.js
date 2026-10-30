@@ -1497,10 +1497,11 @@ function showDiplomacy(c) {
     const v = game.relation(c.force, t.id);
     const stage = game.relStage(v);
     const allied = game.isAllied(c.force, t.id);
+    const truce = game.isTruce(c.force, t.id);
     const d = game.diploOf(c.force, t.id);
     const tCities = game.cities.filter(x => x.force === t.id).length;
     const aidCool = game.turn - (d.aidTurn ?? -99);
-    html += `<div class="officer"><div><div class="nm">${game.forceName(t.id)} <span class="st">${v} ${stage}${allied ? ` · 동맹(${d.allianceUntil - game.turn}턴 남음)` : ''}</span></div>`;
+    html += `<div class="officer"><div><div class="nm">${game.forceName(t.id)} <span class="st">${v} ${stage}${allied ? ` · 동맹(${d.allianceUntil - game.turn}턴 남음)` : ''}${truce ? ` · 정전(${d.truceUntil - game.turn}턴)` : ''}</span></div>`;
     html += `<div class="st">`;
     html += `<button class="cmd dip-act" data-a="envoy" data-t="${t.id}" ${myF.ap < 20 || c.gold < 500 ? 'disabled' : ''}>친선사절(금500)</button> `;
     if (!allied && v >= 60) html += `<button class="cmd dip-act" data-a="ally" data-t="${t.id}" ${myF.ap < 30 || c.gold < 1000 ? 'disabled' : ''}>동맹 제의(금1000)</button> `;
