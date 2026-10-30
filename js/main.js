@@ -641,7 +641,7 @@ async function boot() {
       const d = JSON.parse(localStorage.getItem(SAVE_KEY));
       const g = new Game(DATA.scenarios[d.scenId], DATA.officers, DATA.skills, d.playerForce);
       window.__game = g; // 테스트 훅
-      Object.assign(g, { year: d.year, month: d.month, dan: d.dan, turn: d.turn, cities: d.cities, forces: d.forces, units: d.units, nextUnitId: d.nextUnitId, playerForce: d.playerForce, delegated: d.delegated, logs: d.logs, deadAck: d.deadAck, chronicle: d.chronicle ?? [], over: d.over ?? false }); // R14
+      Object.assign(g, { year: d.year, month: d.month, dan: d.dan, turn: d.turn, cities: d.cities, forces: d.forces, units: d.units, nextUnitId: d.nextUnitId, playerForce: d.playerForce, delegated: d.delegated, logs: d.logs, deadAck: d.deadAck, chronicle: d.chronicle ?? [], over: d.over ?? false, unified: d.unified ?? d.over ?? false }); // R14: over로 저장된 통일 세이브 호환
       g.cityById = {}; g.cities.forEach(c => g.cityById[c.id] = c);
       for (const c of g.cities) c.officers = [...new Set(c.officers ?? [])]; // 레거시 세이브 중복 무장 정리
       g.diplo = d.diplo ?? {};
