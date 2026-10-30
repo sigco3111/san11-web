@@ -69,7 +69,8 @@ export const STRATS = {
   fire:    { name: '화계', qi: 30, minInt: 75 },            // 공격측: 수비 병력 추가 소각
   confuse: { name: '혼란', cooldown: 3, minInt: 80, turns: 2 }, // 수비측: 공격 부대 행동 정지
   rumor:   { name: '위보', qi: 15, minInt: 80 },            // R18: 적 부대를 가까운 자기 도시로 퇴각 (설계 15, 확률 자체)
-  calm:    { name: '진정', qi: 10, minInt: 70 },            // R18: 아군 부대 혼란 해제·기력 +20 (자체 수치)
+  calm:    { name: '진정', qi: 10, minInt: 70 },
+  douse:   { name: '소화', qi: 10, minInt: 60 },           // R32: 화계로 붙은 불(3턴, 턴당 병력 -4%) 끄기 (자체 수치)            // R18: 아군 부대 혼란 해제·기력 +20 (자체 수치)
 };
 
 // === 기교 연구 (자체 수치) ===
@@ -1058,6 +1059,11 @@ export class Game {
     this.autosave();
   }
   stepUnit(u) {
+    if ((u.burn ?? 0) > 0) { // R32: 계속 타는 불 (소화로 끌 수 있음)
+      u.burn--; const lost = Math.max(1, Math.round(u.troops * 0.04)); u.troops = Math.max(0, u.troops - lost);
+      this.log(`${josa(u.label, ['이','가'])} 불에 타 병력 -${lost}`, u.force === this.playerForce);
+      if (u.troops <= 0) { this.units = this.units.filter(x => x !== u); this.log(`${u.label} 부대가 전멸했습니다`, false); return; }
+    }
     if ((u.conf ?? 0) > 0) { // 혼란: 이동·공격 불가
       u.conf--;
       this.log(`${josa(u.label, ['이','가'])} 혼란에 빠져 움직이지 못합니다`, u.force === this.playerForce);
@@ -1364,7 +1370,8 @@ export class Game {
         this.gainMerit(caster.idx, MERIT.stratagem);
         const burn = Math.round(d.troops * 0.06 * (1 + 0.15 * this.techLv(u.force, '화공')));
         d.troops = Math.max(0, d.troops - burn);
-        this.log(`【계략】${caster.name_ko}의 화계! ${d.label} 병력 -${burn}`, u.force === this.playerForce);
+        this.log(`【계략】${caster.name_ko}의 화계! ${d.label} 병력 -${burn} (불이 번져 3턴간 계속 탑니다)`, u.force === this.playerForce);
+        d.burn = 3;
         if (d.troops <= 0) { this.units = this.units.filter(x => x !== d); this.log(`${d.label} 부대가 전멸했습니다`, false); }
         this.autosave();
         return true;
@@ -1384,6 +1391,14 @@ export class Game {
         return true;
       }
       return false;
+    }
+    if (kind === 'douse') {
+      const d = this.units.find(x => x.id === target.id);
+      if (!d || d.force !== u.force || (d.burn ?? 0) <= 0 || !inRange(d.x, d.z) || caster.int < STRATS.douse.minInt || (u.qi ?? 100) < STRATS.douse.qi) return false;
+      u._stratTurn = this.turn; u.qi -= STRATS.douse.qi; d.burn = 0;
+      this.log(`【계략】${caster.name_ko}의 소화! ${d.label}의 불을 껐습니다`, u.force === this.playerForce);
+      this.autosave();
+      return true;
     }
     if (kind === 'confuse') {
       if (caster.int < STRATS.confuse.minInt || (u.qi ?? 100) < 25 || target.type !== 'unit') return false;
