@@ -676,5 +676,5 @@ async function boot() {
     ['계속', () => {}],
   ]);
 }
-window.addEventListener?.('resize', () => { if (game) document.documentElement.style.setProperty('--hud-h', ($('hud-top').offsetHeight + 6) + 'px'); }); // R14: 회전·뷰포트 변경 대응
+if (typeof ResizeObserver !== 'undefined') new ResizeObserver(() => document.documentElement.style.setProperty('--hud-h', ($('hud-top').offsetHeight + 6) + 'px')).observe($('hud-top')); // R14: HUD 높이 변동(줄바꿈·자동진행 바·폰트) 추적
 boot();
