@@ -159,7 +159,10 @@ export function aiThink(game, fid, legion = null) { // legion 지정 시 그 군
     const caster = u.officers.map(i => game.officers[i]).sort((a, b) => b.int - a.int)[0];
     if (!caster) continue;
     const tgt = game.units.find(x => x.force !== u.force && !game.isPeace(u.force, x.force) && !game.unitHasSkill(x, '위장') && inR(x.x, x.z));
-    if (tgt && caster.int >= 80 && (u.qi ?? 100) >= 25 && (tgt.conf ?? 0) <= 0) game.fireStrat(u.id, 'confuse', { type: 'unit', id: tgt.id }); // 혼란 우선
+    const ally = game.units.find(x => x !== u && x.force === u.force && (x.conf ?? 0) > 0 && inR(x.x, x.z));
+    if (ally && caster.int >= 70 && (u.qi ?? 100) >= 10) game.fireStrat(u.id, 'calm', { type: 'unit', id: ally.id }); // R18 진정: 혼란 아군 우선
+    else if (tgt && caster.int >= 80 && (u.qi ?? 100) >= 15 && tgt.troops > u.troops * 1.3 && (tgt.conf ?? 0) <= 0 && (u.id + game.turn) % 2 === 0) game.fireStrat(u.id, 'rumor', { type: 'unit', id: tgt.id }); // R18 위보: 열세 시
+    else if (tgt && caster.int >= 80 && (u.qi ?? 100) >= 25 && (tgt.conf ?? 0) <= 0) game.fireStrat(u.id, 'confuse', { type: 'unit', id: tgt.id }); // 혼란 우선
     else if (tgt && caster.int >= 75 && (u.qi ?? 100) >= 30) game.fireStrat(u.id, 'fire', { type: 'unit', id: tgt.id });
     else if (!tgt && ec && caster.int >= 75 && (u.qi ?? 100) >= 30) game.fireStrat(u.id, 'fire', { type: 'city', id: ec.id });
   }
