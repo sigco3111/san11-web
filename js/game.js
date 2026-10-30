@@ -1401,8 +1401,9 @@ export class Game {
     if (kind === 'ambush') {
       const d = this.ambushTarget(u);
       if (!d || !this.canAmbush(u) || caster.int < STRATS.ambush.minInt || (u.qi ?? 100) < STRATS.ambush.qi) return false;
-      u._stratTurn = this.turn; u.qi -= STRATS.ambush.qi;
+      u._stratTurn = this.turn;
       if (Math.random() >= Math.min(0.7, 0.3 + caster.int / 250) * (1 - this.mindDefense(d.force))) { this.log(`【계략】${caster.name_ko}의 복병이 ${d.label}에 간파당했습니다`, u.force === this.playerForce); this.autosave(); return true; }
+      u.qi -= STRATS.ambush.qi; // 화계와 동일: 실패 시 기력 소모 없음, 성공 시 소모
       this.gainMerit(caster.idx, MERIT.stratagem);
       const hit = Math.round(d.troops * 0.07); d.troops = Math.max(0, d.troops - hit); d.qi = Math.max(0, (d.qi ?? 100) - 20);
       this.log(`【계략】${caster.name_ko}의 복병! ${d.label} 병력 -${hit}, 기력 -20`, u.force === this.playerForce);
