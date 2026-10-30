@@ -663,6 +663,7 @@ class Game {
     const lv = this.techLv(fid, b); if (lv >= 4) return false;
     const cap = this.forceCities(fid).sort((x, y) => y.gold - x.gold)[0];
     if ((f.techP ?? 0) < TECH_P[lv] || !cap || cap.gold < TECH_GOLD[lv]) return false;
+    f.techs = f.techs ?? {}; // 레거시 세이브 호환
     f.techP -= TECH_P[lv]; cap.gold -= TECH_GOLD[lv]; f.techs[b] = lv + 1;
     this.log(`【기교】${this.forceName(fid)} ${b} ${lv + 1}단계 연구 완료 (기교P ${TECH_P[lv]}·금 ${TECH_GOLD[lv]} 소비)`, fid === this.playerForce);
     return true;
