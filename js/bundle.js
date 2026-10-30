@@ -1863,6 +1863,7 @@ html += officerRow(o.idx);
 }
 }
 p.innerHTML = html;
+p.scrollTop = 0;
 if (mine) {
 $('cmd-dev-c').onclick = () => { game.develop(c.id, 'commerce'); refreshAll(); showCityPanel(c); };
 $('cmd-dev-f').onclick = () => { game.develop(c.id, 'farm'); refreshAll(); showCityPanel(c); };
