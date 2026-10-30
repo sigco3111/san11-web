@@ -79,10 +79,10 @@ export const STRATS = {
 export const ARTS = {
   '난소행군': { p: 800, gold: 2000, desc: '강·여울 도하 감속 완화 (깊은 강 이동 0.35→0.8, 여울 0.6→0.8, 경로 비용 완화)' },
   '석벽술':   { p: 600, gold: 1500, desc: '야전 시설 「석벽」을 지을 수 있음 (적 육군 통행을 크게 방해)' },
-  '정예창병': { p: 700, gold: 1800, desc: '창병·극병 공격력 +8%' },
+  '정예창병': { p: 700, gold: 1800, desc: '창병·극병 공격력 +8%, 받는 피해 -8%, 이동 +8%' },
   '창병단련': { p: 500, gold: 1200, desc: '창병·극병 전법 위력 +15%' },
   '신화계':   { p: 800, gold: 2000, desc: '화계 성공 시 대상 주변 3칸 안 다른 적 부대에도 불이 번짐' },
-  '군제개혁': { p: 900, gold: 2500, desc: '군사 커맨드(출진·징병·병기·선박 생산) 행동력 15% 절감' },
+  '군제개혁': { p: 900, gold: 2500, desc: '지휘 상한 증가: 한 부대에 편성할 수 있는 무장 3명 → 4명' },
 };
 export const TECH_BRANCHES = ['창병','극병','노병','기병','연병','발명','방위','화공'];
 export const TECH_P = [1000, 2000, 3000, 5000];      // 단계별 필요 기교P
@@ -296,7 +296,9 @@ export class Game {
     return m;
   }
 
-  unitDefMult(u) { return (this.unitHasSkill(u, '강직') ? 0.85 : 1) * this.fieldDefMult(u); }
+  unitDefMult(u) { return (this.unitHasSkill(u, '강직') ? 0.85 : 1) * this.fieldDefMult(u) * (this.elitePike(u) ? 0.92 : 1); }
+  elitePike(u) { return (u.type === 'spear' || u.type === 'pike') && !!this.forces[u.force]?.arts?.['정예창병']; } // 정예창병 (자체 잠정값)
+  dispatchCap(fid) { return this.forces[fid]?.arts?.['군제개혁'] ? 4 : 3; } // 군제개혁: 지휘 상한 3→4 (자체 잠정값)
   fieldDefMult(u) { // R26: 진·채 (중첩 없이 가장 큰 쪽)
     let best = 1;
     for (const f of this.fieldFacs ?? []) { if (f.force !== u.force || f.left > 0) continue; const sp = FIELD_FACS[f.type]; if (!sp || (f.type !== '진' && f.type !== '채' && f.type !== '성채') || Math.hypot(u.x - f.x, u.z - f.z) > sp.r) continue; best = Math.min(best, f.type === '성채' ? 0.75 : f.type === '채' ? 0.85 : 0.92); }
@@ -797,7 +799,7 @@ export class Game {
     const c = this.cityById[cityId], f = this.forces[c.force];
     if (this._blocked(c)) return false; // 군단 소속
     const apc = Math.ceil(40 * this.apMult(c, 'military')); // R13 군사부
-    if (f.ap < apc || c.troops < troops || officerIdxs.length === 0) return false;
+    if (f.ap < apc || c.troops < troops || officerIdxs.length === 0 || officerIdxs.length > this.dispatchCap(c.force)) return false;
     if (officerIdxs.some(i => (this.officers[i]?.state?.injuredUntil ?? 0) > this.turn)) return false; // R10: 부상 무장 출진 불가
     const ut = UNIT_TYPES[type];
     for (const [k, per] of Object.entries(ut.cost)) { // 병기·선박은 부대당 1대 (perUnit), 병장은 병사당 1개
@@ -1096,7 +1098,7 @@ export class Game {
     }
     const ut = UNIT_TYPES[u.type];
     const spdMult = this.unitHasSkill(u, '질풍') ? 1.25 : (this.unitHasSkill(u, '신행') ? 1.15 : 1); // R17: 신행 = 이동 +15% (자체 재정의 — 야간·날씨 시스템 부재, 질풍 우선)
-    let speed = 0.55 * ut.move * spdMult * (this.fieldNear(u, '군악대') ? 1.15 : 1);
+    let speed = 0.55 * ut.move * spdMult * (this.fieldNear(u, '군악대') ? 1.15 : 1) * (this.elitePike(u) ? 1.08 : 1);
     while (u.path?.length && Math.hypot(u.path[0][0] - u.x, u.path[0][1] - u.z) < 0.35) { if (u.path.length > 1) { u.x = u.path[0][0]; u.z = u.path[0][1]; } u.path.shift(); } // R17: 경유지 통과 (연속 근접 경유지 모두 소비, 마지막 경유지=목표는 위치 스냅 없이 제거 → d=0 NaN 방지)
     const aimX = u.path?.length ? u.path[0][0] : u.tx, aimZ = u.path?.length ? u.path[0][1] : u.tz;
     const dx = aimX - u.x, dz = aimZ - u.z;
@@ -1619,7 +1621,7 @@ export class Game {
   forceFacLv(fid, t) { return this.cities.filter(c => c.force === fid).reduce((s, c) => s + this.cityFacLv(c, t), 0); }
   apMult(c, cat) { // R13: 군사부·인재부·외교부 — 해당 커맨드 행동력 25% 절감 (자체)
     const fac = { military: '군사부', personnel: '인재부', diplo: '외교부' }[cat];
-    return (fac && this.cityFac(c, fac).length ? 0.75 : 1) * (cat === 'military' && c?.force != null && this.forces[c.force]?.arts?.['군제개혁'] ? 0.85 : 1);
+    return (fac && this.cityFac(c, fac).length ? 0.75 : 1);
   }
   absorbFacility(cityId, fi1, fi2) { // R13 흡수합병: 같은 완성 시설 2개를 합쳐 Lv+1 (최대 3), 금 200·AP 10 (자체 수치)
     const c = this.cityById[cityId], f = this.forces[c?.force];
