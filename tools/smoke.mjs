@@ -23,6 +23,7 @@ for (let t = 0; t < 60; t++) {
   aiThink(g, g.playerForce); // 수동 플레이어 대신 AI 1회
   g.endTurn(aiThink);
   if (g.pendingDuel) g.duelAuto(g.pendingDuel); // R10: 일기토는 모달 대신 자동 결판
+  if (g.pendingDebate) g.debateAuto(g.pendingDebate); // R11: 설전도 모달 대신 자동 결판
 }
 console.log('after 60 turns:', g.year, '년', g.month, '월');
 console.log('alive forces:', g.aliveForces().map(f => g.forceName(f.id)).join(', '));
@@ -94,7 +95,7 @@ console.log('tactics fired:', tacN, '| stratagems fired:', stratN, '| field batt
       off.state = off.state ?? {};
       off.state.items = [...new Set([...(off.state.items ?? []), 'yuxi'])].slice(0, 3);
       const before = f.techP ?? 0;
-      for (let t = 0; t < 3; t++) { g.endTurn((gg, fid) => { if (fid !== f.id) aiThink(gg, fid); }); if (g.pendingDuel) g.duelAuto(g.pendingDuel); } // 월 처리는 3순(1개월)마다. 대상 세력의 AI 기교 연구(techP 소비)는 차단해 결정적으로
+      for (let t = 0; t < 3; t++) { g.endTurn((gg, fid) => { if (fid !== f.id) aiThink(gg, fid); }); if (g.pendingDuel) g.duelAuto(g.pendingDuel); if (g.pendingDebate) g.debateAuto(g.pendingDebate); } // 월 처리는 3순(1개월)마다. 대상 세력의 AI 기교 연구(techP 소비)는 차단해 결정적으로
       if (!((f.techP ?? 0) >= before + 10)) { console.error('FAIL: 옥새 기교P 월+10', before, f.techP); process.exit(1); }
       off.state.items = off.state.items.filter(i => i !== 'yuxi');
       console.log('옥새 기교P 확인:', before, '→', f.techP);
@@ -741,6 +742,95 @@ if (g.units.find(u => u.id === 9999) && g.units.find(u => u.id === 9999).qi === 
   if (g10.pendingDuel) { console.error('FAIL: R10 위임 자동결판'); process.exit(1); }
   Math.random = origRand;
   console.log('R10 일기토 게이트 PASS (기본합/투지/급소부상/출진차단/무쌍/암기/위퇴각/퇴각/결판/50합/발동구분/적병차단/턴가드/위임)');
+}
+// R11: 설전 게이트 (결정적)
+{
+  const g11 = new Game(JSON.parse(JSON.stringify(scen)), officers, {}, 0);
+  const c0 = g11.forceCities(0)[0], c1 = g11.forceCities(1)[0];
+  const ai = c0.officers[0], bi = c1.officers[0];
+  g11.officers[ai].int = 100; g11.officers[bi].int = 100;
+  g11.officers[ai].skill = null; g11.officers[bi].skill = null;
+  const ctxA = { kind: 'alliance', fid: 0, tid: 1, cityId: c0.id };
+  // 기본 합: 질타 대미지 = round(12 * (0.8 + 100/200)) = 16
+  let d = g11.startDebate(ai, bi, ctxA);
+  g11.debateTick(d, '질타', '질타');
+  if (d.a.hp !== 84 || d.b.hp !== 84) { console.error('FAIL: R11 기본 합', d.a.hp, d.b.hp); process.exit(1); }
+  // 반박: 공격 무효 + 반격 8*1.3 = 10
+  d = g11.startDebate(ai, bi, ctxA);
+  g11.debateTick(d, '반박', '강변');
+  if (d.a.hp !== 100 || d.b.hp !== 90) { console.error('FAIL: R11 반박', d.a.hp, d.b.hp); process.exit(1); }
+  // 경청: 논리 회복 12
+  d = g11.startDebate(ai, bi, ctxA); d.a.hp = 50;
+  g11.debateTick(d, '경청', '반박');
+  if (d.a.hp !== 62 || d.b.hp !== 100) { console.error('FAIL: R11 경청', d.a.hp, d.b.hp); process.exit(1); }
+  // 도발: 다음 화술 봉인
+  d = g11.startDebate(ai, bi, ctxA);
+  g11.debateTick(d, '도발', '질타');
+  if (d.a.hp !== 84 || !d.b.seal) { console.error('FAIL: R11 도발 설정', d.a.hp, d.b.seal); process.exit(1); }
+  g11.debateTick(d, '질타', '질타'); // b 봉인 → b 화술 실패, a만 타격
+  if (d.a.hp !== 84 || d.b.hp !== 84) { console.error('FAIL: R11 도발 봉인', d.a.hp, d.b.hp); process.exit(1); }
+  // 강변 잠금/서적 해금: 지력 70 무장은 강변 불가, 서적 지급 시 사용 가능
+  g11.officers[ai].int = 70;
+  d = g11.startDebate(ai, bi, ctxA);
+  g11.debateTick(d, '강변', '반박');
+  if (d.b.hp !== 100) { console.error('FAIL: R11 강변 잠금', d.b.hp); process.exit(1); }
+  g11.officers[ai].state = g11.officers[ai].state ?? {}; g11.officers[ai].state.items = ['sunzi'];
+  d = g11.startDebate(ai, bi, ctxA);
+  g11.debateTick(d, '강변', '질타');
+  if (d.b.hp !== 100 - Math.round(24 * (0.8 + 70 / 200))) { console.error('FAIL: R11 서적 해금', d.b.hp); process.exit(1); }
+  // 논객 특기 +25%: 질타 = round(12 * 1.3 * 1.25) = 20 (상대는 도발 선택)
+  g11.officers[ai].int = 100; g11.officers[ai].skill = '논객';
+  d = g11.startDebate(ai, bi, ctxA);
+  g11.debateTick(d, '질타', '도발');
+  if (d.b.hp !== 80) { console.error('FAIL: R11 논객', d.b.hp); process.exit(1); }
+  g11.officers[ai].skill = null;
+  // 제의측 승리 → 동맹 성립
+  d = g11.startDebate(ai, bi, ctxA); d.b.hp = 1;
+  g11.debateTick(d, '질타', '경청'); // 경청은 공격을 막지 못함
+  if (!d.done || d.winner !== 'a' || g11.diploOf(0, 1).allianceUntil < g11.turn + 24) { console.error('FAIL: R11 설전 승리 동맹', d.winner, g11.diploOf(0, 1).allianceUntil); process.exit(1); }
+  // 제의측 패배 → 관계 -5
+  g11.diploOf(0, 1).v = 50;
+  d = g11.startDebate(ai, bi, ctxA); d.a.hp = 1;
+  g11.debateTick(d, '도발', '질타'); // a는 도발(공격 아님), b 질타 적중
+  if (!d.done || d.winner !== 'b' || g11.diploOf(0, 1).v !== 45) { console.error('FAIL: R11 설전 패배 관계', d.winner, g11.diploOf(0, 1).v); process.exit(1); }
+  // 15합 무승부
+  d = g11.startDebate(ai, bi, ctxA); d.bout = 14;
+  g11.debateTick(d, '반박', '반박');
+  if (!d.done || d.winner !== null) { console.error('FAIL: R11 무승부', d.winner); process.exit(1); }
+  // 정전 승리 → 정전 성립 + 관계 +30
+  g11.diploOf(0, 1).v = 20;
+  d = g11.startDebate(ai, bi, { kind: 'truce', fid: 0, tid: 1, cityId: c0.id }); d.b.hp = 1;
+  g11.debateTick(d, '질타', '경청');
+  if (g11.diploOf(0, 1).truceUntil < g11.turn + 12 || g11.diploOf(0, 1).v !== 50) { console.error('FAIL: R11 설전 정전', g11.diploOf(0, 1)); process.exit(1); }
+  // 등용 설전 승리 → 등용 성공
+  const free = Object.values(g11.officers).find(o => o.state && o.state.force == null && o.idx !== bi);
+  if (free) {
+    d = g11.startDebate(ai, free.idx, { kind: 'recruit', fid: 0, tid: 0, cityId: c0.id, officerIdx: free.idx }); d.b.hp = 1;
+    g11.debateTick(d, '질타', '경청');
+    if (free.state.force !== 0 || !c0.officers.includes(free.idx)) { console.error('FAIL: R11 설전 등용'); process.exit(1); }
+  } else { console.error('FAIL: R11 재야 무장 없음'); process.exit(1); }
+  // 발동 구분: 플레이어 관여 시 pendingDebate, AI끼리는 자동 결판
+  const r0 = Math.random; Math.random = () => 0;
+  if (!g11.tryDebate(ctxA) || !g11.pendingDebate) { console.error('FAIL: R11 플레이어 설전 발동'); process.exit(1); }
+  const t0 = g11.turn; g11.endTurn((gg, fid) => { if (fid !== 0) aiThink(gg, fid); });
+  if (g11.turn !== t0) { console.error('FAIL: R11 설전 턴 가드'); process.exit(1); } // 결판 전 턴 진행 불가
+  g11.debateAuto(g11.pendingDebate);
+  if (g11.pendingDebate) { console.error('FAIL: R11 위임 자동 결판'); process.exit(1); }
+  const ctxAI = { kind: 'alliance', fid: 1, tid: 2, cityId: c1.id };
+  const before2 = g11.logs.length;
+  if (!g11.tryDebate(ctxAI) || g11.pendingDebate) { console.error('FAIL: R11 AI 설전 자동'); process.exit(1); }
+  if (!g11.logs.slice(before2).some(l => l.msg.includes('설전'))) { console.error('FAIL: R11 AI 설전 로그'); process.exit(1); }
+  Math.random = r0;
+  // 외교 훅: 동맹 거절 → 설전 발동
+  const g12 = new Game(JSON.parse(JSON.stringify(scen)), officers, {}, 0);
+  const cc0 = g12.forceCities(0)[0]; cc0.gold = 99999; g12.forces[0].ap = 100;
+  g12.diploOf(0, 1).v = 65;
+  const seq = [0.99, 0]; let si = 0; const r1 = Math.random; Math.random = () => (si < seq.length ? seq[si++] : 0.99);
+  g12.proposeAlliance(0, 1, cc0.id);
+  Math.random = r1;
+  if (!g12.pendingDebate) { console.error('FAIL: R11 동맹 거절 설전 훅'); process.exit(1); }
+  g12.debateAuto(g12.pendingDebate);
+  console.log('R11 설전 게이트 PASS (기본합/반박/경청/도발/강변잠금/서적해금/논객/동맹성립/패배관계/무승부/정전/등용/발동구분/턴가드/위임/AI자동/외교훅)');
 }
 {
   const fs = await import('fs');
