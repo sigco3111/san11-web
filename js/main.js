@@ -1,12 +1,12 @@
 // 진입점: 화면 전환·UI·지도 연결
-import { Map3D, toWorld } from './map3d.js?v=r47';
-import { Game, SAVE_KEY, forceColor, UNIT_TYPES, ARTS, FIELD_FACS, TRAPS, SHIP_TYPES, josa, josaRo, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL } from './game.js?v=r47';
-import { aiThink } from './ai.js?v=r47';
+import { Map3D, toWorld } from './map3d.js?v=r48';
+import { Game, SAVE_KEY, forceColor, UNIT_TYPES, ARTS, FIELD_FACS, TRAPS, SHIP_TYPES, josa, josaRo, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL, AB_PICK } from './game.js?v=r48';
+import { aiThink } from './ai.js?v=r48';
 
 const $ = id => document.getElementById(id);
 let DATA = null, game = null, map = null, selectedUnit = null, autoTimer = null, pendingFire = null; // R15: 직접 전법·계략 대기
 
-const BUILD_ID = 'r47'; // 빌드 ID (index.html의 meta[name=build]와 같아야 함 - 오래된 캐시된 index와 새 스크립트의 혼합 감지)
+const BUILD_ID = 'r48'; // 빌드 ID (index.html의 meta[name=build]와 같아야 함 - 오래된 캐시된 index와 새 스크립트의 혼합 감지)
 function checkBuildSkew() {
   const idx = document.querySelector('meta[name="build"]')?.content;
   if (idx === BUILD_ID) { sessionStorage.removeItem('cheonha-xi-web.skew'); return; } // 일치하면 재시도 표식 해제
@@ -19,7 +19,7 @@ checkBuildSkew();
 async function loadData() {
   const [officers, skills, portraits, s184, s190, s251] = await Promise.all(
     ['data/officers670.json','data/skills.json','data/portraits.json','data/scenario-184.json','data/scenario-190.json','data/scenario-251.json']
-      .map(u => fetch(u + '?v=r47').then(r => r.json())));
+      .map(u => fetch(u + '?v=r48').then(r => r.json())));
   const byIdx = {};
   for (const o of officers) byIdx[o.idx] = o;
   DATA = { officers: byIdx, skills, portraits, scenarios: { '184': s184, '190': s190, '251': s251 } };
@@ -524,7 +524,7 @@ function showTech() {
   const AB_NM = { '공격': '무력', '방어': '통솔', '계략': '지력', '내정': '정치' };
   for (const b of Object.keys(AB_BRANCHES)) {
     const lv = f?.ab?.[b] ?? 0; const maxed = lv >= 3;
-    html += `<div class="officer"><div><div class="nm">${b}(${AB_NM[b]}) ${'●'.repeat(lv)}${'○'.repeat(3 - lv)}</div><div class="st">${maxed ? '최고 단계' : `기교P ${AB_P[lv]} · 전원 ${AB_NM[b]} +2${lv === 2 ? ' · 완료 시 특기 「' + AB_SKILL[b] + '」' + (b === '계략' ? ' (지력 90 이상 무특기 무장이 있으면 그중 한 명이 요술·낙뢰 중 하나)' : '') : ''}`}</div></div>${maxed ? '<span class="st">최고 단계</span>' : `<button class="cmd cmd-abr" data-b="${b}">연구</button>`}</div>`;
+    html += `<div class="officer"><div><div class="nm">${b}(${AB_NM[b]}) ${'●'.repeat(lv)}${'○'.repeat(3 - lv)}</div><div class="st">${maxed ? '최고 단계' : `기교P ${AB_P[lv]} · 전원 ${AB_NM[b]} +2${lv === 2 ? ' · 완료 시 특기 「' + AB_SKILL[b] + '」' + (b === '계략' ? ' (또는 요술·낙뢰 중 선택)' : '') : ''}`}</div></div>${maxed ? '<span class="st">최고 단계</span>' : `<button class="cmd cmd-abr" data-b="${b}">연구</button>`}</div>`;
   }
   html += `<h3 style="margin-top:10px">개별 기교 <small>(이 게임 자체 규칙: 비용과 효과는 직접 정한 값)</small></h3>`; // R23
   for (const [nm, a] of Object.entries(ARTS)) {
@@ -534,7 +534,13 @@ function showTech() {
   html += `<button class="cmd" id="cmd-tech-back">← 도시 패널로</button>`;
   p.innerHTML = html;
   p.querySelectorAll('.cmd-abr').forEach(btn => btn.onclick = () => { // R13
-    if (game.researchAbility(game.playerForce, btn.dataset.b)) { refreshAll(); showTech(); }
+    const b = btn.dataset.b, lvNow = game.forces[game.playerForce]?.ab?.[b] ?? 0;
+    const free = b === '계략' && lvNow === 2 ? game.forceOfficers(game.playerForce).filter(o => o && !o.skill && !o.state?.grantSkill) : [];
+    if (free.length) { // 마지막 단계: 습득할 특기 선택 (무특기 무장이 있을 때만)
+      modal('능력연구 「계략」 3단계를 완료합니다. 무특기 무장이 습득할 특기를 고르세요.<br><small>논객: 설전 우위 · 요술/낙뢰: 기력 50 광역 계략(지력 최고 무장이 습득)</small>', [...AB_PICK['계략'].map(sk => [sk, () => { if (game.researchAbility(game.playerForce, b, sk)) { refreshAll(); showTech(); } }]), ['취소', () => {}]]);
+      return;
+    }
+    if (game.researchAbility(game.playerForce, b)) { refreshAll(); showTech(); }
   });
   p.querySelectorAll('.cmd-techr').forEach(btn => btn.onclick = () => {
     game.researchTech(game.playerForce, btn.dataset.b);
