@@ -563,7 +563,6 @@ class Map3D {
 
 // ==== game.js ====
 // 게임 상태·턴 엔진 (삼국지11 기본 구조의 단순화 1차 구현)
-{ RANKS, MERIT };
 const SAVE_KEY = 'cheonha-xi-web.save.v1';
 const FORCE_COLORS = ['#4a7fd4','#d44a4a','#4ad47f','#d4a44a','#9a4ad4','#4ad4d4','#d44a8f','#8fd44a','#d47f4a','#6a6ad4','#d4d44a','#4a9a6a','#c46a4a','#7a4a2a','#2a7a8a','#8a2a4a','#5a8a2a','#aa6aaa','#4a5a9a','#9a8a3a','#3a7a4a','#b45a7a','#6aaac4','#c48a3a','#7a3a9a','#3a9a8a','#aa4a3a','#5a7a2a','#8a6aaa','#4a8aaa','#ca7a5a','#3a6a3a','#9a4a6a','#6a8a4a','#4a4aaa','#aa9a3a','#3a8a6a','#b46a8a','#5a9aca'];
 function forceColor(fid) { return FORCE_COLORS[fid % FORCE_COLORS.length]; }
