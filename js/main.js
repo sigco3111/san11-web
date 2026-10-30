@@ -114,6 +114,44 @@ function doTurn() {
   game.endTurn(aiThink);
   refreshAll();
   checkGameOver();
+  if (game.pendingDuel) showDuel(); // R10: 일기토 모달
+}
+// === R10: 일기토 모달 (클릭당 1합 — 실시간은 모달 특성상 수동 진행으로 단순화) ===
+function showDuel() {
+  const d = game.pendingDuel; if (!d) return;
+  const m = $('modal'); m.classList.remove('hidden');
+  const pk = d.a.u.force === game.playerForce ? 'a' : 'b', ek = pk === 'a' ? 'b' : 'a';
+  const STANCES = [['attack', '공격 중시'], ['defense', '방어 중시'], ['spirit', '투지 중시'], ['burst', '일발 중시']];
+  const CMDS = [['필살기', 100], ['급소', 200], ['무쌍', 300], ['암기', 0], ['퇴각', 0], ['위퇴각', 0]];
+  const render = () => {
+    const P = d[pk], E = d[ek];
+    const po = game.duelOfficer(d, pk), eo = game.duelOfficer(d, ek);
+    const bar = (v, max, color) => `<span style="display:inline-block;width:120px;height:10px;background:#333;vertical-align:middle"><span style="display:block;width:${Math.max(0, Math.min(100, v / max * 100))}%;height:100%;background:${color}"></span></span>`;
+    const cmdBtn = ([name, need]) => {
+      let ok = P.spirit >= need;
+      if (name === '암기') ok = ok && !P._hiddenUsed && game.unitHasItemKind(P.u, 'weapon');
+      if (name === '위퇴각') ok = ok && game.unitHasItemKind(P.u, 'bow');
+      return `<button class="cmd duel-cmd" data-c="${name}" ${ok ? '' : 'disabled'}>${name}${need ? ` (투지${need})` : ''}</button>`;
+    };
+    m.innerHTML = `<div class="box" style="min-width:420px">
+      <h3 style="color:#f66">일기토 — ${po.name_ko} vs ${eo.name_ko} (${d.bout}합)</h3>
+      <p>${po.name_ko} 체력 ${bar(P.hp, 100, '#d44')} ${Math.max(0, P.hp)} · 투지 ${bar(P.spirit, 300, '#4a7fd4')} ${P.spirit}<br>
+      ${eo.name_ko} 체력 ${bar(E.hp, 100, '#d44')} ${Math.max(0, E.hp)} · 투지 ${bar(E.spirit, 300, '#4a7fd4')} ${E.spirit}</p>
+      <p style="font-size:12px;color:#cbB;min-height:54px">${d.log.slice(-3).join('<br>')}</p>
+      <p>방침: ${STANCES.map(([s, n]) => `<button class="cmd duel-stance" data-s="${s}" ${P.stance === s ? 'style="border-color:#ffd700"' : ''}>${n}</button>`).join(' ')}</p>
+      <p>필살: ${CMDS.map(cmdBtn).join(' ')}</p>
+      <p><button class="cmd" id="duel-go">합 진행</button> <button class="cmd" id="duel-auto">위임 (자동)</button></p></div>`;
+    let selStance = P.stance, selCmd = null;
+    m.querySelectorAll('.duel-stance').forEach(b => b.onclick = () => { selStance = b.dataset.s; m.querySelectorAll('.duel-stance').forEach(x => x.style.borderColor = ''); b.style.borderColor = '#ffd700'; });
+    m.querySelectorAll('.duel-cmd').forEach(b => b.onclick = () => { selCmd = b.dataset.c; game.duelTick(d, { stance: selStance, cmd: selCmd }, game.duelPolicy(d, ek)); after(); });
+    $('duel-go').onclick = () => { game.duelTick(d, { stance: selStance, cmd: null }, game.duelPolicy(d, ek)); after(); };
+    $('duel-auto').onclick = () => { game.duelAuto(d); after(); };
+  };
+  const after = () => {
+    if (game.pendingDuel) render();
+    else { m.classList.add('hidden'); refreshAll(); checkGameOver(); }
+  };
+  render();
 }
 function setAuto(on) {
   if (autoTimer) { clearInterval(autoTimer); autoTimer = null; }
@@ -330,7 +368,7 @@ function showTech() {
 }
 function officerRow(idx) {
   const o = DATA.officers[idx];
-  return `<div class="officer"><span class="pimg" style="${portraitCss(idx)}"></span><div><div class="nm">${o.name_ko} <span class="st">${o.name_zh}</span></div><div class="st">통${o.ldr} 무${o.war} 지${o.int} 정${o.pol} 매${o.chr} · ${o.skill ? o.skill + ' — ' + (DATA.skills[o.skill] || '') : '특기 없음'} · 충성 ${o.state?.loyal ?? '-'} · 공적 ${o.state?.merit ?? 0}${(o.state?.items ?? []).length ? ' · 명품: ' + o.state.items.map(id => ITEMS.find(i => i.id === id)?.name ?? id).join('·') : ''}</div></div></div>`;
+  return `<div class="officer"><span class="pimg" style="${portraitCss(idx)}"></span><div><div class="nm">${o.name_ko} <span class="st">${o.name_zh}</span></div><div class="st">통${o.ldr} 무${o.war} 지${o.int} 정${o.pol} 매${o.chr} · ${o.skill ? o.skill + ' — ' + (DATA.skills[o.skill] || '') : '특기 없음'} · 충성 ${o.state?.loyal ?? '-'} · 공적 ${o.state?.merit ?? 0}${(o.state?.injuredUntil ?? 0) > game.turn ? ' · <span style="color:#f66">부상</span>' : ''}${(o.state?.items ?? []).length ? ' · 명품: ' + o.state.items.map(id => ITEMS.find(i => i.id === id)?.name ?? id).join('·') : ''}</div></div></div>`;
 }
 let lastCityId = null;
 function showCityPanel(c) {
