@@ -39,6 +39,7 @@ console.log('tactics fired:', tacN, '| stratagems fired:', stratN, '| field batt
     if (freeO) { freeO.state.status = 'free'; freeO.state.city = home.id; }
   }
   if (home && freeO) {
+    g.forces[home.force].ap = 100; home.gold += 1000; // 결정적 조건 확보
     const n0 = home.officers.length, g0 = home.gold;
     const p = g.recruitChance(home.id, freeO.idx);
     const orig = Math.random; Math.random = () => 0.001; // 반드시 성공
