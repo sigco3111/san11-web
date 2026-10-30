@@ -115,6 +115,7 @@ function doTurn() {
   refreshAll();
   checkGameOver();
   if (game.pendingDuel) showDuel(); // R10: 일기토 모달
+  if (game.pendingDebate) showDebate(); // R11: 설전 모달
 }
 // === R10: 일기토 모달 (클릭당 1합 — 실시간은 모달 특성상 수동 진행으로 단순화) ===
 function showDuel() {
@@ -149,6 +150,38 @@ function showDuel() {
   };
   const after = () => {
     if (game.pendingDuel) render();
+    else { m.classList.add('hidden'); refreshAll(); checkGameOver(); }
+  };
+  render();
+}
+function showDebate() { // R11: 설전 모달
+  const d = game.pendingDebate; if (!d) return;
+  const m = $('modal'); m.classList.remove('hidden');
+  const pk = game.officers[d.a.o].state?.force === game.playerForce ? 'a' : 'b', ek = pk === 'a' ? 'b' : 'a';
+  const render = () => {
+    const P = d[pk], E = d[ek];
+    const po = game.officers[P.o], eo = game.officers[E.o];
+    const bar = (v, max, color) => `<span style="display:inline-block;width:120px;height:10px;background:#333;vertical-align:middle"><span style="display:block;width:${Math.max(0, Math.min(100, v / max * 100))}%;height:100%;background:${color}"></span></span>`;
+    const ctxName = { alliance: '동맹 제의', truce: '정전 요청', recruit: '등용' }[d.ctx?.kind] ?? '협상';
+    const cardBtn = c => {
+      const owned = !!game.debateCards(P.o)[c];
+      const ok = game.debateCardUsable(d, pk, c);
+      const cd = (P.cds[c] ?? 0) > 0 ? ` (쿨 ${P.cds[c]})` : '';
+      return `<button class="cmd debate-card" data-c="${c}" ${ok ? '' : 'disabled'}>${c}${cd}${owned ? '' : ' 🔒'}</button>`;
+    };
+    m.innerHTML = `<div class="box" style="min-width:420px">
+      <h3 style="color:#6cf">설전 — ${po.name_ko} vs ${eo.name_ko} (${d.bout}합) <span style="font-size:12px;color:#aaa">${ctxName}</span></h3>
+      <p>${po.name_ko} 논리 ${bar(P.hp, 100, '#d44')} ${Math.max(0, P.hp)}${P.seal ? ' · 봉인' : ''}<br>
+      ${eo.name_ko} 논리 ${bar(E.hp, 100, '#d44')} ${Math.max(0, E.hp)}${E.seal ? ' · 봉인' : ''}</p>
+      <p style="font-size:12px;color:#cbb;min-height:54px">${d.log.slice(-3).join('<br>')}</p>
+      <p>화술: ${Object.keys(game.debateCardList()).map(cardBtn).join(' ')}</p>
+      <p style="font-size:11px;color:#999">반박=상대 공격 무효+반격 · 경청=논리 회복 · 도발=다음 화술 봉인 · 🔒는 지력 부족(서적 보유 시 해금)</p>
+      <p><button class="cmd" id="debate-auto">위임 (자동)</button></p></div>`;
+    m.querySelectorAll('.debate-card').forEach(b => b.onclick = () => { game.debateTick(d, b.dataset.c, game.debatePolicy(d, ek)); after(); });
+    $('debate-auto').onclick = () => { game.debateAuto(d); after(); };
+  };
+  const after = () => {
+    if (game.pendingDebate) render();
     else { m.classList.add('hidden'); refreshAll(); checkGameOver(); }
   };
   render();
@@ -308,7 +341,7 @@ function showDiplomacy(c) {
     }
     html += `</div></div></div>`;
   }
-  html += `<p class="st">관계: 80+ 친밀 · 60+ 호의 · 40+ 중립 · 20+ 불화 · 미만 험악 — 매달 중립으로 서서히 회귀. 동맹국은 서로 공격하지 않습니다. 설전(협상 연출)은 R11에서 구현되며 지금은 특기 논객이 성공률을 보정합니다.</p>`;
+  html += `<p class="st">관계: 80+ 친밀 · 60+ 호의 · 40+ 중립 · 20+ 불화 · 미만 험악 — 매달 중립으로 서서히 회귀. 동맹국은 서로 공격하지 않습니다. 협상 결렬·등용 실패 시 30% 확률로 설전이 벌어지며, 승리하면 협상이 재심됩니다. 논객 특기는 성공률과 설전 공격력(+25%)을 보정합니다.</p>`;
   html += `<button class="cmd" id="cmd-diplo-back">← 도시 패널로</button>`;
   p.innerHTML = html;
   p.querySelectorAll('.dip-act').forEach(btn => btn.onclick = () => {
@@ -316,6 +349,7 @@ function showDiplomacy(c) {
     const act = { envoy: 'envoy', ally: 'proposeAlliance', truce: 'requestTruce', surrender: 'demandSurrender', aid: 'requestAid', break: 'breakAlliance' }[btn.dataset.a];
     const r = act === 'breakAlliance' ? game.breakAlliance(c.force, tid) : game[act](c.force, tid, c.id);
     refreshAll(); showDiplomacy(c);
+    if (game.pendingDebate) showDebate(); // R11: 협상 결렬 시 설전 발동
   });
   $('cmd-diplo-back').onclick = () => showCityPanel(c);
 }
@@ -448,7 +482,7 @@ function showCityPanel(c) {
     $('cmd-trade').onclick = () => showTrade(c);
     $('cmd-advisor').onclick = () => showAdvisor(c);
     $('cmd-legion').onclick = () => showLegions(c);
-    p.querySelectorAll('.cmd-rec').forEach(b => b.onclick = () => { game.recruitOfficer(c.id, Number(b.dataset.i)); refreshAll(); showCityPanel(c); });
+    p.querySelectorAll('.cmd-rec').forEach(b => b.onclick = () => { game.recruitOfficer(c.id, Number(b.dataset.i)); refreshAll(); showCityPanel(c); if (game.pendingDebate) showDebate(); }); // R11: 등용 실패 시 설전 발동
   }
   const join = $('cmd-join');
   if (join) join.onclick = () => {
