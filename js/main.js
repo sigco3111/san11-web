@@ -273,7 +273,8 @@ function onPick(nx, ny) {
     if (hit && hit.type === 'unit') ok = pf.kind === 'tactic' ? game.fireTactic(pf.uid, { type: 'unit', id: hit.id }) : game.fireStrat(pf.uid, pf.kind, { type: 'unit', id: hit.id });
     else if (hit && hit.type === 'city') ok = pf.kind === 'tactic' ? game.fireTactic(pf.uid, { type: 'city', id: hit.id }) : game.fireStrat(pf.uid, pf.kind, { type: 'city', id: hit.id });
     selectedUnit = null;
-    if (ok) refreshAll(); else { game.log('대상이 유효하지 않습니다 (인접한 적 부대·도시만 가능)', true); refreshLog(); showUnitPanel(pf.uid); }
+    if (ok) { refreshAll(); if (game.units.find(x => x.id === pf.uid)) { selectedUnit = pf.uid; showUnitPanel(pf.uid); } else $('panel').classList.add('hidden'); }
+    else { game.log('대상이 유효하지 않습니다 (인접한 적 부대·도시만 가능)', true); refreshLog(); showUnitPanel(pf.uid); }
     return;
   }
   if (!hit) { $('panel').classList.add('hidden'); selectedUnit = null; return; }
@@ -637,8 +638,8 @@ function showUnitPanel(uid) {
     부장: ${u.officers.map(i => DATA.officers[i].name_ko).join(', ')}<br>기력 ${u.qi ?? 100} / 100${(u.conf ?? 0) > 0 ? ` · <span style='color:#e66'>혼란 ${u.conf}턴</span>` : ''}</p>
     ${mine ? '<p style="color:#ffd700">목표 도시를 클릭하면 이동 명령을 내립니다.</p>' : ''}
     ${mine && game.tacticInfo?.(u) ? `<p><button class="cmd" id="up-tac">전법 ${game.tacticInfo(u).tac.name} (기력 ${game.tacticInfo(u).tac.qi})</button></p>` : ''}
-    ${mine && (u.conf ?? 0) <= 0 && u.officers.some(i => (DATA.officers[i]?.int ?? 0) >= 75) && (u.qi ?? 100) >= 30 ? '<p><button class="cmd" id="up-fire">계략 화계 (기력 30)</button></p>' : ''}
-    ${mine && (u.conf ?? 0) <= 0 && u.officers.some(i => (DATA.officers[i]?.int ?? 0) >= 80) && (u.qi ?? 100) >= 25 ? '<p><button class="cmd" id="up-conf">계략 혼란 (기력 25)</button></p>' : ''}
+    ${mine && (u.conf ?? 0) <= 0 && (u._stratTurn ?? -1) !== game.turn && u.officers.some(i => (DATA.officers[i]?.int ?? 0) >= 75) && (u.qi ?? 100) >= 30 ? '<p><button class="cmd" id="up-fire">계략 화계 (기력 30)</button></p>' : ''}
+    ${mine && (u.conf ?? 0) <= 0 && (u._stratTurn ?? -1) !== game.turn && u.officers.some(i => (DATA.officers[i]?.int ?? 0) >= 80) && (u.qi ?? 100) >= 25 ? '<p><button class="cmd" id="up-conf">계략 혼란 (기력 25)</button></p>' : ''}
     <p><button class="cmd" id="up-close">닫기</button></p>`;
   $('up-close').onclick = () => { $('panel').classList.add('hidden'); selectedUnit = null; pendingFire = null; };
   const armFire = (kind, label) => { // R15: 대상 선택 모드 진입
