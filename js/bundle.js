@@ -642,6 +642,35 @@ class Game {
     this.log(`${c.name_ko} 징병 +${n} (담당 매력 ${best})`, c.force === this.playerForce);
     return true;
   }
+  freeOfficers(cityId) { // 그 도시에 머무는 재야 무장
+    return Object.values(this.officers).filter(o => o.state?.status === 'free' && o.state.city === cityId);
+  }
+  recruitChance(cityId, officerIdx) { // 등용 성공률 (자체 수치): 사자 매력·상대 매력·충성·군주 매력 반영
+    const c = this.cityById[cityId], t = this.officers[officerIdx];
+    if (!c || c.force == null || !this.forces[c.force]?.alive || !c.officers.length) return 0;
+    if (!t?.state || t.state.status !== 'free' || t.state.city !== cityId) return 0;
+    const envoy = Math.max(...c.officers.map(i => this.officers[i].chr));
+    const ruler = this.officers[this.forces[c.force].ruler]?.chr ?? 50;
+    const loyal = t.state.loyal ?? 70;
+    return Math.max(0.1, Math.min(0.9, 0.45 + (envoy - t.chr)/200 + (ruler - 50)/500 - loyal/400));
+  }
+  recruitOfficer(cityId, officerIdx) { // 재야 무장 등용: 금 100, AP 20 (자체 규칙)
+    const c = this.cityById[cityId], f = this.forces[c.force];
+    if (c.gold < 100 || f.ap < 20) return false;
+    const p = this.recruitChance(cityId, officerIdx);
+    if (p <= 0) return false;
+    const t = this.officers[officerIdx];
+    const envoy = Math.max(...c.officers.map(i => this.officers[i].chr));
+    c.gold -= 100; f.ap -= 20;
+    if (Math.random() < p) {
+      t.state.status = 'serving'; t.state.force = c.force;
+      c.officers.push(officerIdx);
+      this.log(`【등용】${t.name_ko}이(가) 【${this.forceName(c.force)}】에 등용되었습니다 (${c.name_ko}, 사자 매력 ${envoy})`, true);
+      return true;
+    }
+    this.log(`${c.name_ko}의 ${t.name_ko} 등용에 실패했습니다`, c.force === this.playerForce);
+    return false;
+  }
   moveOfficers(fromCity, toCity, idxs) {
     const a = this.cityById[fromCity], b = this.cityById[toCity], f = this.forces[a.force];
     if (f.ap < 20) return false;
@@ -901,6 +930,14 @@ function aiThink(game, fid) {
     const avgNbr = cities.reduce((s,x) => s + x.troops, 0) / cities.length;
     if (c.troops < Math.min(avgNbr, 12000) && c.gold > 500 && c.food > 3000) game.recruit(c.id);
   }
+  // 2.5) 인재 등용: 도시의 재야 무장을 같은 규칙으로 영입
+  for (const c of cities) {
+    if (f.ap < 20 || c.gold < 300 || !c.officers.length) continue;
+    const free = game.freeOfficers(c.id);
+    if (!free.length) continue;
+    const target = free.sort((a, b) => game.recruitChance(c.id, b.idx) - game.recruitChance(c.id, a.idx))[0];
+    if (game.recruitChance(c.id, target.idx) >= 0.3) game.recruitOfficer(c.id, target.idx);
+  }
   // 3) 군사: 전방 도시(적과 인접) 병력이 충분하면 공격, 아니면 집결
   const enemyCities = game.cities.filter(c => c.force !== fid);
   for (const c of cities) {
@@ -1139,7 +1176,13 @@ function showCityPanel(c) {
   html += `<h3 style="margin-top:10px">주둔 무장 (${c.officers.length})</h3>`;
   html += c.officers.map(officerRow).join('') || '<p>무장 없음</p>';
   const free = Object.values(DATA.officers).filter(o => o.state?.status === 'free' && o.state.city === c.id);
-  if (free.length) html += `<h3 style="margin-top:10px">재야 무장 (${free.length})</h3>` + free.map(o => officerRow(o.idx)).join('');
+  if (free.length) {
+    html += `<h3 style="margin-top:10px">재야 무장 (${free.length})</h3>`;
+    for (const o of free) {
+      html += officerRow(o.idx);
+      if (mine && game.recruitChance(c.id, o.idx) > 0) html += `<button class="cmd cmd-rec" data-i="${o.idx}">등용 (금100·성공률 ${Math.round(game.recruitChance(c.id, o.idx)*100)}%)</button>`;
+    }
+  }
   p.innerHTML = html;
   if (mine) {
     $('cmd-dev-c').onclick = () => { game.develop(c.id, 'commerce'); refreshAll(); showCityPanel(c); };
@@ -1147,6 +1190,7 @@ function showCityPanel(c) {
     $('cmd-recruit').onclick = () => { game.recruit(c.id); refreshAll(); showCityPanel(c); };
     $('cmd-dispatch').onclick = () => showDispatch(c);
     $('cmd-move').onclick = () => showMove(c);
+    p.querySelectorAll('.cmd-rec').forEach(b => b.onclick = () => { game.recruitOfficer(c.id, Number(b.dataset.i)); refreshAll(); showCityPanel(c); });
   }
   const join = $('cmd-join');
   if (join) join.onclick = () => {
