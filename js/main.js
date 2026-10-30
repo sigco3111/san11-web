@@ -1,6 +1,6 @@
 // 진입점: 화면 전환·UI·지도 연결
 import { Map3D, toWorld } from './map3d.js';
-import { Game, SAVE_KEY, forceColor, UNIT_TYPES, josa, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD } from './game.js';
+import { Game, SAVE_KEY, forceColor, UNIT_TYPES, josa, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL } from './game.js';
 import { aiThink } from './ai.js';
 
 const $ = id => document.getElementById(id);
@@ -379,11 +379,18 @@ function showFacilities(c) {
     html += c.facilities.map((f, i) => {
       const spec = FACILITIES[f.type];
       const body = f.done
-        ? `${f.type} — ${spec.desc}`
+        ? `${f.type}${(f.level ?? 1) > 1 ? ' Lv' + f.level : ''} — ${spec.desc}`
         : `${f.type} 공사 중 ${f.progress}/${spec.turns} (담당 ${f.builders.map(b => DATA.officers[b]?.name_ko).join('·') || '없음'})`;
       return `<div class="officer"><div><div class="st">${body}</div></div><button class="cmd cmd-demol" data-i="${i}">철거</button></div>`;
     }).join('');
   } else html += '<p>건설된 시설이 없습니다.</p>';
+  const mergeable = {}; // R13: 흡수합병
+  c.facilities.forEach((f, i) => { if (f.done && (f.level ?? 1) < 3) (mergeable[f.type] = mergeable[f.type] ?? []).push(i); });
+  const mergePairs = Object.entries(mergeable).filter(([, v]) => v.length >= 2);
+  if (mergePairs.length) {
+    html += '<h3 style="margin-top:10px">흡수합병 <small>(같은 시설 2개 → Lv+1 · 금 200·AP 10 · 개발지 1개 회수, 최대 Lv3)</small></h3>';
+    for (const [t, v] of mergePairs) html += `<div class="officer"><div><div class="nm">${t} × ${v.length}</div><div class="st">${spec ? '' : ''}${FACILITIES[t].desc}</div></div><button class="cmd cmd-merge" data-t="${t}">합병</button></div>`;
+  }
   html += '<h3 style="margin-top:10px">건설</h3>';
   const polTop = [...new Set(c.officers)].sort((a, b) => (DATA.officers[b]?.pol ?? 0) - (DATA.officers[a]?.pol ?? 0)).slice(0, 3);
   for (const [t, spec] of Object.entries(FACILITIES)) {
@@ -398,6 +405,11 @@ function showFacilities(c) {
   p.querySelectorAll('.cmd-demol').forEach(btn => btn.onclick = () => {
     if (game.demolishFacility(c.id, Number(btn.dataset.i))) { refreshAll(); showFacilities(c); }
   });
+  p.querySelectorAll('.cmd-merge').forEach(btn => btn.onclick = () => { // R13
+    const idxs = []; c.facilities.forEach((f, i) => { if (f.done && f.type === btn.dataset.t && (f.level ?? 1) < 3) idxs.push(i); });
+    idxs.sort((a, b) => (c.facilities[a].level ?? 1) - (c.facilities[b].level ?? 1));
+    if (idxs.length >= 2 && game.absorbFacility(c.id, idxs[0], idxs[1])) { refreshAll(); showFacilities(c); }
+  });
   $('cmd-fac-back').onclick = () => showCityPanel(c);
 }
 function showTech() {
@@ -409,8 +421,17 @@ function showTech() {
     const done = lv >= 4;
     html += `<div class="officer"><div><div class="nm">${b} ${'●'.repeat(lv)}${'○'.repeat(4 - lv)}</div><div class="st">${TECH_DESC[b]}</div></div>${done ? '<span class="st">최고 단계</span>' : `<button class="cmd cmd-techr" data-b="${b}">연구 (P${TECH_P[lv]}·금${TECH_GOLD[lv]})</button>`}</div>`;
   }
+  html += `<h3 style="margin-top:10px">능력연구 <small>(PK — 소속 무장 전원 능력 +2/단계, 3단계 완료 시 특기 습득)</small></h3>`; // R13
+  const AB_NM = { '공격': '무력', '방어': '통솔', '계략': '지력', '내정': '정치' };
+  for (const b of Object.keys(AB_BRANCHES)) {
+    const lv = f?.ab?.[b] ?? 0; const maxed = lv >= 3;
+    html += `<div class="officer"><div><div class="nm">${b}(${AB_NM[b]}) ${'●'.repeat(lv)}${'○'.repeat(3 - lv)}</div><div class="st">${maxed ? '최고 단계' : `기교P ${AB_P[lv]} · 전원 ${AB_NM[b]} +2${lv === 2 ? ' · 완료 시 특기 「' + AB_SKILL[b] + '」' : ''}`}</div></div>${maxed ? '<span class="st">최고 단계</span>' : `<button class="cmd cmd-abr" data-b="${b}">연구</button>`}</div>`;
+  }
   html += `<button class="cmd" id="cmd-tech-back">← 도시 패널로</button>`;
   p.innerHTML = html;
+  p.querySelectorAll('.cmd-abr').forEach(btn => btn.onclick = () => { // R13
+    if (game.researchAbility(game.playerForce, btn.dataset.b)) { refreshAll(); showTech(); }
+  });
   p.querySelectorAll('.cmd-techr').forEach(btn => btn.onclick = () => {
     game.researchTech(game.playerForce, btn.dataset.b);
     refreshAll(); showTech();
@@ -595,7 +616,11 @@ async function boot() {
       g.itemPool = d.itemPool ?? Object.values(ITEMS).map(i => i.id).filter(id => !Object.values(g.officers).some(o => (o.state.items ?? []).includes(id)));
       for (const o of Object.values(g.officers)) { o.state.items = o.state.items ?? []; if (o.state.status === 'free' && o.state.found === undefined) o.state.found = true; } // 기존 세이브의 재야는 발견 상태 유지
       for (const f of Object.values(g.forces)) { f.advisor = f.advisor ?? null; f.legions = f.legions ?? []; } // 군사·군단 필드 호환 // 외교 상태 복원 (레거시 세이브는 공백)
-      for (const [i, st] of Object.entries(d.officerStates)) if (DATA.officers[i]) DATA.officers[i].state = st;
+      for (const [i, st] of Object.entries(d.officerStates)) if (DATA.officers[i]) {
+        DATA.officers[i].state = st;
+        if (st.bonus) for (const [k, v] of Object.entries(st.bonus)) DATA.officers[i][k] = Math.min(100, (DATA.officers[i][k] ?? 50) + v); // R13 능력연구 복원
+        if (st.grantSkill) DATA.officers[i].skill = st.grantSkill; // R13 연구 특기 복원
+      }
       game = g; enterGame(); refreshAll();
       if (game.delegated) setAuto(true);
     };
