@@ -145,6 +145,11 @@ const MERIT = { develop: 30, recruit: 80, facility: 100, tactic: 40, stratagem: 
 const DEBATE_CARDS = { // R11: 설전 화술 (자체 명칭·수치). int=서적 미보유 시 필요 지력, cd=재사용 대기 합
   질타: { dmg: 12 }, 강변: { dmg: 24, cd: 2, int: 80 }, 반박: { counter: 8 }, 경청: { heal: 12, cd: 2 }, 도발: { seal: true, cd: 3, int: 85 },
 };
+// R12: 관계 데이터 (설계안 55행: 상성·친애·혐오·의형제·부부 — 연의 기반 자체 정의, 시나리오에 해당 무장이 있을 때만 적용)
+const SWORN_GROUPS = [['유비', '관우', '장비'], ['손책', '주유']];
+const SPOUSE_PAIRS = [['손책', '대교'], ['주유', '소교'], ['유비', '손상향'], ['조조', '변씨'], ['여포', '초선']];
+const DEAR_PAIRS = [['조조', '순욱'], ['조조', '곽가'], ['조조', '하후돈'], ['조조', '하후연'], ['유비', '조운'], ['유비', '제갈량'], ['손권', '주유'], ['손권', '여몽'], ['동탁', '여포']];
+const HATE_PAIRS = [['마초', '조조'], ['손책', '황조'], ['장비', '여포'], ['관우', '여포']];
 
 export class Game {
   constructor(scen, officers, skills, playerForceId) {
@@ -491,7 +496,13 @@ export class Game {
     const envoy = Math.max(...c.officers.map(i => this.officers[i].chr));
     const ruler = this.officers[this.forces[c.force].ruler]?.chr ?? 50;
     const loyal = t.state.loyal ?? 70;
-    return Math.max(0.1, Math.min(0.9, 0.45 + (envoy - t.chr)/200 + (ruler - 50)/500 - loyal/400 + (this.cityHasSkill(c, '등용') ? 0.1 : 0)));
+    const rel = this.relOf(officerIdx); // R12: 관계 보정 (자체 수치)
+    let mod = 0;
+    if (rel.dear.some(i => this.officers[i]?.state?.force === c.force)) mod += 0.1; // 친애 무장이 이 세력에 소속
+    const rf = this.forces[c.force];
+    if (rf && rel.hate.includes(rf.ruler)) mod -= 0.15; // 군주 혐오
+    if (rel.sworn.some(i => { const f2 = this.officers[i]?.state?.force; return f2 != null && f2 !== c.force; }) || (rel.spouse != null && (this.officers[rel.spouse]?.state?.force != null) && this.officers[rel.spouse].state.force !== c.force)) mod -= 0.2; // 의형제·부부가 타 세력 소속
+    return Math.max(0.1, Math.min(0.9, 0.45 + (envoy - t.chr)/200 + (ruler - 50)/500 - loyal/400 + (this.cityHasSkill(c, '등용') ? 0.1 : 0) + mod));
   }
   recruitOfficer(cityId, officerIdx) { // 재야 무장 등용: 금 100, AP 20 (자체 규칙)
     const c = this.cityById[cityId], f = this.forces[c.force];
@@ -659,6 +670,26 @@ export class Game {
           }
         }
       }
+    // R12: 상성 — 군주와 궁합 차 100+ 월 충성 -1, 25 이하 +1 (자체 수치)
+    for (const f of Object.values(this.forces)) {
+      if (!f.alive) continue;
+      const ra = this.affOf(f.ruler);
+      for (const o of Object.values(this.officers)) {
+        const st = o.state;
+        if (!st || st.force !== f.id || (st.status !== 'serving' && st.status !== 'taesu')) continue;
+        const diff = Math.abs(this.affOf(o.idx) - ra);
+        if (diff >= 100) st.loyal = Math.max(0, (st.loyal ?? 70) - 1);
+        else if (diff <= 25) st.loyal = Math.min(100, (st.loyal ?? 70) + 1);
+      }
+    }
+    // R12: AI 결연 — 플레이어와 같은 비용·규칙 (기교P 800 이상 여유 시 월 평가, 자체)
+    for (const f of Object.values(this.forces)) {
+      if (!f.alive || (f.techP ?? 0) < 800) continue;
+      for (const c of this.forceCities(f.id)) {
+        const cand = c.officers.filter(i => (this.officers[i]?.state?.merit ?? 0) >= 500 && this.relOf(i).sworn.length === 0);
+        if (cand.length >= 2) { this.swearBrotherhood(c.id, cand.slice(0, 3)); break; }
+      }
+    }
     }
     // 신규 등장 무장
     for (const o of Object.values(this.officers)) {
@@ -757,7 +788,7 @@ export class Game {
       return;
     }
     const lead = this.officers[u.officers[0]];
-    let dmg = Math.round(u.troops * 0.12 * ut.atk * (0.7 + lead.war/150) * this.aptMult(u) * this.unitDmgMult(u, true) * this.unitItemAtk(u) * this.unitTechAtk(u) * (1 + 0.1 * this.techLv(u.force, '발명')));
+    let dmg = Math.round(u.troops * 0.12 * ut.atk * (0.7 + lead.war/150) * this.aptMult(u) * this.unitDmgMult(u, true) * this.unitItemAtk(u) * this.unitTechAtk(u) * this.unitRelMult(u) * (1 + 0.1 * this.techLv(u.force, '발명'))); // R12: 의형제·부부 같은 부대 공격 상승
     let loss = Math.round(c.troops * 0.06 / ut.def + 150);
     // 전법: 병종 적성 B 이상 + 기력 소모, 무력이 높을수록 발동 잘됨
     const tac = TACTICS[u.type];
@@ -827,7 +858,7 @@ export class Game {
       if (SIEGE_TYPES.has(att.type) && (att.qi ?? 100) <= 0) return 0; // 병기: 기력 0 공격 불가
       const utA = UNIT_TYPES[att.type], utD = UNIT_TYPES[def.type];
       const lead = this.officers[att.officers[0]] ?? { war: 60, int: 30, apt: null, name_ko: '적병 두목', idx: -1 };
-      let dmg = Math.round(att.troops * 0.05 * utA.atk * (0.7 + lead.war/150) / utD.def * this.aptMult(att) * this.unitDmgMult(att) * this.unitItemAtk(att) * this.unitDefMult(def) * this.unitTechAtk(att) * (1 - 0.03 * this.techLv(def.force, '연병')));
+      let dmg = Math.round(att.troops * 0.05 * utA.atk * (0.7 + lead.war/150) / utD.def * this.aptMult(att) * this.unitDmgMult(att) * this.unitItemAtk(att) * this.unitDefMult(def) * this.unitTechAtk(att) * this.unitRelMult(att) / this.unitRelMult(def) * (1 - 0.03 * this.techLv(def.force, '연병'))); // R12: 의형제·부부 공·방 상승
       if (isWaterAt(att.x, att.z)) { dmg = Math.round(dmg * (utA.ship ? 1.3 : 0.7) * (this.unitHasSkill(att, '수완') ? 1.15 : 1)); } // 수전: 수군 우세, 육군 페널티, 수완 특기 +15% (자체 수치)
       // 전법 (공성과 같은 규칙)
       const tac = TACTICS[att.type];
@@ -938,6 +969,48 @@ export class Game {
   }
   // === R10: 일기토 (설계안 109-113행, 수치·확률은 자체) ===
   effWar(o) { return Math.max(1, (o?.war ?? 50) - ((o?.state?.injuredUntil ?? 0) > this.turn ? 20 : 0)); } // 부상 중 무력 -20
+  // === R12: 관계 (정적: 이름 기반 자체 정의 / 동적: 결연은 state.sworn에 저장) ===
+  buildRelations() {
+    const byName = {};
+    for (const o of Object.values(this.officers)) (byName[o.name_ko] ??= []).push(o.idx);
+    const rels = {};
+    const ensure = i => rels[i] ??= { sworn: [], spouse: null, dear: [], hate: [] };
+    for (const g of SWORN_GROUPS) { const ids = g.flatMap(n => byName[n] ?? []); for (const a of ids) for (const b of ids) if (a !== b) ensure(a).sworn.push(b); }
+    const pair = (list, fn) => { for (const [x, y] of list) for (const xi of byName[x] ?? []) for (const yi of byName[y] ?? []) if (xi !== yi) fn(xi, yi); };
+    pair(SPOUSE_PAIRS, (a, b) => { ensure(a).spouse = b; ensure(b).spouse = a; });
+    pair(DEAR_PAIRS, (a, b) => { ensure(a).dear.push(b); ensure(b).dear.push(a); });
+    pair(HATE_PAIRS, (a, b) => { ensure(a).hate.push(b); ensure(b).hate.push(a); });
+    return rels;
+  }
+  relOf(idx) {
+    this._rels ??= this.buildRelations();
+    const base = this._rels[idx] ?? { sworn: [], spouse: null, dear: [], hate: [] };
+    const dyn = this.officers[idx]?.state?.sworn ?? []; // 결연으로 생긴 관계 (저장 대상)
+    return { ...base, sworn: [...new Set([...base.sworn, ...dyn])] };
+  }
+  isBonded(a, b) { const r = this.relOf(a); return r.sworn.includes(b) || r.spouse === b; }
+  affOf(idx) { let s = 0; for (const ch of (this.officers[idx]?.name_ko ?? '')) s += ch.charCodeAt(0); return s % 150; } // 상성 0~149 (자체 배정)
+  unitRelMult(u) { // 의형제·부부가 같은 부대: 공격·방어 +10% (설계안: 같은 부대 능력 상승, 자체 수치)
+    const os = u.officers;
+    for (let i = 0; i < os.length; i++) for (let j = i + 1; j < os.length; j++) if (this.isBonded(os[i], os[j])) return 1.1;
+    return 1;
+  }
+  swearBrotherhood(cityId, idxs) { // 의형제 결연: 같은 도시·세력 무장 2~3명, 각 공적 500+, 세력 기교P 500 (설계안 55행 비용) · 충성 +10 (자체)
+    idxs = [...new Set(idxs)];
+    const c = this.cityById[cityId], f = this.forces[c?.force];
+    if (!c || !f?.alive || this._blocked(c)) return false;
+    if (idxs.length < 2 || idxs.length > 3 || idxs.some(i => !c.officers.includes(i))) return false;
+    if (idxs.some(i => (this.officers[i]?.state?.merit ?? 0) < 500)) return false;
+    if ((f.techP ?? 0) < 500) return false;
+    f.techP -= 500;
+    for (const i of idxs) {
+      const st = this.officers[i].state ??= {};
+      st.sworn = [...new Set([...(st.sworn ?? []), ...idxs.filter(x => x !== i)])];
+      st.loyal = Math.min(100, (st.loyal ?? 70) + 10);
+    }
+    this.log(`【결연】${idxs.map(i => this.officers[i].name_ko).join('·')}이(가) ${c.name_ko}에서 의형제를 맺었습니다! (기교P -500, 충성 +10)`, c.force === this.playerForce);
+    return true;
+  }
   unitHasItemKind(u, kind) {
     for (const i of u.officers) for (const id of (this.officers[i]?.state?.items ?? [])) if (ITEMS.find(x => x.id === id)?.kind === kind) return true;
     return false;
@@ -965,7 +1038,8 @@ export class Game {
       const s = d[k];
       if (s.hp <= 30 && s.cur < s.offs.length - 1) {
         const cur = this.officers[s.offs[s.cur]], nxt = this.officers[s.offs[s.cur + 1]];
-        if (this.effWar(nxt) > this.effWar(cur) + 5 && Math.random() < 0.5) {
+        const assistP = this.isBonded(s.offs[s.cur], s.offs[s.cur + 1]) ? 0.75 : 0.5; // R12: 의형제·부부는 교체 참전 확률 상승 (설계안 113행, 자체 수치)
+        if (this.effWar(nxt) > this.effWar(cur) + 5 && Math.random() < assistP) {
           s.hpMap[s.offs[s.cur]] = s.hp; s.cur++;
           s.hp = s.hpMap[s.offs[s.cur]] ?? 100; s.spirit = Math.round(s.spirit / 2);
           d.log.push(`${nxt.name_ko}이(가) 교체 출전!`);
