@@ -596,4 +596,4 @@ export class Map3D {
     this.camera.lookAt(this.camTarget);
     this.renderer.render(this.scene, this.camera);
   }
-      }
+}
