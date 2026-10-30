@@ -597,3 +597,4 @@ export class Map3D {
     this.renderer.render(this.scene, this.camera);
   }
 }
+// end of map3d
