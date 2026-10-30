@@ -126,7 +126,7 @@ export class Game {
     c.facilities = c.facilities ?? [];
     if (c.facilities.length >= this.facSlots(c)) return false;
     if (c.gold < spec.cost) return false;
-    const valid = (builders ?? []).filter(i => c.officers.includes(i)).slice(0, 3);
+    const valid = [...new Set((builders ?? []).filter(i => c.officers.includes(i)))].slice(0, 3);
     c.gold -= spec.cost; f.ap -= 20;
     c.facilities.push({ type, progress: 0, builders: valid, done: false });
     this.log(`${c.name_ko}에 ${type} 건설 시작 (금 ${spec.cost}, 담당 ${valid.length}명)`, c.force === this.playerForce);
@@ -455,4 +455,4 @@ export function josa(name, pair) { // [을,를] 형태
   const code = name.charCodeAt(name.length-1);
   const jong = (code >= 0xAC00 && code <= 0xD7A3) ? (code-0xAC00)%28 : 0;
   return name + (jong ? pair[0] : pair[1]);
-      }
+  }
