@@ -1,7 +1,7 @@
 // 진입점: 화면 전환·UI·지도 연결
-import { Map3D, toWorld } from './map3d.js?v=r20';
-import { Game, SAVE_KEY, forceColor, UNIT_TYPES, josa, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL } from './game.js?v=r20';
-import { aiThink } from './ai.js?v=r20';
+import { Map3D, toWorld } from './map3d.js?v=r21';
+import { Game, SAVE_KEY, forceColor, UNIT_TYPES, josa, josaRo, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL } from './game.js?v=r21';
+import { aiThink } from './ai.js?v=r21';
 
 const $ = id => document.getElementById(id);
 let DATA = null, game = null, map = null, selectedUnit = null, autoTimer = null, pendingFire = null; // R15: 직접 전법·계략 대기
@@ -9,7 +9,7 @@ let DATA = null, game = null, map = null, selectedUnit = null, autoTimer = null,
 async function loadData() {
   const [officers, skills, portraits, s184, s190, s251] = await Promise.all(
     ['data/officers670.json','data/skills.json','data/portraits.json','data/scenario-184.json','data/scenario-190.json','data/scenario-251.json']
-      .map(u => fetch(u + '?v=r20').then(r => r.json())));
+      .map(u => fetch(u + '?v=r21').then(r => r.json())));
   const byIdx = {};
   for (const o of officers) byIdx[o.idx] = o;
   DATA = { officers: byIdx, skills, portraits, scenarios: { '184': s184, '190': s190, '251': s251 } };
@@ -62,7 +62,7 @@ function startGame(scenId, fid) {
   game = new Game(DATA.scenarios[scenId], DATA.officers, DATA.skills, fid);
   window.__game = game; // 테스트 훅
   enterGame();
-  game.log(`${DATA.officers[game.forces[fid].ruler].name_ko}(으)로 ${scenId}년 시나리오를 시작합니다.`, true);
+  game.log(`${josaRo(DATA.officers[game.forces[fid].ruler].name_ko)} ${scenId}년 시나리오를 시작합니다.`, true);
   const cap = game.forceCities(fid)[0];
   if (cap) map.focusCity(cap);
   refreshAll();
@@ -141,6 +141,7 @@ function applySound() {
   if (musicTimer) { clearInterval(musicTimer); musicTimer = null; }
   if (sndOn) { sndCtx(); musicTimer = setInterval(musicTick, 1800); }
 }
+document.addEventListener('pointerdown', () => { if (sndOn) sndCtx(); }, { passive: true }); // 자동재생 정책: 저장된 '켬'은 첫 사용자 입력 시 AudioContext 재개
 function toggleSound() { sndOn = !sndOn; try { localStorage.setItem(SND_KEY, sndOn ? '1' : '0'); } catch (e) {} applySound(); if (sndOn) sfx('strat'); }
 function sndScanLogs() { // 새 로그 종류별 효과음 (켜져 있을 때만)
   if (!game) return;
@@ -278,7 +279,7 @@ function checkGameOver() {
   if (owners.size === 1) {
     if (!game._endShown) {
       game._endShown = true;
-      endModal(`【${game.forceName([...owners][0])}】이(가) 모든 도시를 제압해 천하를 통일했습니다! (${game.year}년 ${game.month}월, ${game.turn}턴)`, true);
+      endModal(`【${game.forceName([...owners][0])}】${josa(game.forceName([...owners][0]), ['이','가']).slice(-1)} 모든 도시를 제압해 천하를 통일했습니다! (${game.year}년 ${game.month}월, ${game.turn}턴)`, true);
     }
     return;
   }
@@ -287,7 +288,7 @@ function checkGameOver() {
   if (f && !f.alive && !game.deadAck) {
     const others = game.aliveForces();
     if (others.length === 0) { endModal('천하가 정리되었습니다.'); return; }
-    modal(`【${game.forceName(f.id)}】이(가) 멸망했습니다.`, [
+    modal(`【${game.forceName(f.id)}】${josa(game.forceName(f.id), ['이','가']).slice(-1)} 멸망했습니다.`, [
       ['다른 세력으로 계속', () => { // R14: 관전과 구분 — 계속할 세력을 직접 선택 (설계안 190행)
         modal('계속할 세력 선택', game.aliveForces().map(of => [game.forceName(of.id), () => { game.playerForce = of.id; game.deadAck = true; game.delegated = false; setAuto(false); refreshAll(); }]).concat([['취소', () => checkGameOver()]]));
       }],
