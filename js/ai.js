@@ -17,6 +17,13 @@ export function aiThink(game, fid) {
     const avgNbr = cities.reduce((s,x) => s + x.troops, 0) / cities.length;
     if (c.troops < Math.min(avgNbr, 12000) && c.gold > 500 && c.food > 3000) game.recruit(c.id);
   }
+  // 2.7) 외교: 험악한 이웃에게 친선 사절 (같은 비용·효과, 30% 확률)
+  if (f.ap >= 20 && Math.random() < 0.3) {
+    const worst = Object.values(game.forces).filter(t => t.alive && t.id !== fid)
+      .map(t => ({ t, v: game.relation(fid, t.id) })).filter(x => x.v < 40).sort((x, y) => x.v - y.v)[0];
+    const from = cities.filter(c => c.gold >= 500 && c.officers.length).sort((x, y) => y.gold - x.gold)[0];
+    if (worst && from) game.envoy(fid, worst.t.id, from.id);
+  }
   // 2.6) 시설 건설: 개발지가 남고 금이 넉넉하면 시장·농장 우선, 이후 병영
   for (const c of cities) {
     if (f.ap < 20) break;
@@ -48,7 +55,7 @@ export function aiThink(game, fid) {
     }
   }
   // 3) 군사: 전방 도시(적과 인접) 병력이 충분하면 공격, 아니면 집결
-  const enemyCities = game.cities.filter(c => c.force !== fid);
+  const enemyCities = game.cities.filter(c => c.force !== fid && (c.force == null || !game.isAllied(fid, c.force))); // 동맹국 공격 회피
   for (const c of cities) {
     if (f.ap < 40) break;
     if (c.officers.length === 0) continue;
@@ -79,7 +86,7 @@ export function aiThink(game, fid) {
   // 4) 목표 없는 야전 부대 재지정: 인접 적 도시가 약하면 공격, 아니면 귀환
   for (const u of game.units) {
     if (u.force !== fid || u.targetCity != null) continue;
-    const foes = game.cities.filter(c => c.force !== fid && (c.force == null || game.forces[c.force]?.alive));
+    const foes = game.cities.filter(c => c.force !== fid && (c.force == null || (game.forces[c.force]?.alive && !game.isAllied(fid, c.force))));
     let best = null, bd = 1e9;
     for (const e of foes) { const d = Math.hypot(e.lon - u.x, e.lat - u.z); if (d < bd) { bd = d; best = e; } }
     const homes = cities.slice().sort((a,b) => Math.hypot(a.lon-u.x,a.lat-u.z) - Math.hypot(b.lon-u.x,b.lat-u.z));
