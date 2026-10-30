@@ -184,6 +184,8 @@ export class Game {
       this.officers[o.idx].state = rec;
       if ((o.status === 'ruler' || o.status === 'taesu' || o.status === 'serving') && o.city != null && this.cityById[o.city]) this.cityById[o.city].officers.push(o.idx);
     }
+    const hanCap = this.cities.find(c => c.name_ko === '낙양'); // R17: 황제 옹립 (자체 설계, 설계안 97·102행) — 184·190은 후한 황제가 낙양에 존재, 251은 부재. 소재 도시 보유 세력이 옹립한 것으로 간주
+    this.emperor = (this.scenId === '184' || this.scenId === '190') && hanCap ? { city: hanCap.id, holder: hanCap.force ?? null } : null;
     this.units = []; this.nextUnitId = 1;
     this.diplo = {}; // 세력 간 외교
     this.itemPool = ITEMS.map(i => i.id); // 미발견 명품: 'a_b'(a<b) → { v: 관계 0-100, allianceUntil, aidTurn }
@@ -253,12 +255,18 @@ export class Game {
   gainMerit(i, n) { const st = this.officers[i]?.state; if (st) st.merit = (st.merit ?? 0) + n; }
   meritGrade(i) { return Math.min(8, Math.floor((this.officers[i]?.state?.merit ?? 0) / 500)); } // 공적 500당 1등급 (자체 수치)
   salaryOf(i) { return 10 + this.meritGrade(i) * 5; } // 월 봉록: 기본 10금 + 등급당 5금 (자체 수치)
-  forceRank(fid) { // 소유 도시 수 기준 관작 (황건 제외, 황제는 24도시 — 설계안 102행)
+  emperorHolder() { return this.emperor ? (this.cityById[this.emperor.city]?.force ?? null) : null; } // R17: 현재 옹립 세력 = 황제 소재 도시 보유자
+  forceRank(fid) { // 소유 도시 수 기준 관작 (황건 제외, 황제는 24도시 + 옹립 또는 황제 부재 — 설계안 102행)
     const f = this.forces[fid];
     if (!f?.alive || this.forceName(fid).includes('황건')) return null;
+    if (f.rank === '황제') return '황제'; // R17: 한번 즉위하면 강등 없음 (자체)
     const n = this.cities.filter(c => c.force === fid).length;
     let r = null;
-    for (const [need, name] of RANKS) if (n >= need) r = name;
+    for (const [need, name] of RANKS) {
+      if (n < need) continue;
+      if (name === '황제' && this.emperor && this.emperorHolder() !== fid) continue; // R17: 황제 존재 시나리오에서는 옹립 세력만 즉위 (설계안 102행)
+      r = name;
+    }
     return r;
   }
   // === 군사·군단 (설계안 96행: 군사 지력70+ 임명 / 군단: 도시 묶음을 도독에게 위임) ===
@@ -425,7 +433,7 @@ export class Game {
     c.gold -= 1000; f.ap -= apc;
     const chr = Math.max(50, ...c.officers.map(i => this.officers[i].chr));
     const myN = this.cities.filter(x => x.force === fid).length;
-    const p = Math.min(0.5, 0.05 + (chr - 50) / 200 + (myN - tCities.length) * 0.05);
+    const p = Math.min(0.5, 0.05 + (chr - 50) / 200 + (myN - tCities.length) * 0.05 + (this.cityHasSkill(c, '귀납') ? 0.1 : 0)); // R17: 귀납 특기 +0.1 (자체 수치)
     if (Math.random() < p) {
       for (const tc of tCities) { tc.force = fid; }
       for (const u of this.units) if (u.force === tid) u.force = fid; // 야전 부대도 귀속
@@ -540,7 +548,7 @@ export class Game {
     const rf = this.forces[c.force];
     if (rf && rel.hate.includes(rf.ruler)) mod -= 0.15; // 군주 혐오
     if (rel.sworn.some(i => { const f2 = this.officers[i]?.state?.force; return f2 != null && f2 !== c.force; }) || (rel.spouse != null && (this.officers[rel.spouse]?.state?.force != null) && this.officers[rel.spouse].state.force !== c.force)) mod -= 0.2; // 의형제·부부가 타 세력 소속
-    return Math.max(0.1, Math.min(0.9, 0.45 + (envoy - t.chr)/200 + (ruler - 50)/500 - loyal/400 + (this.cityHasSkill(c, '등용') ? 0.1 : 0) + mod));
+    return Math.max(0.1, Math.min(0.9, 0.45 + (envoy - t.chr)/200 + (ruler - 50)/500 - loyal/400 + (this.cityHasSkill(c, '등용') ? 0.1 : 0) + (this.cityHasSkill(c, '이간') ? 0.1 : 0) + mod)); // R17: 이간 특기 +0.1 (자체 수치)
   }
   recruitOfficer(cityId, officerIdx) { // 재야 무장 등용: 금 100, AP 20 (자체 규칙)
     const c = this.cityById[cityId], f = this.forces[c.force];
@@ -638,7 +646,7 @@ export class Game {
     // 전 부대 기력 회복
     for (const u of this.units) { // R13: 훈련장 주둔 부대 +5
       const home = this.cities.find(c => c.force != null && c.force === u.force && c.lon === u.x && c.lat === u.z);
-      u.qi = Math.min(100, (u.qi ?? 100) + 10 + (home && this.cityFac(home, '훈련장').length ? 5 : 0));
+      u.qi = Math.min(100, (u.qi ?? 100) + 10 + (home && this.cityFac(home, '훈련장').length ? 5 : 0) + (this.unitHasSkill(u, '훈련') ? 5 : 0)); // R17: 훈련 특기 +5 (자체 수치)
     }
     // 부대 이동·전투
     for (const u of [...this.units]) { if (u.force === -1) this.banditAct(u); else this.stepUnit(u); }
@@ -738,12 +746,17 @@ export class Game {
         if (cand.length >= 2) { this.swearBrotherhood(c.id, cand.slice(0, 3)); break; }
       }
     }
+    if (this.emperor) { // R17: 옹립 세력 교체 로그 (월 평가 1회, 세력 루프 밖)
+      const h = this.emperorHolder();
+      if (h !== this.emperor.holder) { this.emperor.holder = h; if (h != null) this.log(`【옹립】${josa(this.forceName(h), ['이','가'])} 후한 황제를 옹립했습니다! 기교P 매월 +10`, true); }
+    }
     // R13: 서재 기교P + AI 능력연구·흡수합병 — 플레이어와 같은 비용·규칙 (월 평가)
     for (const f of Object.values(this.forces)) {
       if (!f.alive) continue;
       const sj = Math.min(3, this.forceFacLv(f.id, '서재'));
       if (sj) this.gainTechP(f.id, sj * 10);
-      if (f.rank === '황제') this.gainTechP(f.id, 20); // R14: 황제 기교P 월 +20 (설계안 97행 '황제 옹립 시 기교P 증가' 취지, 자체 수치)
+      if (f.rank === '황제') this.gainTechP(f.id, 20); // R14: 황제 기교P 월 +20 (자체 수치)
+      if (this.emperor && this.emperorHolder() === f.id) this.gainTechP(f.id, 10); // R17: 옹립 세력 기교P 월 +10 (설계안 97행, 자체 수치)
       f.ab = f.ab ?? { '공격': 0, '방어': 0, '계략': 0, '내정': 0 };
       const abTodo = Object.keys(AB_BRANCHES).filter(b => (f.ab[b] ?? 0) < 3 && (f.techP ?? 0) >= AB_P[f.ab[b] ?? 0] + 300).sort((a, b) => AB_P[f.ab[a] ?? 0] - AB_P[f.ab[b] ?? 0]);
       if (abTodo.length && f.id !== this.playerForce) this.researchAbility(f.id, abTodo[0]); // AI만 자동, 플레이어는 수동
@@ -832,7 +845,8 @@ export class Game {
       if (!tgt || tgt.force !== u.force) return;
     }
     const ut = UNIT_TYPES[u.type];
-    const speed = 0.55 * ut.move * (this.unitHasSkill(u, '질풍') ? 1.25 : 1);
+    const spdMult = this.unitHasSkill(u, '질풍') ? 1.25 : (this.unitHasSkill(u, '신행') ? 1.15 : 1); // R17: 신행 = 이동 +15% (자체 재정의 — 야간·날씨 시스템 부재, 질풍 우선)
+    const speed = 0.55 * ut.move * spdMult;
     const dx = u.tx - u.x, dz = u.tz - u.z;
     const d = Math.hypot(dx, dz);
     if (d > 1.2) {
@@ -841,6 +855,11 @@ export class Game {
         if (!u._landWarn) { u._landWarn = true; this.log(`${josa(u.label, ['이','가'])} 수로를 벗어나 더 이상 나아갈 수 없습니다`, u.force === this.playerForce); }
         return;
       }
+      if (!SHIP_TYPES.has(u.type) && isWaterAt(nx, nz)) { // R17: 육군은 강·바다 진입 불가 (설계안 64행 수군 규칙의 대칭 — 여울 타일 없음·난소행군 미구현). AI도 같은 이동 경로라 같은 제약
+        if (!u._waterWarn) { u._waterWarn = true; this.log(`${josa(u.label, ['은','는'])} 수로를 건널 수 없어 진격을 멈췄습니다`, u.force === this.playerForce); }
+        return;
+      }
+      u._waterWarn = false;
       u._landWarn = false;
       u.x = nx; u.z = nz; return;
     }
