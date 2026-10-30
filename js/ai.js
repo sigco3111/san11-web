@@ -145,4 +145,22 @@ export function aiThink(game, fid, legion = null) { // legion 지정 시 그 군
     if (best && bd < 10 && u.troops > Math.max(best.troops * 1.2, 4000)) game.orderUnit(u.id, best.id);
     else if (homes.length) game.orderUnit(u.id, homes[0].id);  // 귀환·합류
   }
+  // 5) R15: AI도 같은 규칙으로 전법·계략 직접 발동 — 인접 적 부대·도시에 턴 1회, 비용·자격은 fireTactic/fireStrat과 동일
+  for (const u of [...game.units]) {
+    if (u.force !== fid || !game.units.includes(u)) continue;
+    const inR = (x, z) => Math.hypot(x - u.x, z - u.z) < 2.2;
+    const eu = game.units.find(x => x.force !== u.force && !game.isPeace(u.force, x.force) && inR(x.x, x.z));
+    const ec = game.cities.find(c => c.force != null && c.force !== u.force && !game.isPeace(u.force, c.force) && inR(c.lon, c.lat));
+    if (game.tacticInfo(u)) { // 전법: 부대 우선, 없으면 도시
+      if (eu) { game.fireTactic(u.id, { type: 'unit', id: eu.id }); }
+      else if (ec) { game.fireTactic(u.id, { type: 'city', id: ec.id }); }
+    }
+    if (!game.units.includes(u) || (u._stratTurn ?? -1) === game.turn) continue;
+    const caster = u.officers.map(i => game.officers[i]).sort((a, b) => b.int - a.int)[0];
+    if (!caster) continue;
+    const tgt = game.units.find(x => x.force !== u.force && !game.isPeace(u.force, x.force) && !game.unitHasSkill(x, '위장') && inR(x.x, x.z));
+    if (tgt && caster.int >= 80 && (u.qi ?? 100) >= 25 && (tgt.conf ?? 0) <= 0) game.fireStrat(u.id, 'confuse', { type: 'unit', id: tgt.id }); // 혼란 우선
+    else if (tgt && caster.int >= 75 && (u.qi ?? 100) >= 30) game.fireStrat(u.id, 'fire', { type: 'unit', id: tgt.id });
+    else if (!tgt && ec && caster.int >= 75 && (u.qi ?? 100) >= 30) game.fireStrat(u.id, 'fire', { type: 'city', id: ec.id });
+  }
 }
