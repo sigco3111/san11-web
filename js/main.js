@@ -60,6 +60,7 @@ function buildRulerScreen(scenId) {
 // === 게임 시작 ===
 function startGame(scenId, fid) {
   game = new Game(DATA.scenarios[scenId], DATA.officers, DATA.skills, fid);
+  window.__game = game; // 테스트 훅
   enterGame();
   game.log(`${DATA.officers[game.forces[fid].ruler].name_ko}(으)로 ${scenId}년 시나리오를 시작합니다.`, true);
   const cap = game.forceCities(fid)[0];
@@ -301,6 +302,7 @@ async function boot() {
     $('btn-continue').onclick = () => {
       const d = JSON.parse(localStorage.getItem(SAVE_KEY));
       const g = new Game(DATA.scenarios[d.scenId], DATA.officers, DATA.skills, d.playerForce);
+      window.__game = g; // 테스트 훅
       Object.assign(g, { year: d.year, month: d.month, dan: d.dan, turn: d.turn, cities: d.cities, forces: d.forces, units: d.units, nextUnitId: d.nextUnitId, playerForce: d.playerForce, delegated: d.delegated, logs: d.logs, deadAck: d.deadAck });
       g.cityById = {}; g.cities.forEach(c => g.cityById[c.id] = c);
       for (const [i, st] of Object.entries(d.officerStates)) if (DATA.officers[i]) DATA.officers[i].state = st;
