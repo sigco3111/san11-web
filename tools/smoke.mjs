@@ -1068,12 +1068,13 @@ if (g.units.find(u => u.id === 9999) && g.units.find(u => u.id === 9999).qi === 
   const leadIdx = g21.forces[pf].ruler;
   const elead = g21.forces[ef].ruler;
   const mk = (id, force, offs, troops, type, x, z) => { const u = { id, force, officers: offs, troops, type, x, z, path: [], tx: null, tz: null, targetCity: null, label: '시험' + id, qi: 100, conf: 0 }; g21.units.push(u); return u; };
-  const me = mk(8001, pf, [leadIdx], 10000, 'spear', 10, 10);
+  g21.officers[leadIdx].apt = {}; for (let k = 0; k < 12; k++) g21.officers[leadIdx].apt[k] = 'S'; // R39: 창병 기본 전법 제거 → 기본 전법이 있는 노병(불화살)으로 직접 발동 검증
+  const me = mk(8001, pf, [leadIdx], 10000, 'bow', 10, 10);
   const foe = mk(8002, ef, [elead], 10000, 'sword', 11, 10); // 인접
   // 창격 직접 발동: 기력 -20, 적 병력 감소, 반격 없음
   const t0 = foe.troops, q0 = me.qi;
   if (!g21.fireTactic(me.id, { type: 'unit', id: foe.id })) { console.log('FAIL: R15 전법 직접 발동'); process.exit(1); }
-  if (me.qi !== q0 - 20) { console.log('FAIL: R15 전법 기력', me.qi); process.exit(1); }
+  if (me.qi !== q0 - 15) { console.log('FAIL: R15 전법 기력', me.qi); process.exit(1); }
   if (foe.troops >= t0 || me.troops !== 10000) { console.log('FAIL: R15 전법 피해/반격없음', foe.troops, me.troops); process.exit(1); }
   // 부적격: 기력 부족 → 실패, 변화 없음
   me.qi = 10; const tf = foe.troops;
@@ -1136,7 +1137,8 @@ if (g.units.find(u => u.id === 9999) && g.units.find(u => u.id === 9999).qi === 
   const ai = mk(8007, ef, [elead], 9000, 'spear', 40, 41);
   const mine2 = mk(8008, pf, [leadIdx], 9000, 'sword', 41, 40);
   const mt0 = mine2.troops;
-  if (!g21.fireTactic(ai.id, { type: 'unit', id: mine2.id }) || mine2.troops >= mt0) { console.log('FAIL: R15 AI 동일 규칙 직접 전법'); process.exit(1); }
+  if (g21.fireTactic(ai.id, { type: 'unit', id: mine2.id })) { console.log('FAIL: R39 창병 기본 전법이 남아 있음'); process.exit(1); } // 설계 밖 기본 전법 제거
+  if (!g21.fireTactic(ai.id, { type: 'unit', id: mine2.id }, 'two') || mine2.troops >= mt0) { console.log('FAIL: R15 AI 동일 규칙 직접 전법'); process.exit(1); }
   console.log('R15 전법·계략 직접발동 게이트 PASS (전법기력/피해/반격없음/자격·혼란·사거리 차단/도시피해/함락/화계성공·실패/턴1회/혼란/위장면역/화계도시/AI동일규칙)');
 }
 
@@ -1149,9 +1151,10 @@ if (g.units.find(u => u.id === 9999) && g.units.find(u => u.id === 9999).qi === 
   const leadIdx = g22.forces[pf].ruler;
   const elead = g22.forces[ef].ruler;
   const mk = (id, force, offs, troops, type, x, z) => { const u = { id, force, officers: offs, troops, type, x, z, path: [], tx: null, tz: null, targetCity: null, label: '보강' + id, qi: 100, conf: 0 }; g22.units.push(u); return u; };
+  g22.officers[leadIdx].apt = {}; for (let k = 0; k < 12; k++) g22.officers[leadIdx].apt[k] = 'S'; // R39: 창병 기본 전법 제거 → 설계 EX(이단찌르기)로 검증
   const a1 = mk(8101, pf, [leadIdx], 10000, 'spear', 10, 10);
   const b1 = mk(8102, ef, [elead], 20000, 'sword', 11, 10);
-  if (!g22.fireTactic(a1.id, { type: 'unit', id: b1.id })) { console.log('FAIL: R15보강 첫 전법'); process.exit(1); }
+  if (!g22.fireTactic(a1.id, { type: 'unit', id: b1.id }, 'two')) { console.log('FAIL: R15보강 첫 전법'); process.exit(1); }
   const bt = b1.troops;
   if (g22.fireTactic(a1.id, { type: 'unit', id: b1.id }) || b1.troops !== bt) { console.log('FAIL: R15보강 전법 턴 1회 제한'); process.exit(1); }
   if (g22.tacticInfo(a1) !== null) { console.log('FAIL: R15보강 tacticInfo 턴 제한'); process.exit(1); }
@@ -1579,9 +1582,11 @@ if (g.units.find(u => u.id === 9999) && g.units.find(u => u.id === 9999).qi === 
     if (g.tacticInfo(r) !== null && false) fail('x');
     if (s3.g.tacticInfo(r).opts.length !== 1) fail('병기 추가 전법 없음 확인');
   }
-  // 기본 전법(tid 없음)은 이전과 동일 경로
-  { const { g, pf, ef, lead, el, mk } = setup('spear'); const me = mk(8371, pf, [lead], 10000, 'spear', X, Z), foe = mk(8372, ef, [el], 10000, 'sword', X + 1, Z), q0 = me.qi;
-    if (!g.fireTactic(me.id, { type: 'unit', id: foe.id }) || me.qi !== q0 - 20 || foe.x !== X + 1) fail('기본 전법 불변'); }
+  // R39: 기본 전법(tid 없음)은 설계에 기본 전법이 있는 병종(노병 불화살)만 이전과 같은 경로, 창병은 기본 전법 없음
+  { const { g, pf, ef, lead, el, mk } = setup('spear'); const me = mk(8371, pf, [lead], 10000, 'spear', X, Z), foe = mk(8372, ef, [el], 10000, 'sword', X + 1, Z), q0 = me.qi, t0 = foe.troops;
+    if (g.fireTactic(me.id, { type: 'unit', id: foe.id }) || me.qi !== q0 || foe.troops !== t0) fail('창병 기본 전법이 남아 있음'); }
+  { const { g, pf, ef, lead, el, mk } = setup('bow'); const me = mk(8373, pf, [lead], 10000, 'bow', X, Z), foe = mk(8374, ef, [el], 10000, 'sword', X + 1, Z), q0 = me.qi;
+    if (!g.fireTactic(me.id, { type: 'unit', id: foe.id }) || me.qi !== q0 - 15 || foe.x !== X + 1) fail('노병 기본 전법(불화살) 불변'); }
   // AI: 같은 fireTactic 경로로 추가 전법 사용 (혼란 미부여 대상엔 나선찌르기)
   { const { g, pf, ef, lead, el, mk } = setup('spear'); const ai = g.cities.find(c => c.force === ef).force;
     g.officers[el].apt = ['S', 'S', 'S', 'S', 'S', 'S'];
@@ -1842,5 +1847,30 @@ if (g.units.find(u => u.id === 9999) && g.units.find(u => u.id === 9999).qi === 
   if (TACTICS.sword) fail('검병 TACTICS 항목이 남아 있음'); if (TACTICS.bow.name !== '불화살' || TACTICS.bow.qi !== 15) fail('노병 기본 전법 불화살(잠정 15) 아님');
   { const g = mkg(); const f = g.playerForce; const oi = g.forceCities(f)[0].officers[0]; const c = g.cities.find(c => c.force != null && c.force !== f); g.officers[oi].apt = {}; for (let k = 0; k < 12; k++) g.officers[oi].apt[k] = 'S'; const u = { id: 5, force: f, officers: [oi], troops: 4000, type: 'sword', x: c.lon, z: c.lat, path: [], tx: c.lon, tz: c.lat, targetCity: c.id, label: 'W', qi: 100, conf: 0 }; g.units.push(u); RULES.cityTacticSiegeOnly = false; try { g.stepUnit(u); } catch (e) { RULES.cityTacticSiegeOnly = true; fail('검병 공성 중 예외 ' + e.message); } RULES.cityTacticSiegeOnly = true; }
   console.log('R38 AI 장기 공성 철수 게이트 PASS (10턴 미만 유지, 열세 10턴 철수 후 아군 도시, 우세 부대 유지)');
+}
+// === R39: 창·극·기병 자동 전투도 설계 전법(EX)을 같은 조건으로 사용하는 게이트 ===
+{
+  const fail = m => { console.log('FAIL: R39 ' + m); process.exit(1); };
+  const rand0 = Math.random;
+  const run = (type, apt, qi, lastTurn) => {
+    const g = new Game(JSON.parse(JSON.stringify(scen)), JSON.parse(JSON.stringify(officers)), {}, 0); g.units = [];
+    const pf = g.playerForce, ef = g.cities.find(c => c.force != null && c.force !== pf).force;
+    const o1 = g.forces[pf].ruler, o2 = g.forces[ef].ruler;
+    for (const o of [o1, o2]) { g.officers[o].int = 10; g.officers[o].apt = {}; for (let k = 0; k < 12; k++) g.officers[o].apt[k] = apt; }
+    const mk = (id, force, o, t, x) => { const u = { id, force, officers: [o], troops: 9000, type: t, x, z: 10, path: [], tx: null, tz: null, targetCity: null, label: 'G' + id, qi, conf: 0 }; g.units.push(u); return u; };
+    const a = mk(1, pf, o1, type, 10), b = mk(2, ef, o2, 'sword', 10.5);
+    if (lastTurn) a._tacTurn = g.turn;
+    let logs = []; g.log = m => { if (m.includes('【전법】')) logs.push(m); };
+    Math.random = () => 0; try { g.fieldBattle(a, b); } finally { Math.random = rand0; }
+    return { logs, aQi: a.qi, tacTurn: a._tacTurn, turn: g.turn };
+  };
+  const sp = run('spear', 'S', 100, false), pk = run('pike', 'S', 100, false), cv = run('cav', 'S', 100, false);
+  if (sp.logs.length !== 1 || !/나선찌르기/.test(sp.logs[0]) || sp.aQi !== 85) fail('창병 자동 전법(혼란형 우선, 기력 15) ' + JSON.stringify(sp));
+  if (pk.logs.length !== 1 || !/선풍베기/.test(pk.logs[0]) || pk.aQi !== 75) fail('극병 자동 전법 ' + JSON.stringify(pk));
+  if (cv.logs.length !== 1 || cv.aQi >= 100) fail('기병 자동 전법 ' + JSON.stringify(cv));
+  if (run('spear', 'D', 100, false).logs.length) fail('적성 B 미만인데 자동 전법 발동');
+  if (run('spear', 'S', 10, false).logs.length) fail('기력 부족인데 자동 전법 발동');
+  if (run('spear', 'S', 100, true).logs.length) fail('같은 턴 두 번째 자동 전법 발동');
+  console.log('R39 창·극·기병 자동 전법 게이트 PASS (설계 EX 사용: 창 나선찌르기(15)·극 선풍베기(25, 혼란형 없음→최고 기력형), 기병 사용, 적성 B 미만/기력 부족/턴 1회 차단)');
 }
 console.log('sample logs:'); for (const l of g.logs.slice(-8)) console.log(' ', l.t, l.msg);
