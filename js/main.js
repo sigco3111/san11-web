@@ -1,12 +1,12 @@
 // 진입점: 화면 전환·UI·지도 연결
-import { Map3D, toWorld } from './map3d.js?v=r32';
-import { Game, SAVE_KEY, forceColor, UNIT_TYPES, ARTS, FIELD_FACS, TRAPS, SHIP_TYPES, josa, josaRo, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL } from './game.js?v=r32';
-import { aiThink } from './ai.js?v=r32';
+import { Map3D, toWorld } from './map3d.js?v=r33';
+import { Game, SAVE_KEY, forceColor, UNIT_TYPES, ARTS, FIELD_FACS, TRAPS, SHIP_TYPES, josa, josaRo, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL } from './game.js?v=r33';
+import { aiThink } from './ai.js?v=r33';
 
 const $ = id => document.getElementById(id);
 let DATA = null, game = null, map = null, selectedUnit = null, autoTimer = null, pendingFire = null; // R15: 직접 전법·계략 대기
 
-const BUILD_ID = 'r32'; // 빌드 ID (index.html의 meta[name=build]와 같아야 함 - 오래된 캐시된 index와 새 스크립트의 혼합 감지)
+const BUILD_ID = 'r33'; // 빌드 ID (index.html의 meta[name=build]와 같아야 함 - 오래된 캐시된 index와 새 스크립트의 혼합 감지)
 function checkBuildSkew() {
   const idx = document.querySelector('meta[name="build"]')?.content;
   if (idx === BUILD_ID) { sessionStorage.removeItem('cheonha-xi-web.skew'); return; } // 일치하면 재시도 표식 해제
@@ -19,7 +19,7 @@ checkBuildSkew();
 async function loadData() {
   const [officers, skills, portraits, s184, s190, s251] = await Promise.all(
     ['data/officers670.json','data/skills.json','data/portraits.json','data/scenario-184.json','data/scenario-190.json','data/scenario-251.json']
-      .map(u => fetch(u + '?v=r32').then(r => r.json())));
+      .map(u => fetch(u + '?v=r33').then(r => r.json())));
   const byIdx = {};
   for (const o of officers) byIdx[o.idx] = o;
   DATA = { officers: byIdx, skills, portraits, scenarios: { '184': s184, '190': s190, '251': s251 } };
@@ -85,6 +85,7 @@ function enterGame() {
     map.onPick = onPick;
     (function loop() { map.render(); requestAnimationFrame(loop); })();
   }
+  game.forestFn = (lon, lat) => map.forestAtLL(lon, lat);
   map.syncScenario(game.cities);
   map.cityGroup.clear(); map.cityMeshes = {};
   map.unitGroup.clear(); map.unitMeshes = {};
@@ -709,6 +710,7 @@ function showUnitPanel(uid) {
     부장: ${u.officers.map(i => DATA.officers[i].name_ko).join(', ')}<br>기력 ${u.qi ?? 100} / 100${(u.conf ?? 0) > 0 ? ` · <span style='color:#e66'>혼란 ${u.conf}턴</span>` : ''}</p>
     ${mine ? '<p style="color:#ffd700">목표 도시를 클릭하면 이동 명령을 내립니다.</p>' : ''}
     ${mine && game.tacticInfo?.(u) ? `<p>${game.tacticInfo(u).opts.map(o => `<button class="cmd up-tac" data-tid="${o.id}">전법 ${o.name} (기력 ${o.qi})</button>`).join(' ')}</p>` : ''}
+    ${mine && game.canAmbush(u) && game.ambushTarget(u) && (u._stratTurn ?? -1) !== game.turn && (u.qi ?? 100) >= 10 && u.officers.some(i => (DATA.officers[i]?.int ?? 0) >= 60) ? '<p><button class="cmd" id="up-ambush">계략 복병 (기력 10, 숲에서 인접 적 기습)</button></p>' : ''}
     ${mine && (u.burn ?? 0) > 0 && (u._stratTurn ?? -1) !== game.turn && (u.qi ?? 100) >= 10 && u.officers.some(i => (DATA.officers[i]?.int ?? 0) >= 60) ? '<p style="color:#ff9a4a">불이 붙었습니다 (' + u.burn + '턴, 턴당 병력 -4%) <button class="cmd" id="up-douse">계략 소화 (기력 10)</button></p>' : ''}
     ${mine && (u.conf ?? 0) <= 0 && (u._stratTurn ?? -1) !== game.turn && u.officers.some(i => (DATA.officers[i]?.int ?? 0) >= 75) && (u.qi ?? 100) >= 30 ? '<p><button class="cmd" id="up-fire">계략 화계 (기력 30)</button></p>' : ''}
     ${mine && (u.conf ?? 0) <= 0 && (u._stratTurn ?? -1) !== game.turn && u.officers.some(i => (DATA.officers[i]?.int ?? 0) >= 80) && (u.qi ?? 100) >= 25 ? '<p><button class="cmd" id="up-conf">계략 혼란 (기력 25)</button></p>' : ''}
@@ -729,6 +731,7 @@ function showUnitPanel(uid) {
     if (!ok) { const w = document.createElement('p'); w.style.color = '#e66'; w.textContent = game.lastFieldWhy ?? '건설할 수 없습니다'; $('panel').insertBefore(w, $('up-close').parentElement); }
   }; });
   if ($('up-levee')) $('up-levee').onclick = () => { game.breakLevee(u.id, Number($('up-levee').dataset.c)); refreshAll(); showUnitPanel(u.id); }; // R28
+  if ($('up-ambush')) $('up-ambush').onclick = () => { game.fireStrat(u.id, 'ambush', {}); refreshAll(); showUnitPanel(u.id); };
   if ($('up-douse')) $('up-douse').onclick = () => { game.fireStrat(u.id, 'douse', { type: 'unit', id: u.id }); refreshAll(); showUnitPanel(u.id); };
   if ($('up-fire')) $('up-fire').onclick = () => armFire('fire', '계략 화계');
   if ($('up-conf')) $('up-conf').onclick = () => armFire('confuse', '계략 혼란');
