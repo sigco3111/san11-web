@@ -136,6 +136,17 @@ export function aiThink(game, fid, legion = null) { // legion 지정 시 그 군
       }
     }
   }
+  // R38 시험: 장기 공성 교착 완화 - 같은 도시를 10턴 이상 포위하고도 병력 우세가 없으면 가까운 아군 도시로 철수 (RULES.aiSiegeRelief)
+  if (globalThis.__AI_SIEGE_RELIEF !== false) for (const u of game.units) {
+    if (u.force !== fid || u.targetCity == null) continue;
+    const tc = game.cityById[u.targetCity];
+    if (!tc || tc.force === u.force || Math.hypot(tc.lon - u.x, tc.lat - u.z) > 1.2) { u._siegeAge = 0; continue; }
+    u._siegeAge = (u._siegeAge ?? 0) + 1;
+    if (u._siegeAge >= 10 && u.troops < tc.troops * 1.0) {
+      const home = cities.slice().sort((a, b) => Math.hypot(a.lon - u.x, a.lat - u.z) - Math.hypot(b.lon - u.x, b.lat - u.z))[0];
+      if (home && game.orderUnit(u.id, home.id)) u._siegeAge = 0;
+    }
+  }
   // 4) 목표 없는 야전 부대 재지정: 인접 적 도시가 약하면 공격, 아니면 귀환
   for (const u of game.units) {
     if (u.force !== fid || u.targetCity != null) continue;
