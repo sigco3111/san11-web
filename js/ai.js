@@ -17,6 +17,14 @@ export function aiThink(game, fid) {
     const avgNbr = cities.reduce((s,x) => s + x.troops, 0) / cities.length;
     if (c.troops < Math.min(avgNbr, 12000) && c.gold > 500 && c.food > 3000) game.recruit(c.id);
   }
+  // 2.5) 인재 등용: 도시의 재야 무장을 같은 규칙으로 영입
+  for (const c of cities) {
+    if (f.ap < 20 || c.gold < 300 || !c.officers.length) continue;
+    const free = game.freeOfficers(c.id);
+    if (!free.length) continue;
+    const target = free.sort((a, b) => game.recruitChance(c.id, b.idx) - game.recruitChance(c.id, a.idx))[0];
+    if (game.recruitChance(c.id, target.idx) >= 0.3) game.recruitOfficer(c.id, target.idx);
+  }
   // 3) 군사: 전방 도시(적과 인접) 병력이 충분하면 공격, 아니면 집결
   const enemyCities = game.cities.filter(c => c.force !== fid);
   for (const c of cities) {
