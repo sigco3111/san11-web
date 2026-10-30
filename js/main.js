@@ -1,7 +1,7 @@
 // 진입점: 화면 전환·UI·지도 연결
-import { Map3D, toWorld } from './map3d.js?v=r21';
-import { Game, SAVE_KEY, forceColor, UNIT_TYPES, josa, josaRo, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL } from './game.js?v=r21';
-import { aiThink } from './ai.js?v=r21';
+import { Map3D, toWorld } from './map3d.js?v=r23';
+import { Game, SAVE_KEY, forceColor, UNIT_TYPES, josa, josaRo, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL } from './game.js?v=r23';
+import { aiThink } from './ai.js?v=r23';
 
 const $ = id => document.getElementById(id);
 let DATA = null, game = null, map = null, selectedUnit = null, autoTimer = null, pendingFire = null; // R15: 직접 전법·계략 대기
@@ -9,7 +9,7 @@ let DATA = null, game = null, map = null, selectedUnit = null, autoTimer = null,
 async function loadData() {
   const [officers, skills, portraits, s184, s190, s251] = await Promise.all(
     ['data/officers670.json','data/skills.json','data/portraits.json','data/scenario-184.json','data/scenario-190.json','data/scenario-251.json']
-      .map(u => fetch(u + '?v=r21').then(r => r.json())));
+      .map(u => fetch(u + '?v=r23').then(r => r.json())));
   const byIdx = {};
   for (const o of officers) byIdx[o.idx] = o;
   DATA = { officers: byIdx, skills, portraits, scenarios: { '184': s184, '190': s190, '251': s251 } };
@@ -310,6 +310,12 @@ function modal(text, buttons) {
 }
 
 // === 선택·패널 ===
+function targetHint(pf) { // 발동 실패 안내: 전법·계략별 실제 대상 조건
+  if (pf.kind === 'tactic') return pf.tid && pf.tid !== 'base' ? '이 전법은 사거리 안의 적 부대에만 쓸 수 있습니다 (도시 대상 불가)' : '대상이 유효하지 않습니다 (사거리 안의 적 부대·도시만 가능)';
+  if (pf.kind === 'fire') return '화계는 사거리 안의 적 부대·도시에 쓸 수 있습니다';
+  if (pf.kind === 'calm') return '진정은 사거리 안의 아군 부대에만 쓸 수 있습니다';
+  return '이 계략은 사거리 안의 적 부대에만 쓸 수 있습니다 (도시 대상 불가)';
+}
 function onPick(nx, ny) {
   if (!game || game.over) return;
   const hit = map.pick(nx, ny);
@@ -320,7 +326,7 @@ function onPick(nx, ny) {
     else if (hit && hit.type === 'city') ok = pf.kind === 'tactic' ? game.fireTactic(pf.uid, { type: 'city', id: hit.id }, pf.tid) : game.fireStrat(pf.uid, pf.kind, { type: 'city', id: hit.id });
     selectedUnit = null;
     if (ok) { refreshAll(); if (game.units.find(x => x.id === pf.uid)) { selectedUnit = pf.uid; showUnitPanel(pf.uid); } else $('panel').classList.add('hidden'); }
-    else { game.log('대상이 유효하지 않습니다 (인접한 적 부대·도시만 가능)', true); refreshLog(); showUnitPanel(pf.uid); }
+    else { game.log(targetHint(pf), true); refreshLog(); showUnitPanel(pf.uid); }
     return;
   }
   if (!hit) { $('panel').classList.add('hidden'); selectedUnit = null; return; }
@@ -739,6 +745,7 @@ async function boot() {
   $('sel-speed').onchange = () => { if (game?.delegated) setAuto(true); };
   $('btn-rot-l').onclick = () => map && map.rotate90(1);
   $('btn-rot-r').onclick = () => map && map.rotate90(-1);
+  if ($('panel-x')) $('panel-x').onclick = () => { $('panel').classList.add('hidden'); selectedUnit = null; pendingFire = null; };
   if ($('btn-sound')) { $('btn-sound').onclick = toggleSound; applySound(); }
   $('btn-menu').onclick = () => modal('메뉴', [
     ['연감', () => showChronicle()], // R14
