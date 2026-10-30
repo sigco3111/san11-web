@@ -184,7 +184,7 @@ function showFacilities(c) {
     }).join('');
   } else html += '<p>건설된 시설이 없습니다.</p>';
   html += '<h3 style="margin-top:10px">건설</h3>';
-  const polTop = [...c.officers].sort((a, b) => (DATA.officers[b]?.pol ?? 0) - (DATA.officers[a]?.pol ?? 0)).slice(0, 3);
+  const polTop = [...new Set(c.officers)].sort((a, b) => (DATA.officers[b]?.pol ?? 0) - (DATA.officers[a]?.pol ?? 0)).slice(0, 3);
   for (const [t, spec] of Object.entries(FACILITIES)) {
     html += `<div class="officer"><div><div class="nm">${t} <span class="st">금${spec.cost} · 공기 ${spec.turns}턴</span></div><div class="st">${spec.desc}</div></div><button class="cmd cmd-build" data-t="${t}">건설</button></div>`;
   }
