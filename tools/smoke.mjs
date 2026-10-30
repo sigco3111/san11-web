@@ -239,4 +239,24 @@ if (g.units.find(u => u.id === 9999) && g.units.find(u => u.id === 9999).qi === 
   }
   console.log('공적·충성·관작 확인: 개발 공적+30·봉록 지급/미지급 충성·하야·관작 승진·황건 제외·무장 중복 회귀 PASS');
 }
+// 번들 부팅 게이트: 모듈 초기화 오류(TDZ·문법·import 잔류)를 배포 전 검출
+{
+  const fs = await import('fs');
+  const vm = await import('vm');
+  const src = fs.readFileSync(new URL('../js/bundle.js', import.meta.url), 'utf8');
+  if (/^export \{/m.test(src)) { console.error('FAIL: 번들에 export 목록 문장 잔류 (TDZ 위험)'); process.exit(1); }
+  const noImports = src.split('\n').filter(l => !/^import /.test(l)).join('\n');
+  const magic = new Proxy(function(){}, { get: (t, p) => (p === Symbol.toPrimitive ? () => 0 : magic), construct: () => magic, apply: () => magic, set: () => true });
+  const sandbox = {
+    document: { getElementById: () => magic, querySelector: () => magic, querySelectorAll: () => [], addEventListener(){}, createElement: () => magic, body: magic },
+    localStorage: { getItem: () => null, setItem(){}, removeItem(){} },
+    fetch: () => new Promise(() => {}),
+    location: { reload(){} },
+    console, setTimeout, clearTimeout, THREE: magic, requestAnimationFrame: () => 0,
+  };
+  sandbox.window = sandbox;
+  try { new vm.Script(noImports, { filename: 'bundle.js' }).runInNewContext(sandbox); }
+  catch (e) { console.error('FAIL: 번들 초기화 오류', e.message); process.exit(1); }
+  console.log('번들 부팅 게이트 PASS (초기화 오류 없음)');
+}
 console.log('sample logs:'); for (const l of g.logs.slice(-8)) console.log(' ', l.t, l.msg);
