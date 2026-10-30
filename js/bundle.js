@@ -465,7 +465,16 @@ function aiThink(game, fid) {
       }
     }
   }
-  // 4) 후방 → 전방 병력 이동은 후속 라운드 (1차 구현 생략)
+  // 4) 목표 없는 야전 부대 재지정: 인접 적 도시가 약하면 공격, 아니면 귀환
+  for (const u of game.units) {
+    if (u.force !== fid || u.targetCity != null) continue;
+    const foes = game.cities.filter(c => c.force !== fid && (c.force == null || game.forces[c.force]?.alive));
+    let best = null, bd = 1e9;
+    for (const e of foes) { const d = Math.hypot(e.lon - u.x, e.lat - u.z); if (d < bd) { bd = d; best = e; } }
+    const homes = cities.slice().sort((a,b) => Math.hypot(a.lon-u.x,a.lat-u.z) - Math.hypot(b.lon-u.x,b.lat-u.z));
+    if (best && bd < 10 && u.troops > Math.max(best.troops * 1.2, 4000)) game.orderUnit(u.id, best.id);
+    else if (homes.length) game.orderUnit(u.id, homes[0].id);  // 귀환·합류
+  }
 }
 
 ;
