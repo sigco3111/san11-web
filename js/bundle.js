@@ -1471,6 +1471,7 @@ a.level = (a.level ?? 1) + 1;
 c.facilities.splice(fi2, 1);
 c.gold -= 200; f.ap -= 10;
     this.log(`【합병】${c.name_ko}의 ${a.type}을(를) 흡수합병해 Lv${a.level}(으)로 강화했습니다 (금 200·AP 10, 개발지 1개 회수)`, c.force === this.playerForce);
+this.autosave();
 return true;
 }
 researchAbility(fid, branch) {
@@ -1493,6 +1494,7 @@ cand.skill = sk; if (cand.state) cand.state.grantSkill = sk;
         this.log(`【연구】${cand.name_ko}이(가) 연구 성과로 특기 「${sk}」을(를) 습득했습니다!`, fid === this.playerForce);
 }
 }
+this.autosave();
 return true;
 }
 swearBrotherhood(cityId, idxs) {
@@ -1509,6 +1511,7 @@ st.sworn = [...new Set([...(st.sworn ?? []), ...idxs.filter(x => x !== i)])];
 st.loyal = Math.min(100, (st.loyal ?? 70) + 10);
 }
     this.log(`【결연】${idxs.map(i => this.officers[i].name_ko).join('·')}이(가) ${c.name_ko}에서 의형제를 맺었습니다! (기교P -500, 충성 +10)`, c.force === this.playerForce);
+this.autosave();
 return true;
 }
 unitHasItemKind(u, kind) {
