@@ -150,6 +150,7 @@ export class Game {
     this.scenId = scen.id;
     this.year = scen.year; this.month = scen.month; this.dan = 1; // 1~3 (旬)
     this.turn = 1;
+    this.pendingDuel = null; // R10: 진행 중 일기토 (저장 대상 아님)
     this.cities = scen.cities.map(c => ({ ...c, commerce: Math.round(c.revenue/10), farm: Math.round(c.harvest/100), hp: c.maxhp, officers: [], troops: c.troops, facilities: [] }));
     this.cityById = {}; this.cities.forEach(c => this.cityById[c.id] = c);
     this.forces = {};
@@ -544,6 +545,7 @@ export class Game {
     const c = this.cityById[cityId], f = this.forces[c.force];
     if (this._blocked(c)) return false; // 군단 소속
     if (f.ap < 40 || c.troops < troops || officerIdxs.length === 0) return false;
+    if (officerIdxs.some(i => (this.officers[i]?.state?.injuredUntil ?? 0) > this.turn)) return false; // R10: 부상 무장 출진 불가
     const ut = UNIT_TYPES[type];
     for (const [k, per] of Object.entries(ut.cost)) { // 병기·선박은 부대당 1대 (perUnit), 병장은 병사당 1개
       const need = ut.perUnit ? per : per * troops;
@@ -570,6 +572,7 @@ export class Game {
 
   // === 턴 진행 ===
   endTurn(aiThink) {
+    if (this.pendingDuel) return; // R10: 일기토 결판 전 턴 진행 불가
     // 전 부대 기력 회복
     for (const u of this.units) u.qi = Math.min(100, (u.qi ?? 100) + 10);
     // 부대 이동·전투
@@ -825,6 +828,7 @@ export class Game {
       if (aptLv >= (tac.minApt ?? 1) && (att.qi ?? 100) >= tac.qi && Math.random() < Math.min(0.55, 0.15 + lead.war/250)) {
         att.qi -= tac.qi; dmg = Math.round(dmg * tac.mult);
         if (tac.guard) att._guard = true;
+        if (att.type === 'cav') att._cavTactic = true; // R10: 기병 전법 시 일기토 발동률 상승 (설계안 110행)
         this.log(`【전법】${lead.name_ko}의 ${tac.name}! 야전에서 ${def.label}에 큰 피해`, att.force === this.playerForce);
       }
       // 계략: 혼란
@@ -850,6 +854,16 @@ export class Game {
     b.troops = Math.max(0, b.troops - da);
     this.gainTechP(a.force, Math.min(40, Math.floor(db / 100))); this.gainTechP(b.force, Math.min(40, Math.floor(da / 100))); // 전투 기교P
     this.log(`【야전】${a.label} ↔ ${b.label} 교전 (${a.label} -${db} / ${b.label} -${da})`, a.force === this.playerForce || b.force === this.playerForce);
+    // R10: 일기토 발동 — 기병 전법 시 15%, 일반 야전 8% (자체 확률). 양측 무장 보유·적병 제외
+    if (!this.pendingDuel && a.troops > 0 && b.troops > 0 && a.officers.length && b.officers.length && a.force !== -1 && b.force !== -1) {
+      const cavTac = a._cavTactic || b._cavTactic;
+      a._cavTactic = false; b._cavTactic = false;
+      if (Math.random() < (cavTac ? 0.15 : 0.08)) {
+        const d = this.startDuel(a, b);
+        this.log(`【일기토】${this.officers[d.a.offs[0]].name_ko} vs ${this.officers[d.b.offs[0]].name_ko} — 일기토 시작!`, true);
+        if ((a.force !== this.playerForce && b.force !== this.playerForce) || this.delegated) this.duelAuto(d); // AI끼리·위임 시 같은 규칙으로 자동 진행
+      }
+    }
     for (const u of [a, b]) {
       if (u.troops <= 0) {
         this.units = this.units.filter(x => x !== u);
@@ -915,6 +929,115 @@ export class Game {
     if (isWaterAt(nx, nz)) return; // 육군 — 수로는 건너지 못함
     u.x = nx; u.z = nz;
   }
+  // === R10: 일기토 (설계안 109-113행, 수치·확률은 자체) ===
+  effWar(o) { return Math.max(1, (o?.war ?? 50) - ((o?.state?.injuredUntil ?? 0) > this.turn ? 20 : 0)); } // 부상 중 무력 -20
+  unitHasItemKind(u, kind) {
+    for (const i of u.officers) for (const id of (this.officers[i]?.state?.items ?? [])) if (ITEMS.find(x => x.id === id)?.kind === kind) return true;
+    return false;
+  }
+  startDuel(a, b) {
+    const mk = (u) => ({ u, offs: [...u.officers], cur: 0, hp: 100, hpMap: {}, spirit: 0, stance: 'attack', streak: 0, lastStance: null });
+    this.pendingDuel = { a: mk(a), b: mk(b), bout: 0, log: [], done: false };
+    return this.pendingDuel;
+  }
+  duelOfficer(d, k) { const s = d[k]; return this.officers[s.offs[s.cur]]; }
+  duelPolicy(d, k) { // AI 방침 (플레이어 위임 시에도 동일 적용)
+    const s = d[k], ok = k === 'a' ? 'b' : 'a', opp = d[ok];
+    const myWar = this.effWar(this.duelOfficer(d, k)), opWar = this.effWar(this.duelOfficer(d, ok));
+    if (s.spirit >= 300) return { stance: s.stance, cmd: '무쌍' };
+    if (s.spirit >= 200 && opp.hp < 45) return { stance: s.stance, cmd: '급소' };
+    if (s.spirit >= 100 && opp.hp < 60) return { stance: s.stance, cmd: '필살기' };
+    if (s.hp <= 25 && myWar < opWar - 10 && Math.random() < 0.4) return { stance: 'defense', cmd: this.unitHasItemKind(s.u, 'bow') ? '위퇴각' : '퇴각' };
+    return { stance: s.spirit < 100 ? 'spirit' : (myWar >= opWar ? 'attack' : 'defense'), cmd: null };
+  }
+  duelTick(d, selA, selB) { // 1합 진행. sel = { stance: attack|defense|spirit|burst, cmd: 필살 커맨드|null }
+    if (!d || d.done) return d;
+    d.bout++;
+    // 교체 출전: 현재 무장 위기(체력 30 이하) + 더 강한 무장이 남아 있으면 50% (설계안 교체 단순화, 자체 수치)
+    for (const k of ['a', 'b']) {
+      const s = d[k];
+      if (s.hp <= 30 && s.cur < s.offs.length - 1) {
+        const cur = this.officers[s.offs[s.cur]], nxt = this.officers[s.offs[s.cur + 1]];
+        if (this.effWar(nxt) > this.effWar(cur) + 5 && Math.random() < 0.5) {
+          s.hpMap[s.offs[s.cur]] = s.hp; s.cur++;
+          s.hp = s.hpMap[s.offs[s.cur]] ?? 100; s.spirit = Math.round(s.spirit / 2);
+          d.log.push(`${nxt.name_ko}이(가) 교체 출전!`);
+        }
+      }
+    }
+    // 퇴각·위퇴각: 즉시 결판 시도
+    for (const [k, sel, ok] of [['a', selA, 'b'], ['b', selB, 'a']]) {
+      if (sel.cmd !== '퇴각' && sel.cmd !== '위퇴각') continue;
+      const s = d[k], opp = d[ok];
+      if (sel.cmd === '위퇴각' && !this.unitHasItemKind(s.u, 'bow')) continue; // 활 명품 필요 (설계안)
+      let chance = 0.7 + (this.unitHasItemKind(s.u, 'horse') ? 0.2 : 0) - (this.unitHasItemKind(opp.u, 'horse') ? 0.2 : 0); // 명마: 도주 성공↑·적 도주 저지 (설계안)
+      if (sel.cmd === '위퇴각') chance = 1;
+      if (Math.random() < chance) {
+        if (sel.cmd === '위퇴각') {
+          const cnt = Math.round(8 + this.effWar(this.duelOfficer(d, k)) / 10);
+          opp.hp -= cnt; d.log.push(`${this.duelOfficer(d, k).name_ko}의 위퇴각! 돌아서며 ${cnt} 대미지`);
+        }
+        d.fled = k; return this.finishDuel(d, 'flee');
+      }
+      s.spirit = Math.max(0, s.spirit - 30); d.log.push(`${this.duelOfficer(d, k).name_ko}의 도주 실패!`);
+    }
+    // 투지 상승 + 타격 산출 (동시)
+    const side = (k, sel, ok) => {
+      const s = d[k], opp = d[ok];
+      const o = this.duelOfficer(d, k), oo = this.duelOfficer(d, ok);
+      s.streak = s.lastStance === sel.stance ? s.streak + 1 : 1; s.lastStance = sel.stance; s.stance = sel.stance;
+      const swordMul = this.unitHasItemKind(s.u, 'sword') ? 1.25 : 1; // 검 명품: 투지 상승률 +25% (설계안)
+      s.spirit = Math.min(300, s.spirit + Math.round((sel.stance === 'spirit' ? 14 : 8) * swordMul));
+      let mult = 1, note = null, vital = false;
+      if (sel.cmd === '필살기' && s.spirit >= 100) { s.spirit -= 100; mult = 2.5; note = '필살기'; }
+      else if (sel.cmd === '급소' && s.spirit >= 200) { s.spirit -= 200; mult = 3; note = '급소'; vital = true; }
+      else if (sel.cmd === '무쌍' && s.spirit >= 300) { s.spirit = 0; mult = 4.5; note = '무쌍'; opp.spirit = 0; }
+      else if (sel.cmd === '암기' && !s._hiddenUsed && this.unitHasItemKind(s.u, 'weapon')) { s._hiddenUsed = true; mult = 1.5; note = '암기'; opp.spirit = Math.max(0, opp.spirit - 50); }
+      let dmg = Math.max(2, Math.round(4 + (this.effWar(o) - this.effWar(oo)) / 8));
+      if (sel.stance === 'attack') dmg = Math.round(dmg * 1.3);
+      else if (sel.stance === 'defense') dmg = Math.round(dmg * 0.65);
+      else if (sel.stance === 'burst') {
+        dmg = Math.round(dmg * 0.55);
+        if (Math.random() < 0.15 + s.streak * 0.03) { dmg *= 3; note = note ? note + '·크리티컬' : '크리티컬'; } // 같은 방침 유지 시 크리티컬률 상승 (설계안)
+      } else if (s.streak >= 3 && Math.random() < 0.1) { dmg *= 2; note = note ? note + '·크리티컬' : '크리티컬'; }
+      dmg = Math.round(dmg * mult);
+      if (opp.stance === 'defense') dmg = Math.round(dmg * 0.6);
+      return { dmg, note, vital, name: o.name_ko };
+    };
+    const rA = side('a', selA, 'b'), rB = side('b', selB, 'a');
+    d.b.hp -= rA.dmg; d.a.hp -= rB.dmg;
+    if (rB.dmg > 0) d.a.spirit = Math.min(300, d.a.spirit + 6); // 피격 시 투지 상승 (설계안)
+    if (rA.dmg > 0) d.b.spirit = Math.min(300, d.b.spirit + 6);
+    if (rA.vital && d.b.hp > 0) { const vo = this.duelOfficer(d, 'b'); vo.state.injuredUntil = this.turn + 6; d.log.push(`${vo.name_ko}이(가) 급소를 맞아 부상! (6턴간 무력 -20·출진 불가)`); }
+    if (rB.vital && d.a.hp > 0) { const vo = this.duelOfficer(d, 'a'); vo.state.injuredUntil = this.turn + 6; d.log.push(`${vo.name_ko}이(가) 급소를 맞아 부상! (6턴간 무력 -20·출진 불가)`); }
+    if (rA.note) d.log.push(`${rA.name}의 ${rA.note}! ${rA.dmg} 대미지`);
+    if (rB.note) d.log.push(`${rB.name}의 ${rB.note}! ${rB.dmg} 대미지`);
+    if (!rA.note && !rB.note) d.log.push(`${d.bout}합: 공방 ${rA.dmg} / ${rB.dmg}`);
+    if (d.a.hp <= 0 && d.b.hp <= 0) return this.finishDuel(d, 'draw');
+    if (d.b.hp <= 0) return this.finishDuel(d, 'a');
+    if (d.a.hp <= 0) return this.finishDuel(d, 'b');
+    if (d.bout >= 50) return this.finishDuel(d, 'draw'); // 50합 무승부 (설계안)
+    return d;
+  }
+  finishDuel(d, result) {
+    d.done = true;
+    if (result === 'a' || result === 'b') {
+      const w = d[result], l = d[result === 'a' ? 'b' : 'a'];
+      l.u.troops = Math.round(l.u.troops * 0.7);
+      this.gainMerit(w.offs[w.cur], 40); this.gainTechP(w.u.force, 30);
+      this.log(`【일기토】${this.officers[w.offs[w.cur]].name_ko}이(가) ${this.officers[l.offs[l.cur]].name_ko}를 격파! ${l.u.label} 병력 -30%`, true);
+    } else if (result === 'flee') {
+      const f = d[d.fled];
+      const home = this.forceCities(f.u.force).sort((p, q) => Math.hypot(p.lon - f.u.x, p.lat - f.u.z) - Math.hypot(q.lon - f.u.x, q.lat - f.u.z))[0];
+      if (home) { f.u.targetCity = home.id; f.u.tx = home.lon; f.u.tz = home.lat; }
+      this.log(`【일기토】${this.officers[f.offs[f.cur]].name_ko}이(가) 물러났습니다`, f.u.force === this.playerForce);
+    } else {
+      this.log(`【일기토】${d.bout}합 무승부로 끝났습니다`, true);
+    }
+    this.pendingDuel = null;
+    return d;
+  }
+  duelAuto(d) { let guard = 0; while (d && !d.done && guard++ < 200) this.duelTick(d, this.duelPolicy(d, 'a'), this.duelPolicy(d, 'b')); }
   autosave() {
     try {
       const data = {
