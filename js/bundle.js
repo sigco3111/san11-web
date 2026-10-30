@@ -647,6 +647,7 @@ this.delegated = false;
 this.pendingJoin = null;
 this.logs = [];
 this.over = false;
+this.unified = false;
 this.chronicle = [];
 }
 log(msg, mine=false) {
@@ -1208,11 +1209,12 @@ f.alive = false;
 for (const o of this.forceOfficers(f.id)) { o.state.force = null; o.state.status = 'free'; o.state.found = false; }
 }
 }
-if (!this.over) {
+if (!this.over && !this.unified) {
 const owners = new Set(this.cities.map(c => c.force).filter(x => x != null));
 if (owners.size === 1) {
 const w = [...owners][0];
 this.over = true;
+this.unified = true;
         this.log(`【통일】${this.forceName(w)}이(가) 모든 도시를 제압해 천하를 통일했습니다! (${this.year}년 ${this.month}월, ${this.turn}턴)`, true);
 }
 }
@@ -1731,7 +1733,7 @@ try {
 const data = {
 scenId: this.scenId, year: this.year, month: this.month, dan: this.dan, turn: this.turn,
 cities: this.cities, forces: this.forces, units: this.units, nextUnitId: this.nextUnitId,
-playerForce: this.playerForce, delegated: this.delegated, deadAck: this.deadAck, logs: this.logs.slice(-60), diplo: this.diplo, itemPool: this.itemPool, chronicle: this.chronicle, over: this.over,
+playerForce: this.playerForce, delegated: this.delegated, deadAck: this.deadAck, logs: this.logs.slice(-60), diplo: this.diplo, itemPool: this.itemPool, chronicle: this.chronicle, over: this.over, unified: this.unified,
 officerStates: Object.fromEntries(Object.entries(this.officers).filter(([,o]) => o.state).map(([i,o]) => [i, o.state])),
 };
 localStorage.setItem(SAVE_KEY, JSON.stringify(data));
@@ -2499,7 +2501,7 @@ $('btn-continue').onclick = () => {
 const d = JSON.parse(localStorage.getItem(SAVE_KEY));
 const g = new Game(DATA.scenarios[d.scenId], DATA.officers, DATA.skills, d.playerForce);
 window.__game = g;
-Object.assign(g, { year: d.year, month: d.month, dan: d.dan, turn: d.turn, cities: d.cities, forces: d.forces, units: d.units, nextUnitId: d.nextUnitId, playerForce: d.playerForce, delegated: d.delegated, logs: d.logs, deadAck: d.deadAck, chronicle: d.chronicle ?? [], over: d.over ?? false });
+Object.assign(g, { year: d.year, month: d.month, dan: d.dan, turn: d.turn, cities: d.cities, forces: d.forces, units: d.units, nextUnitId: d.nextUnitId, playerForce: d.playerForce, delegated: d.delegated, logs: d.logs, deadAck: d.deadAck, chronicle: d.chronicle ?? [], over: d.over ?? false, unified: d.unified ?? d.over ?? false });
 g.cityById = {}; g.cities.forEach(c => g.cityById[c.id] = c);
 for (const c of g.cities) c.officers = [...new Set(c.officers ?? [])];
 g.diplo = d.diplo ?? {};
