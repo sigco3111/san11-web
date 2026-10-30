@@ -89,12 +89,11 @@ console.log('tactics fired:', tacN, '| stratagems fired:', stratN, '| field batt
     // 옥새: 보유 세력 기교P 월 +10
     {
       const f = gateF;
-      const off = Object.values(g.officers).find(o => o.state?.force === f.id);
+      const off = g.officers[f.ruler]; // 군주 고정: 무작위 소속 무장은 전사·포박으로 소속이 바뀔 수 있어 플레이크
+      off.state = off.state ?? {};
       off.state.items = [...new Set([...(off.state.items ?? []), 'yuxi'])].slice(0, 3);
-      const p0 = f.techP ?? 0;
-      // 월 처리만 단독 호출은 불가 → techP 증가 로직 검증은 monthly 경로 대신 직접 확인: turn 실행 없이 조건부 로직을 game 메서드로 분리하지 않았으므로, endTurn 1회 실행으로 검증
       const before = f.techP ?? 0;
-      for (let t = 0; t < 3; t++) g.endTurn(aiThink); // 월 처리는 3순(1개월)마다
+      for (let t = 0; t < 3; t++) g.endTurn((gg, fid) => { if (fid !== f.id) aiThink(gg, fid); }); // 월 처리는 3순(1개월)마다. 대상 세력의 AI 기교 연구(techP 소비)는 차단해 결정적으로
       if (!((f.techP ?? 0) >= before + 10)) { console.error('FAIL: 옥새 기교P 월+10', before, f.techP); process.exit(1); }
       off.state.items = off.state.items.filter(i => i !== 'yuxi');
       console.log('옥새 기교P 확인:', before, '→', f.techP);
@@ -479,6 +478,98 @@ if (g.units.find(u => u.id === 9999) && g.units.find(u => u.id === 9999).qi === 
     }
   }
   console.log('외교 확인: 5단계 매핑·친선 사절·동맹(24턴)·동맹 공격 차단·파기·정전(12턴 공격금지·만료 후 공격가능)·항복(도시+무장+야전부대 귀속)·AI 사절/동맹/정전 PASS');
+}
+// === R8: 병기·수군 (결정적) ===
+{
+  const { SIEGE_BUILD, SHIP_BUILD, isWaterAt } = await import('../js/game.js');
+  const gW = new Game(scen, officers, {}, 0);
+  const pf = gW.playerForce;
+  const city = gW.forceCities(pf).find(c => c.officers.length >= 2) ?? gW.forceCities(pf)[0];
+  city.gold = 50000; gW.forces[pf].ap = 255;
+  // 공방 없이 생산 불가
+  if (gW.produceSiege(city.id, 'ram')) { console.error('FAIL: 공방 없이 병기 생산'); process.exit(1); }
+  if (gW.produceShip(city.id, 'junk')) { console.error('FAIL: 조선소 없이 선박 건조'); process.exit(1); }
+  city.facilities = [{ type: '공방', done: true, progress: 3, builders: [] }, { type: '조선소', done: true, progress: 3, builders: [] }];
+  // 특색 할인: 병기 특색(자체 배정) 25% 할인
+  city.specialty = ['병기'];
+  const g0 = city.gold, ap0 = gW.forces[pf].ap;
+  if (!gW.produceSiege(city.id, 'ram')) { console.error('FAIL: 공방 병기 생산'); process.exit(1); }
+  if (city.gold !== g0 - Math.round(SIEGE_BUILD.ram.gold * 0.75) || (city.rams ?? 0) !== 1 || gW.forces[pf].ap !== ap0 - 10) { console.error('FAIL: 병기 생산 비용·재고·AP', city.gold, city.rams); process.exit(1); }
+  // 선박 특색 없음 → 정가
+  const g1 = city.gold;
+  if (!gW.produceShip(city.id, 'lou')) { console.error('FAIL: 조선소 선박 건조'); process.exit(1); }
+  if (city.gold !== g1 - SHIP_BUILD.lou.gold || (city.lous ?? 0) !== 1) { console.error('FAIL: 선박 건조 비용·재고'); process.exit(1); }
+  city.specialty = [];
+  // 출진: 병기 1대 소모, 재고 없으면 불가
+  gW.forces[pf].ap = 255; city.troops = 30000;
+  const offs = city.officers.slice(0, 2);
+  const uRam = gW.dispatch(city.id, offs, 5000, 'ram');
+  if (!uRam || (city.rams ?? 0) !== 0) { console.error('FAIL: 병기 출진 소모', city.rams); process.exit(1); }
+  if (gW.dispatch(city.id, offs, 5000, 'ram')) { console.error('FAIL: 병기 재고 없이 출진'); process.exit(1); }
+  // 병기 기력 0 공격 불가 (설계안)
+  {
+    const enemyC = gW.cities.find(c => c.force != null && c.force !== pf);
+    const u = gW.dispatch(city.id, city.officers.slice(0, 1), 5000, 'lou');
+    const uS = gW.dispatch(city.id, city.officers.slice(1, 2), 5000, 'tower') || null;
+    const uT = gW.units.find(x => x.type === 'tower') || uS;
+    const siegeU = gW.units.find(x => x.type === 'tower');
+    if (siegeU) {
+      siegeU.x = enemyC.lon; siegeU.z = enemyC.lat; siegeU.targetCity = enemyC.id; siegeU.tx = enemyC.lon; siegeU.tz = enemyC.lat;
+      siegeU.qi = 0;
+      const t0 = enemyC.troops;
+      gW.stepUnit(siegeU); // 도착 처리: 기력 0 → 공격 불가
+      if (enemyC.troops !== t0) { console.error('FAIL: 병기 기력0 공격'); process.exit(1); }
+      siegeU.qi = 100;
+      gW.stepUnit(siegeU);
+      if (enemyC.troops >= t0) { console.error('FAIL: 병기 정상 공격'); process.exit(1); }
+      console.log('병기 기력0 차단·정상 공격 확인');
+    }
+  }
+  // 수군: 육지 이동 차단, 수상 이동 정상
+  {
+    const uShip = gW.units.find(x => x.type === 'lou');
+    if (uShip) {
+      uShip.x = 112; uShip.z = 33; uShip.tx = 112; uShip.tz = 36; uShip.targetCity = null; uShip.qi = 100; uShip.conf = 0;
+      gW.stepUnit(uShip);
+      if (uShip.z !== 33) { console.error('FAIL: 수군 육지 이동'); process.exit(1); }
+      uShip.x = 114.0; uShip.z = 30.4; uShip.tx = 117; uShip.tz = 30.6;
+      const d0 = Math.hypot(uShip.tx - uShip.x, uShip.tz - uShip.z);
+      gW.stepUnit(uShip);
+      const d1 = Math.hypot(uShip.tx - uShip.x, uShip.tz - uShip.z);
+      if (!(d1 < d0)) { console.error('FAIL: 수군 수상 이동', d0, d1); process.exit(1); }
+      console.log('수군 육지 차단·수상 이동 확인');
+    }
+  }
+  // 수전 지형 보정: 수상에서 수군 ×1.3, 육군 ×0.7 (자체 수치)
+  {
+    const mk = (id, force, type, x, z) => ({ id, force, officers: [gW.forces[force].ruler], troops: 50000, type, x, z, path: [], tx: null, tz: null, targetCity: null, label: id, qi: 100, conf: 0 });
+    const foe = gW.cities.find(c => c.force != null && c.force !== pf).force;
+    const run = (typeA, x, z) => {
+      const a = mk('공', pf, typeA, x, z), b = mk('수', foe, 'spear', x + 0.5, z);
+      const o0 = Math.random; Math.random = () => 0.99; // 전법·계략 억제
+      gW.fieldBattle(a, b); Math.random = o0;
+      return 50000 - b.troops; // a가 준 피해
+    };
+    const land = run('junk', 100, 30), water = run('junk', 114.3, 30.5);
+    if (!(water > land * 1.2)) { console.error('FAIL: 수군 수전 우세', land, water); process.exit(1); }
+    const landS = run('spear', 100, 30), waterS = run('spear', 114.3, 30.5);
+    if (!(waterS < landS * 0.8)) { console.error('FAIL: 육군 수전 페널티', landS, waterS); process.exit(1); }
+    console.log('수전 지형 보정 확인: 수군', land, '→', water, '/ 육군', landS, '→', waterS);
+  }
+  // AI 동일 규칙: 공방·조선소 보유 + 금 넉넉하면 생산
+  {
+    const gA = new Game(scen, officers, {}, 0);
+    const aiF = Object.values(gA.forces).find(f => f.alive && f.id !== gA.playerForce && gA.cities.some(c => c.force === f.id));
+    const ac = gA.cities.find(c => c.force === aiF.id);
+    ac.gold = 20000; aiF.ap = 255;
+    ac.facilities = [{ type: '공방', done: true, progress: 3, builders: [] }, { type: '조선소', done: true, progress: 3, builders: [] }];
+    aiThink(gA, aiF.id);
+    if (((ac.rams ?? 0) + (ac.catapults ?? 0)) < 1 || ((ac.lous ?? 0) + (ac.dous ?? 0)) < 1) { console.error('FAIL: AI 병기·선박 생산', ac.rams, ac.catapults, ac.lous, ac.dous); process.exit(1); }
+    console.log('AI 병기·선박 생산 확인: 충거', ac.rams ?? 0, '투석', ac.catapults ?? 0, '누선', ac.lous ?? 0, '투함', ac.dous ?? 0);
+  }
+  // 수상 판정 기본값
+  if (!isWaterAt(114.3, 30.5) || !isWaterAt(126, 38) || isWaterAt(114, 34) || isWaterAt(100, 30)) { console.error('FAIL: 수상 판정'); process.exit(1); }
+  console.log('R8 병기·수군 게이트 PASS');
 }
 // 번들 부팅 게이트: 모듈 초기화 오류(TDZ·문법·import 잔류)를 배포 전 검출
 {
