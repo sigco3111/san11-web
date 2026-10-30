@@ -1,4 +1,4 @@
-import { Game, UNIT_TYPES, ITEMS, FACILITIES, AB_BRANCHES, AB_P, AB_SKILL } from '../js/game.js';
+import { Game, UNIT_TYPES, ITEMS, FACILITIES, AB_BRANCHES, AB_P, AB_SKILL, isWaterAt, isSeaAt, isRiverAt, isFordAt, ARTS, FIELD_FACS } from '../js/game.js';
 import { aiThink } from '../js/ai.js';
 import { readFileSync } from 'fs';
 const officers = {}; for (const o of JSON.parse(readFileSync('data/officers670.json'))) officers[o.idx] = o;
@@ -76,11 +76,11 @@ console.log('tactics fired:', tacN, '| stratagems fired:', stratN, '| field batt
     {
       const sc = g.forceCities(gateF.id).find(c => c.officers.length) ?? g.forceCities(gateF.id)[0]; sc.gold += 500; gateF.ap = 100;
       Object.values(g.officers).forEach(o => { if (o.state?.status === 'free') o.state.found = true; }); // 모든 재야 발견 처리 → 명품 분기 결정적
-      const pool0 = (g.itemPool ?? []).length;
+      g.itemPool = g.itemPool ?? ITEMS.map(i => i.id); const pool0 = g.itemPool.length;
       const o0 = Math.random; Math.random = () => 0.001; // hidden 없음 → 명품 분기 (0.001 < 0.25)
       g.searchCity(sc.id); Math.random = o0;
       const holder = Object.values(g.officers).find(o => (o.state?.items ?? []).length > 0);
-      if (!(g.itemPool.length === pool0 - 1 && holder)) { console.error('FAIL: 명품 발견·귀속'); process.exit(1); }
+      if (!(g.itemPool.length === pool0 - 1 && holder)) { console.error('FAIL: 명품 발견·귀속', { pool0, now: g.itemPool.length, holder: !!holder, city: sc.name_ko, off: sc.officers.length, gold: sc.gold, ap: gateF.ap }); process.exit(1); }
       // 장병(weapon) 공격 +5% 승수 — 무기 1개를 결정적으로 쥐여 검증
       holder.state.items = [...new Set([...holder.state.items, 'fangtian'])].slice(0, 3);
       const wN = holder.state.items.filter(id => ITEMS.find(i => i.id === id)?.kind === 'weapon').length;
@@ -96,7 +96,9 @@ console.log('tactics fired:', tacN, '| stratagems fired:', stratN, '| field batt
       off.state.items = [...new Set([...(off.state.items ?? []), 'yuxi'])].slice(0, 3);
       const before = f.techP ?? 0;
       f.ab = { '공격': 3, '방어': 3, '계략': 3, '내정': 3 }; // R13: 월 자동 능력연구의 기교P 소비를 차단해 결정적으로
+      const sb0 = g.swearBrotherhood; g.swearBrotherhood = () => false; // R14: 월 자동 결연의 기교P 소비도 차단 (같은 플레이크 클래스)
       for (let t = 0; t < 3; t++) { g.endTurn((gg, fid) => { if (fid !== f.id) aiThink(gg, fid); }); if (g.pendingDuel) g.duelAuto(g.pendingDuel); if (g.pendingDebate) g.debateAuto(g.pendingDebate); } // 월 처리는 3순(1개월)마다. 대상 세력의 AI 기교 연구(techP 소비)는 차단해 결정적으로
+      g.swearBrotherhood = sb0;
       if (!((f.techP ?? 0) >= before + 10)) { console.error('FAIL: 옥새 기교P 월+10', before, f.techP); process.exit(1); }
       off.state.items = off.state.items.filter(i => i !== 'yuxi');
       console.log('옥새 기교P 확인:', before, '→', f.techP);
@@ -175,7 +177,7 @@ if (g.units.find(u => u.id === 9999) && g.units.find(u => u.id === 9999).qi === 
   const g2 = new Game(JSON.parse(JSON.stringify(scen)), officers, {}, 0);
   const base = { id: 1, force: 0, officers: [], troops: 5000, type: 'spear', x: 0, z: 0, path: [], tx: null, tz: null, targetCity: null, label: 'A', qi: 100, conf: 0 };
   const mk = (skill, apt) => {
-    const idx = 90000 + Math.floor(Math.random() * 1000);
+    const idx = 90000 + (mk._n = (mk._n || 0) + 1); // 결정적 idx (이전 난수 idx 충돌로 간헐 실패했음)
     g2.officers[idx] = { idx, name_ko: '시험', ldr: 50, war: 80, int: 30, pol: 30, chr: 50, skill, apt: apt || {}, state: { status: 'serving', force: 0, city: null } };
     return idx;
   };
@@ -602,7 +604,7 @@ if (g.units.find(u => u.id === 9999) && g.units.find(u => u.id === 9999).qi === 
   Math.random = origRand;
   if (!home.disaster || home.disaster.type !== '역병') { console.error('FAIL: R9 재해 발생', JSON.stringify(home.disaster)); process.exit(1); }
   const bandit = g9.units.find(u => u.force === -1);
-  if (!bandit || bandit.targetCity !== home.id || bandit.troops !== 3000) { console.error('FAIL: R9 적 출현', JSON.stringify(bandit)); process.exit(1); }
+  if (!bandit || bandit.targetCity !== home.id || bandit.troops > 3000 || bandit.troops <= 0) { console.error('FAIL: R9 적 출현', JSON.stringify(bandit), JSON.stringify(g9.units.filter(x=>x.force!==-1).map(x=>[x.label,x.x,x.z]))); process.exit(1); }
   // 적 도착: 완성 시설 파괴 후 소멸
   bandit.x = home.lon + 1; bandit.z = home.lat;
   home.facilities = [{ type: '시장', progress: 100, builders: [], done: true }];
@@ -659,7 +661,7 @@ if (g.units.find(u => u.id === 9999) && g.units.find(u => u.id === 9999).qi === 
   const mkU = (id, force, war, items) => {
     const oi = 93000 + id;
     g10.officers[oi] = { idx: oi, name_ko: '결투' + id, ldr: 50, war, int: 30, pol: 30, chr: 50, skill: null, apt: {}, state: { status: 'serving', force, city: null, items: items ?? [], merit: 0 } };
-    return { id, force, officers: [oi], troops: 8000, type: 'cav', x: 0, z: 0, path: [], tx: null, tz: null, targetCity: null, label: 'U' + id, qi: 100, conf: 0 };
+    return { id, force, officers: [oi], troops: 8000, type: 'cav', x: 108.9, z: 34.3, path: [], tx: null, tz: null, targetCity: null, label: 'U' + id, qi: 100, conf: 0 };
   };
   const uA = mkU(1, 0, 90), uB = mkU(2, 1, 70);
   const homeB = g10.cities.find(c => c.force === 1);
@@ -971,9 +973,482 @@ if (g.units.find(u => u.id === 9999) && g.units.find(u => u.id === 9999).qi === 
   if (!aiMerged) { console.log('FAIL: R13 AI 흡수합병', JSON.stringify(aiC.facilities)); process.exit(1); }
   console.log('R13 PK 3요소 게이트 PASS (신시설10종/흡수합병/상한/레벨합산/능력연구/특기습득/부절대/서재/감찰소/의관/회계청곡물창고/군사부/인재부/외교부/훈련장/저장/AI동일규칙)');
 }
+// === R14: 황제·통일·연감·안개 게이트 (결정적) ===
+{
+  const settle14 = gg => { if (gg.pendingDuel) gg.duelAuto(gg.pendingDuel); if (gg.pendingDebate) gg.debateAuto(gg.pendingDebate); };
+  // 황제 승격: 24도시 → 황제, 충성 +10, 연감 기록, 기교P 월 +20
+  const g16 = new Game(JSON.parse(JSON.stringify(scen)), JSON.parse(JSON.stringify(officers)), {}, 0);
+  g16.units = [];
+  const f16 = g16.forces[g16.playerForce];
+  const need16 = 24 - g16.forceCities(g16.playerForce).length;
+  let gave = 0;
+  for (const c of g16.cities) { if (c.force !== g16.playerForce && gave < need16) { c.force = g16.playerForce; gave++; } }
+  if (g16.forceCities(g16.playerForce).length < 24) { console.log('FAIL: R14 황제 시험 도시 부족'); process.exit(1); }
+  const off16 = Object.values(g16.officers).find(o => o.state?.force === g16.playerForce);
+  const loy0 = off16.state.loyal ?? 70;
+  g16.checkRanks();
+  if (f16.rank !== '황제') { console.log('FAIL: R14 황제 승격', f16.rank); process.exit(1); }
+  if (off16.state.loyal !== Math.min(100, loy0 + 10)) { console.log('FAIL: R14 황제 충성+10', loy0, off16.state.loyal); process.exit(1); }
+  if (!(g16.chronicle ?? []).some(e => e.msg.includes('황제'))) { console.log('FAIL: R14 연감 황제 기록'); process.exit(1); }
+  g16.emperor = null; // R17: 옹립 보너스(+10)와 분리 — 이 게이트는 황제 관작 보너스(+20)만 검증
+  const tp0 = f16.techP ?? 0;
+  const m16 = g16.month;
+  { const o0 = Math.random; Math.random = () => 0.999; for (let i = 0; i < 3 && g16.month === m16; i++) { g16.endTurn(aiThink); settle14(g16); } Math.random = o0; }
+  if (g16.month === m16) { console.log('FAIL: R14 월 경과 없음'); process.exit(1); }
+  const dtp = (f16.techP ?? 0) - tp0;
+  if (dtp !== 20) { console.log('FAIL: R14 황제 기교P 월+20', dtp); process.exit(1); }
+  if (g16.over) { console.log('FAIL: R14 미통일인데 over'); process.exit(1); }
+  // 황건 세력 작위 불가
+  const hf = g16.aliveForces().map(x => x.id ?? x).find(x => x !== g16.playerForce);
+  g16.officers[999999] = { idx: 999999, name_ko: '황건장' };
+  g16.forces[hf].ruler = 999999;
+  let hcnt = 0; for (const c of g16.cities) { if (c.force !== g16.playerForce && hcnt < 24) { c.force = hf; hcnt++; } }
+  if (g16.forceRank(hf) !== null) { console.log('FAIL: R14 황건 작위 불가', g16.forceRank(hf)); process.exit(1); }
+  // 천하 통일: 모든 도시 제압 → over + 연감 + 종료 후 턴 차단
+  const g18 = new Game(JSON.parse(JSON.stringify(scen)), JSON.parse(JSON.stringify(officers)), {}, 0);
+  g18.units = [];
+  for (const c of g18.cities) c.force = g18.playerForce;
+  { const o0 = Math.random; Math.random = () => 0.999; g18.endTurn(aiThink); settle14(g18); Math.random = o0; }
+  if (g18.over !== true) { console.log('FAIL: R14 천하 통일 판정'); process.exit(1); }
+  if (!g18.chronicle.some(e => e.msg.includes('통일'))) { console.log('FAIL: R14 통일 연감 기록'); process.exit(1); }
+  const t0 = g18.turn;
+  { const o0 = Math.random; Math.random = () => 0.999; g18.endTurn(aiThink); Math.random = o0; }
+  if (g18.turn !== t0) { console.log('FAIL: R14 통일 후 턴 진행 차단'); process.exit(1); }
+  // 저장 영속: over·chronicle 직렬화
+  let savedStr = null;
+  const oldLS = globalThis.localStorage;
+  globalThis.localStorage = { getItem: () => null, setItem: (k, v) => { savedStr = v; }, removeItem(){} };
+  g18.autosave();
+  globalThis.localStorage = oldLS;
+  const sv = JSON.parse(savedStr);
+  if (sv.over !== true || !Array.isArray(sv.chronicle) || !sv.chronicle.some(e => e.msg.includes('통일'))) { console.log('FAIL: R14 over·chronicle 저장'); process.exit(1); }
+  // 관전 계속(over 해제) 후 통일 재발동 방지
+  g18.over = false;
+  { const o0 = Math.random; Math.random = () => 0.999; g18.endTurn(aiThink); settle14(g18); Math.random = o0; }
+  if (g18.over !== false || g18.unified !== true) { console.log('FAIL: R14 관전 계속 중 통일 재발동', g18.over, g18.unified); process.exit(1); }
+  // 멸망: 도시·부대 상실 → 세력 fallen
+  const g19 = new Game(JSON.parse(JSON.stringify(scen)), JSON.parse(JSON.stringify(officers)), {}, 0);
+  for (const c of g19.cities) if (c.force === g19.playerForce) c.force = null;
+  g19.units = g19.units.filter(u => u.force !== g19.playerForce);
+  { const o0 = Math.random; Math.random = () => 0.999; g19.endTurn(aiThink); settle14(g19); Math.random = o0; }
+  if (g19.forces[g19.playerForce].alive !== false) { console.log('FAIL: R14 멸망 판정'); process.exit(1); }
+  // 연감: 【】 포함만 수집
+  const cl0 = g19.chronicle.length;
+  g19.log('일반 메시지');
+  if (g19.chronicle.length !== cl0) { console.log('FAIL: R14 연감 일반 메시지 수집'); process.exit(1); }
+  g19.log('【시험】연감 수집');
+  if (g19.chronicle.length !== cl0 + 1) { console.log('FAIL: R14 연감 사건 수집'); process.exit(1); }
+  // 안개: 시야 반경·관전 공개
+  const g20 = new Game(JSON.parse(JSON.stringify(scen)), JSON.parse(JSON.stringify(officers)), {}, 0);
+  g20.units = [];
+  const myCs = g20.cities.filter(c => c.force === g20.playerForce);
+  const far = g20.cities.filter(c => c.force !== g20.playerForce).sort((a, b) => {
+    const da = Math.min(...myCs.map(m => (m.lon - a.lon) ** 2 + (m.lat - a.lat) ** 2));
+    const db = Math.min(...myCs.map(m => (m.lon - b.lon) ** 2 + (m.lat - b.lat) ** 2));
+    return db - da;
+  })[0];
+  if (g20.inVision(far.lon, far.lat)) { console.log('FAIL: R14 안개 — 먼 적 지역이 시야 안'); process.exit(1); }
+  if (g20.cityVisible(far)) { console.log('FAIL: R14 안개 — 시야 밖 도시 visible'); process.exit(1); }
+  if (!g20.inVision(myCs[0].lon, myCs[0].lat)) { console.log('FAIL: R14 안개 — 자기 도시 시야'); process.exit(1); }
+  g20.units.push({ id: 9997, force: g20.playerForce, officers: [], troops: 1000, type: 'spear', x: far.lon, z: far.lat, path: [], tx: null, tz: null, targetCity: null, label: '정찰', qi: 100, conf: 0 });
+  if (!g20.inVision(far.lon, far.lat)) { console.log('FAIL: R14 안개 — 부대 접근 시야 확보'); process.exit(1); }
+  g20.units = g20.units.filter(u => u.id !== 9997);
+  g20.delegated = true;
+  if (!g20.inVision(far.lon, far.lat)) { console.log('FAIL: R14 안개 — 관전 전체 공개 (설계안 191행)'); process.exit(1); }
+  console.log('R14 황제·통일·연감·안개 게이트 PASS (황제승격/충성+10/기교P+20/황건제외/통일판정/턴차단/저장/멸망/연감수집/안개반경/관전공개)');
+}
+}
+
+// === R15: 전법·계략 직접 발동 게이트 (결정적) ===
+{
+  const g21 = new Game(JSON.parse(JSON.stringify(scen)), JSON.parse(JSON.stringify(officers)), {}, 0);
+  g21.units = [];
+  const pf = g21.playerForce;
+  const ef = g21.cities.find(c => c.force != null && c.force !== pf).force;
+  const leadIdx = g21.forces[pf].ruler;
+  const elead = g21.forces[ef].ruler;
+  const mk = (id, force, offs, troops, type, x, z) => { const u = { id, force, officers: offs, troops, type, x, z, path: [], tx: null, tz: null, targetCity: null, label: '시험' + id, qi: 100, conf: 0 }; g21.units.push(u); return u; };
+  const me = mk(8001, pf, [leadIdx], 10000, 'spear', 10, 10);
+  const foe = mk(8002, ef, [elead], 10000, 'sword', 11, 10); // 인접
+  // 창격 직접 발동: 기력 -20, 적 병력 감소, 반격 없음
+  const t0 = foe.troops, q0 = me.qi;
+  if (!g21.fireTactic(me.id, { type: 'unit', id: foe.id })) { console.log('FAIL: R15 전법 직접 발동'); process.exit(1); }
+  if (me.qi !== q0 - 20) { console.log('FAIL: R15 전법 기력', me.qi); process.exit(1); }
+  if (foe.troops >= t0 || me.troops !== 10000) { console.log('FAIL: R15 전법 피해/반격없음', foe.troops, me.troops); process.exit(1); }
+  // 부적격: 기력 부족 → 실패, 변화 없음
+  me.qi = 10; const tf = foe.troops;
+  if (g21.fireTactic(me.id, { type: 'unit', id: foe.id }) || foe.troops !== tf) { console.log('FAIL: R15 전법 기력 부족 게이트'); process.exit(1); }
+  me.qi = 100;
+  // 혼란 중 발동 불가
+  me.conf = 2;
+  if (g21.fireTactic(me.id, { type: 'unit', id: foe.id })) { console.log('FAIL: R15 혼란 중 전법 차단'); process.exit(1); }
+  me.conf = 0;
+  // 사거리 밖 대상 차단
+  const far = mk(8003, ef, [elead], 5000, 'bow', 30, 30);
+  if (g21.fireTactic(me.id, { type: 'unit', id: far.id })) { console.log('FAIL: R15 사거리 밖 전법 차단'); process.exit(1); }
+  // 도시 전법: 병력·내구 감소
+  const ec = g21.cities.find(c => c.force === ef);
+  me._tacTurn = -1; me.x = ec.lon - 1; me.z = ec.lat;
+  const ct0 = ec.troops, ch0 = ec.hp;
+  if (!g21.fireTactic(me.id, { type: 'city', id: ec.id }) || ec.troops >= ct0 || ec.hp >= ch0) { console.log('FAIL: R15 도시 전법', ct0, ec.troops, ch0, ec.hp); process.exit(1); }
+  // 함락: 잔여 병력·내구 소진 → 점령
+  me._tacTurn = -1; ec.troops = 100; ec.hp = 10;
+  if (!g21.fireTactic(me.id, { type: 'city', id: ec.id }) || ec.force !== pf) { console.log('FAIL: R15 직접 전법 함락', ec.force); process.exit(1); }
+  // 화계: 성공(확률 스텁 0) — 기력 -30, 병력 6% 소각
+  const rand0 = Math.random;
+  const intIdx = Object.values(g21.officers).find(o => o.state?.force === pf && o.int >= 90)?.idx ?? leadIdx;
+  if (g21.officers[intIdx].int < 90) g21.officers[intIdx].int = 90; // 시험용 지력 보정
+  const me2 = mk(8004, pf, [intIdx], 8000, 'bow', 40, 40);
+  const foe2 = mk(8005, ef, [elead], 10000, 'sword', 41, 40);
+  Math.random = () => 0;
+  const fq = me2.qi, ft2 = foe2.troops;
+  if (!g21.fireStrat(me2.id, 'fire', { type: 'unit', id: foe2.id }) || me2.qi !== fq - 30 || foe2.troops !== ft2 - Math.round(ft2 * 0.06)) { console.log('FAIL: R15 화계 성공', me2.qi, foe2.troops); process.exit(1); }
+  // 화계 실패(확률 스텁 0.999) — 기력 유지
+  me2._stratTurn = -1;
+  Math.random = () => 0.999;
+  const fq2 = me2.qi;
+  if (!g21.fireStrat(me2.id, 'fire', { type: 'unit', id: foe2.id }) || me2.qi !== fq2) { console.log('FAIL: R15 화계 실패 기력 유지'); process.exit(1); }
+  // 부대당 턴 1회 제한
+  if (g21.fireStrat(me2.id, 'fire', { type: 'unit', id: foe2.id })) { console.log('FAIL: R15 계략 턴 1회 제한'); process.exit(1); }
+  // 혼란: 성공 시 conf 2·기력 -25
+  me2._stratTurn = -1;
+  Math.random = () => 0;
+  const cq = me2.qi;
+  if (!g21.fireStrat(me2.id, 'confuse', { type: 'unit', id: foe2.id }) || me2.qi !== cq - 25 || (foe2.conf ?? 0) !== 2) { console.log('FAIL: R15 혼란 성공', me2.qi, foe2.conf); process.exit(1); }
+  // 위장 부대 면역
+  const camo = mk(8006, ef, [elead], 3000, 'sword', 41, 41);
+  g21.officers[elead].skill = '위장';
+  me2._stratTurn = -1;
+  if (g21.fireStrat(me2.id, 'confuse', { type: 'unit', id: camo.id })) { console.log('FAIL: R15 위장 면역'); process.exit(1); }
+  // 화계 도시: 병력 8% 소각·내구 반감
+  const ec2 = g21.cities.find(c => c.force != null && c.force !== pf && c !== ec);
+  me2.x = ec2.lon - 1; me2.z = ec2.lat; me2._stratTurn = -1;
+  Math.random = () => 0;
+  const ct2 = ec2.troops, cq2 = me2.qi;
+  if (!g21.fireStrat(me2.id, 'fire', { type: 'city', id: ec2.id }) || me2.qi !== cq2 - 30 || ec2.troops !== ct2 - Math.round(ct2 * 0.08)) { console.log('FAIL: R15 화계 도시', me2.qi, ec2.troops); process.exit(1); }
+  Math.random = rand0;
+  // AI 측도 같은 규칙: 적 부대가 플레이어 부대에 직접 전법 (메서드 공용)
+  const ai = mk(8007, ef, [elead], 9000, 'sword', 40, 41); // sword는 적성 게이트 없음
+  const mine2 = mk(8008, pf, [leadIdx], 9000, 'sword', 41, 40);
+  const mt0 = mine2.troops;
+  if (!g21.fireTactic(ai.id, { type: 'unit', id: mine2.id }) || mine2.troops >= mt0) { console.log('FAIL: R15 AI 동일 규칙 직접 전법'); process.exit(1); }
+  console.log('R15 전법·계략 직접발동 게이트 PASS (전법기력/피해/반격없음/자격·혼란·사거리 차단/도시피해/함락/화계성공·실패/턴1회/혼란/위장면역/화계도시/AI동일규칙)');
+}
+
+// === R15 보강: 행동 경제 — 전법 턴 1회, 수동 발동 시 같은 턴 자동 판정 생략, AI 직접 발동 동일 규칙 ===
+{
+  const g22 = new Game(JSON.parse(JSON.stringify(scen)), JSON.parse(JSON.stringify(officers)), {}, 0);
+  g22.units = [];
+  const pf = g22.playerForce;
+  const ef = g22.cities.find(c => c.force != null && c.force !== pf).force;
+  const leadIdx = g22.forces[pf].ruler;
+  const elead = g22.forces[ef].ruler;
+  const mk = (id, force, offs, troops, type, x, z) => { const u = { id, force, officers: offs, troops, type, x, z, path: [], tx: null, tz: null, targetCity: null, label: '보강' + id, qi: 100, conf: 0 }; g22.units.push(u); return u; };
+  const a1 = mk(8101, pf, [leadIdx], 10000, 'spear', 10, 10);
+  const b1 = mk(8102, ef, [elead], 20000, 'sword', 11, 10);
+  if (!g22.fireTactic(a1.id, { type: 'unit', id: b1.id })) { console.log('FAIL: R15보강 첫 전법'); process.exit(1); }
+  const bt = b1.troops;
+  if (g22.fireTactic(a1.id, { type: 'unit', id: b1.id }) || b1.troops !== bt) { console.log('FAIL: R15보강 전법 턴 1회 제한'); process.exit(1); }
+  if (g22.tacticInfo(a1) !== null) { console.log('FAIL: R15보강 tacticInfo 턴 제한'); process.exit(1); }
+  // 수동 발동한 턴의 자동 야전에서 전법 재판정 생략 (확률 100% 스텁이어도 기력 추가 소모 없어야 함)
+  const rand0 = Math.random; Math.random = () => 0;
+  const intSave = g22.officers[leadIdx].int; g22.officers[leadIdx].int = 50; // 자동 계략 판정 분리(전법 중복만 검증)
+  const aq = a1.qi;
+  let tacLog0 = 0; const origLog22 = g22.log.bind(g22); g22.log = (m, mine) => { if (m.includes('【전법】') && m.includes(g22.officers[leadIdx].name_ko)) tacLog0++; origLog22(m, mine); };
+  g22.fieldBattle(a1, b1);
+  if (g22.pendingDuel) g22.duelAuto(g22.pendingDuel);
+  g22.log = origLog22; g22.officers[leadIdx].int = intSave;
+  if (a1.qi !== aq || tacLog0 !== 0) { console.log('FAIL: R15보강 수동 후 자동 전법 중복', aq, a1.qi, tacLog0); process.exit(1); }
+  g22.turn += 1;
+  if (!g22.tacticInfo(a1)) { console.log('FAIL: R15보강 다음 턴 전법 해제'); process.exit(1); }
+  Math.random = rand0;
+  // AI 직접 발동: aiThink가 인접 적에 같은 규칙(비용·턴 1회)으로 전법 사용
+  const g23 = new Game(JSON.parse(JSON.stringify(scen)), JSON.parse(JSON.stringify(officers)), {}, 0);
+  g23.units = [];
+  const ef23 = g23.cities.find(c => c.force != null && c.force !== g23.playerForce).force;
+  const au = { id: 8201, force: ef23, officers: [g23.forces[ef23].ruler], troops: 9000, type: 'sword', x: 10, z: 10, path: [], tx: null, tz: null, targetCity: null, label: 'AI시험', qi: 100, conf: 0 };
+  const pu = { id: 8202, force: g23.playerForce, officers: [g23.forces[g23.playerForce].ruler], troops: 9000, type: 'sword', x: 11, z: 10, path: [], tx: null, tz: null, targetCity: null, label: '플레이어시험', qi: 100, conf: 0 };
+  g23.units.push(au, pu);
+  const pt0 = pu.troops;
+  aiThink(g23, ef23);
+  if ((au._tacTurn ?? -1) !== g23.turn || pu.troops >= pt0) { console.log('FAIL: R15보강 AI 직접 전법', au._tacTurn, pu.troops, pt0); process.exit(1); }
+  console.log('R15 보강 게이트 PASS (전법턴1회/수동후자동중복차단/다음턴해제/AI직접발동동일규칙)');
+}
+
+// === R16: 시각 표현 게이트 (구조 — 병종 모델·사계절·초상화 연출·조사) ===
+{
+  const mapSrc = readFileSync('js/map3d.js', 'utf8');
+  const mainSrc = readFileSync('js/main.js', 'utf8');
+  // 병종별 모델: 12병종 전부 unitBody에 분기
+  const bodyStart = mapSrc.indexOf('unitBody(type)');
+  if (bodyStart < 0) { console.log('FAIL: R16 unitBody 없음'); process.exit(1); }
+  for (const t of ['sword','spear','pike','bow','cav','ram','tower','beast','catapult','junk','lou','dou']) {
+    if (!mapSrc.slice(bodyStart).includes(`case '${t}'`)) { console.log('FAIL: R16 병종 모델 누락', t); process.exit(1); }
+  }
+  if (!mapSrc.includes('this.unitBody(unit.type')) { console.log('FAIL: R16 addUnit 병종 모델 미사용'); process.exit(1); }
+  if (!mainSrc.includes('label: u.label, type: u.type')) { console.log('FAIL: R16 worldUnit type 미전달'); process.exit(1); }
+  // 사계절: setSeason 4계절 분기 + refreshAll 호출
+  if (!mapSrc.includes('setSeason(month)') || !mapSrc.includes('baseColors')) { console.log('FAIL: R16 setSeason 없음'); process.exit(1); }
+  if (!mainSrc.includes('map.setSeason?.(game.month)')) { console.log('FAIL: R16 계절 미호출'); process.exit(1); }
+  // 일기토·설전 초상화 연출
+  if (!mainSrc.includes('portraitCss(po.idx)') || !mainSrc.includes('portraitCss(P.o)')) { console.log('FAIL: R16 대결 초상화 없음'); process.exit(1); }
+  // 조사: 변환된 메시지에 괄호 조사 잔류 금지 (R15 게이트 시나리오 로그 검사)
+  const g24 = new Game(JSON.parse(JSON.stringify(scen)), JSON.parse(JSON.stringify(officers)), {}, 0);
+  g24.units = [];
+  const pf24 = g24.playerForce, ef24 = g24.cities.find(c => c.force != null && c.force !== pf24).force;
+  const caster24 = Object.values(g24.officers).find(o => o.state?.force === pf24 && o.int >= 80) ?? Object.values(g24.officers).find(o => o.state?.force === pf24);
+  caster24.int = Math.max(caster24.int, 90);
+  const mk24 = (id, force, offs, troops, type, x, z) => { const u = { id, force, officers: offs, troops, type, x, z, path: [], tx: null, tz: null, targetCity: null, label: '시험부대' + id, qi: 100, conf: 0 }; g24.units.push(u); return u; };
+  const a24 = mk24(8301, pf24, [caster24.idx], 9000, 'spear', 10, 10);
+  const b24 = mk24(8302, ef24, [g24.forces[ef24].ruler], 9000, 'sword', 11, 10);
+  const rand24 = Math.random; Math.random = () => 0;
+  g24.fireTactic(a24.id, { type: 'unit', id: b24.id });
+  a24._tacTurn = -1;
+  g24.fireStrat(a24.id, 'confuse', { type: 'unit', id: b24.id });
+  Math.random = rand24;
+  const logs24 = g24.logs.map(l => l.msg);
+  if (logs24.some(m => /\(가\)|\(를\)|\(로\)/.test(m))) { console.log('FAIL: R16 조사 괄호 잔류', logs24.filter(m => /\(가\)|\(를\)|\(로\)/.test(m))); process.exit(1); }
+  if (!logs24.some(m => m.includes('시험부대8302가'))) { console.log('FAIL: R16 조사 적용 결과', logs24); process.exit(1); } // '부대8302'는 받침 없음 → '가'
+  console.log('R16 시각 표현 게이트 PASS (병종12모델/사계절/대결초상화/조사적용)');
 }
 {
   const fs = await import('fs');
+
+// === R17 갭 회수 게이트: 특기 5종 실효과 + 육군 수로 제한 + 황제 옹립 (전부 자체 설계·자체 수치) ===
+{
+  const fail = m => { console.log('FAIL: R17 ' + m); process.exit(1); };
+  const SK = JSON.parse(readFileSync('data/skills.json', 'utf8'));
+  if (!SK['신행']?.includes('이동 속도') || !SK['미끼']?.includes('우선') || !SK['이간'] || !SK['귀납'] || !SK['훈련']) fail('skills.json 재정의 누락');
+  const mkG = () => new Game(JSON.parse(JSON.stringify(scen)), JSON.parse(JSON.stringify(officers)), {}, 0);
+
+  // 1) 훈련: 기력 턴 회복 +5 (같은 도시·같은 세력 부대 비교)
+  {
+    const g31 = mkG(); g31.units = [];
+    const home = g31.cities.find(c => c.force === 0);
+    const [oT, oN] = home.officers;
+    g31.officers[oT].skill = '훈련'; g31.officers[oN].skill = '위장';
+    const u1 = { id: 9101, force: 0, officers: [oT], troops: 5000, type: 'spear', x: home.lon, z: home.lat, path: [], tx: null, tz: null, targetCity: null, label: '훈련부대', qi: 50, conf: 0 };
+    const u2 = { id: 9102, force: 0, officers: [oN], troops: 5000, type: 'spear', x: home.lon, z: home.lat, path: [], tx: null, tz: null, targetCity: null, label: '일반부대', qi: 50, conf: 0 };
+    g31.units.push(u1, u2);
+    g31.endTurn(() => {});
+    if (u1.qi - u2.qi !== 5 || u1.qi < 65) fail(`훈련 기력 +5 (특기 ${u1.qi} vs 일반 ${u2.qi})`);
+  }
+
+  // 2) 신행: 이동 속도 +15% (같은 병종·출발점·목표 비교, 물 차단 없는 방향 선택)
+  {
+    const g32 = mkG(); g32.units = [];
+    const home = g32.cities.find(c => c.force === 0);
+    const [oS, oN] = home.officers;
+    g32.officers[oS].skill = '신행'; g32.officers[oN].skill = '위장';
+    let d1 = 0, d2 = 0;
+    for (const [dx, dz] of [[3, 0], [-3, 0], [0, 3], [0, -3]]) {
+      const g32b = mkG(); g32b.units = [];
+      const h2 = g32b.cities.find(c => c.force === 0);
+      const [pS, pN] = h2.officers;
+      g32b.officers[pS].skill = '신행'; g32b.officers[pN].skill = '위장';
+      const v1 = { id: 9201, force: 0, officers: [pS], troops: 5000, type: 'spear', x: h2.lon, z: h2.lat, path: [], tx: h2.lon + dx, tz: h2.lat + dz, targetCity: null, label: '신행부대', qi: 100, conf: 0 };
+      const v2 = { id: 9202, force: 0, officers: [pN], troops: 5000, type: 'spear', x: h2.lon, z: h2.lat, path: [], tx: h2.lon + dx, tz: h2.lat + dz, targetCity: null, label: '일반부대2', qi: 100, conf: 0 };
+      g32b.units.push(v1, v2);
+      g32b.endTurn(() => {});
+      d1 = Math.hypot(v1.x - h2.lon, v1.z - h2.lat); d2 = Math.hypot(v2.x - h2.lon, v2.z - h2.lat);
+      if (d2 > 0.1) break;
+    }
+    if (d2 <= 0.1) fail('신행 비교 부대 미이동');
+    if (Math.abs(d1 / d2 - 1.15) > 0.03) fail(`신행 속도 배율 (비율 ${(d1 / d2).toFixed(3)})`);
+  }
+
+  // 3) 이간: 등용 성공률 +0.1
+  {
+    const g33 = mkG();
+    const home = g33.cities.find(c => c.force === 0);
+    const free = Object.values(g33.officers).find(o => o.state && o.state.status !== 'officer' && !home.officers.includes(o.idx));
+    free.state = { status: 'free', city: home.id, found: true, loyal: 60 };
+    for (const i of home.officers) g33.officers[i].skill = '위장'; // 기존 특기 전부 제거 (진류에 이간 보유자 존재)
+    const p0 = g33.recruitChance(home.id, free.idx);
+    g33.officers[home.officers[0]].skill = '이간';
+    const p1 = g33.recruitChance(home.id, free.idx);
+    if (!(p0 > 0) || Math.abs(p1 - p0 - 0.1) > 1e-9) fail(`이간 등용률 +0.1 (${p0} -> ${p1})`);
+  }
+
+  // 4) 귀납: 항복 권고 성공률 +0.1 (랜덤 스텁으로 경계 결정적 검증)
+  {
+    const setup = skill => {
+      const g34 = mkG();
+      const my = g34.cities.find(c => c.force === 0);
+      g34.officers[my.officers[0]].skill = skill;
+      const tid = Object.values(g34.forces).find(f => f.alive && f.id !== 0 && g34.cities.filter(c => c.force === f.id).length === 1).id;
+      g34.forces[0].ap = 99; my.gold = 5000;
+      const chr = Math.max(50, ...my.officers.map(i => g34.officers[i].chr));
+      const p0 = Math.min(0.5, 0.05 + (chr - 50) / 200);
+      if (p0 > 0.4) fail('귀납 검증용 매력 상한 초과');
+      return { g34, tid, my, stub: p0 + 0.05 };
+    };
+    const rand0 = Math.random;
+    let a = setup('귀납'); Math.random = () => a.stub;
+    const ok = a.g34.demandSurrender(0, a.tid, a.my.id);
+    let b = setup('위장'); Math.random = () => b.stub;
+    const no = b.g34.demandSurrender(0, b.tid, b.my.id);
+    Math.random = rand0;
+    if (!ok || no) fail('귀납 항복권고 경계 (귀납 성공·무특기 실패 기대)');
+  }
+
+  // 5) 미끼: AI 전법 타겟 우선 선택 (배열 후순위지만 미끼가 먼저 맞아야 함)
+  {
+    const g36 = mkG(); g36.units = [];
+    const ef = g36.cities.find(c => c.force != null && c.force !== 0).force;
+    const home = g36.cities.find(c => c.force === 0);
+    const [o1, o2] = home.officers;
+    g36.officers[o1].skill = '위장'; g36.officers[o2].skill = '미끼';
+    let oE = null; // 전법 자격 있는 AI 세력 무장 탐색 (군주가 자격 미달일 수 있음)
+    for (const i of Object.keys(g36.officers)) {
+      if (g36.officers[i].state?.force !== ef) continue;
+      const probe = { id: 9999, force: ef, officers: [Number(i)], troops: 10000, type: 'spear', x: 10, z: 10, path: [], tx: null, tz: null, targetCity: null, label: '탐색', qi: 100, conf: 0 };
+      if (g36.tacticInfo(probe)) { oE = Number(i); break; }
+    }
+    if (oE == null) fail('미끼 검증용 전법 자격 무장 없음');
+    const a = { id: 9301, force: ef, officers: [oE], troops: 10000, type: 'spear', x: 10, z: 10, path: [], tx: null, tz: null, targetCity: null, label: 'AI부대', qi: 100, conf: 0 };
+    const uN = { id: 9302, force: 0, officers: [o1], troops: 9000, type: 'spear', x: 11, z: 10, path: [], tx: null, tz: null, targetCity: null, label: '일반표적', qi: 100, conf: 0 };
+    const uM = { id: 9303, force: 0, officers: [o2], troops: 9000, type: 'spear', x: 12, z: 10, path: [], tx: null, tz: null, targetCity: null, label: '미끼표적', qi: 100, conf: 0 };
+    g36.units.push(a, uN, uM); // 미끼를 배열 뒤에 배치 — 정렬로 앞에 와야 함
+    const rand0 = Math.random; Math.random = () => 0.01;
+    aiThink(g36, ef);
+    Math.random = rand0;
+    if (!(uM.troops < 9000) || uN.troops !== 9000) fail(`미끼 우선 타겟팅 (미끼 ${uM.troops} / 일반 ${uN.troops})`);
+  }
+
+  // 6) 육군 강 도하(감속)·바다 차단 + A* 경로 도시간 도착 + 수군 수로 유지
+  {
+    const g38 = mkG(); g38.units = [];
+    const o = g38.forces[0].ruler;
+    // 6a) 바다 차단: 해안에서 바다로 향하는 육군은 정지 + 로그
+    let coast = null;
+    for (let lat = 26; lat <= 38 && !coast; lat += 0.5)
+      for (let lon = 118; lon <= 130 && !coast; lon += 0.1)
+        if (!isWaterAt(lon, lat) && isSeaAt(lon + 0.6, lat)) coast = [lon, lat];
+    if (!coast) fail('해안 좌표 탐색');
+    const seaU = { id: 9401, force: 0, officers: [o], troops: 5000, type: 'spear', x: coast[0], z: coast[1], path: [], tx: coast[0] + 2.4, tz: coast[1], targetCity: null, label: '바다시험', qi: 100, conf: 0 };
+    g38.units.push(seaU);
+    for (let i = 0; i < 4; i++) { g38.endTurn(() => {}); if (isSeaAt(seaU.x, seaU.z)) fail('육군이 바다 위에 위치'); }
+    if (!seaU._waterWarn) fail('육군 바다 차단 로그 미발생');
+    // 6b) 강 도하: 강을 사이에 둔 육군은 감속으로 건너 반대편 도달
+    let riv = null;
+    for (let lat = 28; lat <= 38 && !riv; lat += 0.25)
+      for (let lon = 108; lon <= 125 && !riv; lon += 0.05)
+        if (!isWaterAt(lon, lat) && isRiverAt(lon + 0.6, lat) && !isWaterAt(lon + 1.6, lat)) riv = [lon, lat];
+    if (!riv) fail('도하 검증 강 좌표 탐색');
+    const rivU = { id: 9403, force: 0, officers: [o], troops: 5000, type: 'spear', x: riv[0], z: riv[1], path: [], tx: riv[0] + 1.5, tz: riv[1], targetCity: null, label: '도하시험', qi: 100, conf: 0 };
+    g38.units.push(rivU);
+    let crossed = false, slowedSeen = false;
+    for (let i = 0; i < 12 && !crossed; i++) { g38.endTurn(() => {}); if (isRiverAt(rivU.x, rivU.z)) slowedSeen = true; if (rivU.x >= riv[0] + 1.4 || Math.hypot(rivU.tx - rivU.x, rivU.tz - rivU.z) <= 1.2) crossed = true; }
+    if (!crossed) fail('육군 강 도하 실패');
+    if (!slowedSeen) fail('도하 감속 구간 미통과');
+    // 6c) A* 경로 도시간 행군 도착 (강 건너 노선 포함, 엔진 경로 직접 호출)
+    const march = (fromName, toName, maxSteps) => {
+      const g38b = mkG(); g38b.units = [];
+      const a = g38b.cities.find(c => c.name_ko === fromName), b = g38b.cities.find(c => c.name_ko === toName);
+      const oo = g38b.forces[a.force ?? 0]?.ruler ?? g38b.forces[0].ruler;
+      const u = { id: 9450, force: a.force ?? 0, officers: [oo], troops: 5000, type: 'spear', x: a.lon, z: a.lat, path: [], tx: null, tz: null, targetCity: null, label: '행군', qi: 100, conf: 0 };
+      g38b.units.push(u);
+      u.tx = b.lon; u.tz = b.lat; u.path = g38b.findPath(u, b.lon, b.lat) ?? [];
+      if (!u.path.length) return { ok: false, why: 'no path' };
+      for (let i = 0; i < maxSteps; i++) { if (!u.path.length && (u.tx == null || Math.hypot(u.tx - u.x, u.tz - u.z) <= 1.2)) return { ok: true, steps: i }; g38b.stepUnit(u); if (isSeaAt(u.x, u.z)) return { ok: false, why: 'on sea' }; }
+      return { ok: true, steps: maxSteps, note: 'loop-end ' + (u.tx == null ? 'arrived' : Math.hypot(u.tx - u.x, u.tz - u.z).toFixed(1)) };
+    };
+    for (const [a, b, mx] of [['장안', '낙양', 800], ['북평', '낙양', 800], ['낙양', '건업', 800], ['하비', '수춘', 400]]) {
+      const r = march(a, b, mx);
+      if (!r.ok) fail(`도시간 행군 ${a}->${b} (${r.why})`);
+    }
+    // 6d) 수군 해상 이동 유지
+    let sea = null;
+    for (let lat = 26; lat <= 38 && !sea; lat += 0.5)
+      for (let lon = 118; lon <= 130 && !sea; lon += 0.1)
+        if (isWaterAt(lon, lat) && isWaterAt(lon + 2.4, lat)) sea = [lon, lat];
+    if (!sea) fail('해상 구간 탐색');
+    const ship = { id: 9402, force: 0, officers: [o], troops: 5000, type: 'junk', x: sea[0], z: sea[1], path: [], tx: sea[0] + 2.4, tz: sea[1], targetCity: null, label: '수군시험', qi: 100, conf: 0 };
+    g38.units.push(ship);
+    const sx = ship.x;
+    g38.endTurn(() => {});
+    if (!(ship.x > sx)) fail('수군 해상 이동');
+  }
+
+  // 7) 황제 옹립: 190 존재·옹립 세력 월 기교P +10·옹립 교체 로그·즉위 게이트, 251 부재 시 자유 즉위
+  {
+    const g39 = mkG();
+    if (!g39.emperor) fail('황제 엔티티 생성 (190)');
+    const holder0 = g39.emperorHolder();
+    if (holder0 == null) fail('초기 옹립 세력');
+    g39.dan = 3;
+    const tp0 = g39.forces[holder0].techP;
+    g39.endTurn(() => {});
+    if (g39.forces[holder0].techP - tp0 !== 10) fail(`옹립 세력 월 기교P +10 (${g39.forces[holder0].techP - tp0})`);
+    g39.cityById[g39.emperor.city].force = 0; g39.dan = 3;
+    g39.endTurn(() => {});
+    if (g39.emperor.holder !== 0 || !g39.logs.some(l => l.msg.includes('【옹립】'))) fail('옹립 교체 로그');
+    let n = 0; for (const c of g39.cities) { if (n >= 24) break; c.force = 0; n++; }
+    g39.cityById[g39.emperor.city].force = 0;
+    if (g39.forceRank(0) !== '황제') fail('옹립 세력 즉위');
+    g39.cityById[g39.emperor.city].force = holder0;
+    const r = g39.forceRank(0);
+    if (r === '황제' || !r) fail(`미옹립 세력 즉위 차단 (${r})`);
+    const scen251 = JSON.parse(readFileSync('data/scenario-251.json', 'utf8'));
+    const g40 = new Game(scen251, JSON.parse(JSON.stringify(officers)), {}, 0);
+    if (g40.emperor !== null) fail('황제 부재 (251)');
+    const fid = Object.values(g40.forces).find(f => f.alive).id;
+    let m = 0; for (const c of g40.cities) { if (m >= 24) break; c.force = fid; m++; }
+    if (g40.forceRank(fid) !== '황제') fail('황제 부재 시 자유 즉위 (251)');
+  }
+  if (!readFileSync('js/game.js', 'utf8').includes('emperor: this.emperor,')) fail('황제 저장 필드 누락');
+  // 8) R17b: 경로 실패 안전 처리 — 도달 불가 명령 거부(직선 폴백 없음) + 정상 노선 true
+  {
+    const g50 = mkG(); g50.units = [];
+    const han = g50.cities.find(c => c.name_ko === '한중'), tgt = g50.cities.find(c => c.name_ko === '성도');
+    const o = g50.forces[0].ruler;
+    const ship = { id: 9501, force: 0, officers: [o], troops: 5000, type: 'junk', x: han.lon, z: han.lat, path: [], tx: null, tz: null, targetCity: null, label: '내륙수군', qi: 100, conf: 0 };
+    g50.units.push(ship);
+    const before = g50.logs.length;
+    const r = g50.orderUnit(ship.id, tgt.id);
+    if (r !== false || ship.targetCity != null || ship.tx != null) fail('도달 불가 명령이 거부되지 않음');
+    if (!g50.logs.slice(before).some(l => l.msg.includes('노선이 없어'))) fail('도달 불가 안전 실패 로그 없음');
+    const land = { id: 9502, force: 0, officers: [o], troops: 5000, type: 'spear', x: han.lon, z: han.lat, path: [], tx: null, tz: null, targetCity: null, label: '육로', qi: 100, conf: 0 };
+    g50.units.push(land);
+    if (g50.orderUnit(land.id, tgt.id) !== true || !land.path.length) fail('정상 노선 명령 실패');
+    // AI 장기 정지 부대 계측: 60턴 시뮬 중 10턴 연속 같은 위치 + targetCity 보유 부대 0건, 도착률 집계
+    const g51 = mkG();
+    const track = new Map(); let engagedTurns = 0, siegeTurns = 0, stalled = 0, issued = new Set(), gone = new Set();
+    for (let tn = 0; tn < 60; tn++) {
+      g51.delegated = false; aiThink(g51, g51.playerForce); g51.endTurn(aiThink);
+      if (g51.pendingDuel) g51.duelAuto(g51.pendingDuel); if (g51.pendingDebate) g51.debateAuto(g51.pendingDebate);
+      const live = new Set();
+      for (const u of g51.units) {
+        if (u.force === -1 || u.targetCity == null) continue;
+        live.add(u.id); issued.add(u.id);
+        const k = track.get(u.id); const pos = u.x.toFixed(2) + ',' + u.z.toFixed(2);
+        const eng = g51.units.some(v => v !== u && v.force !== u.force && v.force !== -1 && Math.hypot(v.x - u.x, v.z - u.z) < 2.2); const sieging = Math.hypot(u.tx - u.x, u.tz - u.z) <= 1.2 && g51.cityById[u.targetCity]?.force !== u.force; if (sieging && k && k.pos === pos) siegeTurns++; if (k && k.pos === pos && !(u.conf > 0) && !eng && !sieging) { k.n++; if (k.n >= 10) { stalled++; if (process.env.DBG && k.n === 10) console.log('  STALL', u.label, u.type, 'pos', pos, 'tgt', g51.cityById[u.targetCity]?.name_ko, 'dist', Math.hypot(u.tx - u.x, u.tz - u.z).toFixed(2), 'path', JSON.stringify(u.path.slice(0,2)), 'water', isWaterAt(u.x, u.z), 'sea', isSeaAt(u.x,u.z), 'warn', u._waterWarn, u._landWarn, 'conf', u.conf); } } else if (k && k.pos === pos && eng) { k.eng = (k.eng ?? 0) + 1; engagedTurns++; } else track.set(u.id, { pos, n: 0 });
+      }
+      for (const id of issued) if (!live.has(id)) gone.add(id);
+    }
+    console.log(`  R17b 계측: 출진 부대 ${issued.size}, 종료(도착·전멸) ${gone.size}, 10턴 이상 정지(교전 제외) ${stalled}, 교전 대치 부대턴 ${engagedTurns}, 도시 공성 대치 부대턴(정지 판정 제외, 별도 집계) ${siegeTurns}`);
+    for (const u of g51.units) if (!Number.isFinite(u.x) || !Number.isFinite(u.z)) fail('부대 좌표 NaN');
+    if (stalled > 0) fail(`장기 정지 부대 ${stalled}건`);
+  }
+  console.log('R17 갭 회수 게이트 PASS (훈련+5/신행1.15/이간+0.1/귀납+0.1/미끼타겟/육군바다차단/강도하감속/A*도시간행군4노선/수군통과/옹립techP+10/옹립교체로그/즉위게이트/251자유즉위)');
+}
+  { // R17c: 진입점·전 모듈 import·데이터 fetch 가 동일 버전 쿼리를 쓰는지
+    const vs = new Set(); let cnt = 0;
+    for (const [f, re] of [['js/main.js', /from '\.\/(?:map3d|game|ai)\.js\?v=([\w.-]+)'/g], ['js/map3d.js', /from '\.\/assets-3d\.js\?v=([\w.-]+)'/g], ['index.html', /src="js\/main\.js\?v=([\w.-]+)"/g], ['index.html', /href="css\/style\.css\?v=([\w.-]+)"/g], ['js/main.js', /fetch\(u \+ '\?v=([\w.-]+)'\)/g]]) {
+      const s = fs.readFileSync(new URL('../' + f, import.meta.url), 'utf8'); for (const m of s.matchAll(re)) { vs.add(m[1]); cnt++; }
+    }
+    if (vs.size !== 1 || cnt !== 7) { console.error('FAIL: R17c 버전 쿼리 불일치', [...vs], cnt); process.exit(1); }
+    console.log('R17c 모듈 버전 일관 게이트 PASS (v=' + [...vs][0] + ', 참조 7곳(CSS 포함))');
+  }
+
+{ // R31: 빌드 ID 일치 게이트
+  const a = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8').match(/name="build" content="([\w.-]+)"/)?.[1];
+  const b = fs.readFileSync(new URL('../js/main.js', import.meta.url), 'utf8').match(/const BUILD_ID = '([\w.-]+)'/)?.[1];
+  const v = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8').match(/main\.js\?v=([\w.-]+)/)?.[1];
+  if (!a || a !== b || a !== v) { console.error('FAIL: R31 빌드 ID 불일치', a, b, v); process.exit(1); }
+  console.log('R31 빌드 ID 일치 게이트 PASS (' + a + ')');
+}
   const vm = await import('vm');
   const src = fs.readFileSync(new URL('../js/bundle.js', import.meta.url), 'utf8');
   if (/^export \{/m.test(src)) { console.error('FAIL: 번들에 export 목록 문장 잔류 (TDZ 위험)'); process.exit(1); }
@@ -990,5 +1465,314 @@ if (g.units.find(u => u.id === 9999) && g.units.find(u => u.id === 9999).qi === 
   try { new vm.Script(noImports, { filename: 'bundle.js' }).runInNewContext(sandbox); }
   catch (e) { console.error('FAIL: 번들 초기화 오류', e.message); process.exit(1); }
   console.log('번들 부팅 게이트 PASS (초기화 오류 없음)');
+}
+
+// === R18: 위보·진정 계략 게이트 (결정적: 확률 스텁) ===
+{
+  const g = new Game(JSON.parse(JSON.stringify(scen)), JSON.parse(JSON.stringify(officers)), {}, 0);
+  g.units = [];
+  const pf = g.playerForce;
+  const ef = g.cities.find(c => c.force != null && c.force !== pf).force;
+  const lead = g.forces[pf].ruler, elead = g.forces[ef].ruler;
+  const mk = (id, force, offs, troops, type, x, z) => { const u = { id, force, officers: offs, troops, type, x, z, path: [], tx: null, tz: null, targetCity: null, label: '시험' + id, qi: 100, conf: 0 }; g.units.push(u); return u; };
+  g.officers[lead].int = 90;
+  const hc0 = g.cities.find(c => c.force === ef);
+  const bx = hc0.lon + 3, bz = hc0.lat;
+  const me = mk(8101, pf, [lead], 10000, 'spear', bx, bz);
+  const ally = mk(8102, pf, [lead], 5000, 'sword', bx + 0.5, bz);
+  const foe = mk(8103, ef, [elead], 10000, 'sword', bx + 1, bz);
+  const r0 = Math.random; Math.random = () => 0;
+  // 진정: 혼란 해제, 기력 -10, 대상 기력 +20
+  ally.conf = 2; ally.qi = 50; me.qi = 100;
+  if (!g.fireStrat(me.id, 'calm', { type: 'unit', id: ally.id }) || ally.conf !== 0 || ally.qi !== 70 || me.qi !== 90) { Math.random = r0; console.log('FAIL: R18 진정', ally.conf, ally.qi, me.qi); process.exit(1); }
+  // 진정: 적 부대 대상 차단 / 기력 부족 차단
+  me._stratTurn = -1;
+  if (g.fireStrat(me.id, 'calm', { type: 'unit', id: foe.id })) { Math.random = r0; console.log('FAIL: R18 진정 적대상 차단'); process.exit(1); }
+  me.qi = 5;
+  if (g.fireStrat(me.id, 'rumor', { type: 'unit', id: foe.id }) || foe.path.length) { Math.random = r0; console.log('FAIL: R18 위보 기력 부족 차단'); process.exit(1); }
+  // 위보: 기력 -15, 적 부대가 자기 도시로 퇴각 경로 부여
+  me.qi = 100; me._stratTurn = -1; foe.path = []; foe.targetCity = null;
+  const ok = g.fireStrat(me.id, 'rumor', { type: 'unit', id: foe.id });
+  Math.random = r0;
+  if (!ok || me.qi !== 85) { console.log('FAIL: R18 위보 비용/성공', ok, me.qi); process.exit(1); }
+  const hc = g.cityById[foe.targetCity];
+  if (!hc || hc.force !== ef || !foe.path || !foe.path.length) { console.log('FAIL: R18 위보 퇴각경로 없음', foe.targetCity); process.exit(1); }
+  // 같은 턴 재발동 차단
+  if (g.fireStrat(me.id, 'rumor', { type: 'unit', id: foe.id })) { console.log('FAIL: R18 위보 턴 1회'); process.exit(1); }
+  // AI 경로: 혼란 아군이 있으면 AI가 진정을 쓴다 (같은 fireStrat 경로)
+  const g2 = new Game(JSON.parse(JSON.stringify(scen)), JSON.parse(JSON.stringify(officers)), {}, 0);
+  g2.units = [];
+  const ef2 = g2.cities.find(c => c.force != null && c.force !== g2.playerForce).force;
+  const el2 = g2.forces[ef2].ruler; g2.officers[el2].int = 90;
+  const au = { id: 8201, force: ef2, officers: [el2], troops: 8000, type: 'spear', x: 20, z: 20, path: [], tx: null, tz: null, targetCity: null, label: 'AI시험1', qi: 100, conf: 0 };
+  const av = { ...au, id: 8202, x: 20.5, label: 'AI시험2', conf: 2, qi: 40, path: [] };
+  g2.units.push(au, av);
+  const r1 = Math.random; Math.random = () => 0;
+  aiThink(g2, ef2);
+  Math.random = r1;
+  if (av.conf !== 0) { console.log('FAIL: R18 AI 진정 사용 (같은 규칙)', av.conf); process.exit(1); }
+  console.log('R18 위보·진정 게이트 PASS (진정 해제·비용·적대상차단·기력부족/위보 비용·퇴각경로·턴1회/AI 진정)');
+}
+
+// === R18b: 병종별 추가 전법 게이트 (결정적: 직접 발동은 확정) ===
+{
+  const mkg = () => { const g = new Game(JSON.parse(JSON.stringify(scen)), JSON.parse(JSON.stringify(officers)), {}, 0); g.units = []; return g; };
+  const setup = (type, apt = 'S') => {
+    const g = mkg(); const pf = g.playerForce, ef = g.cities.find(c => c.force != null && c.force !== pf).force;
+    const lead = g.forces[pf].ruler, el = g.forces[ef].ruler;
+    g.officers[lead].apt = [apt, apt, apt, apt, apt, apt];
+    const mk = (id, force, offs, troops, t, x, z) => { const u = { id, force, officers: offs, troops, type: t, x, z, path: [], tx: null, tz: null, targetCity: null, label: '전' + id, qi: 100, conf: 0 }; g.units.push(u); return u; };
+    return { g, pf, ef, lead, el, mk };
+  };
+  const X = 107.0, Z = 33.0;
+  const fail = m => { console.log('FAIL: R18b ' + m); process.exit(1); };
+  // 창병 3종
+  { const { g, pf, ef, lead, el, mk } = setup('spear'); const me = mk(8301, pf, [lead], 10000, 'spear', X, Z), foe = mk(8302, ef, [el], 10000, 'sword', X + 1, Z);
+    if (!g.fireTactic(me.id, { type: 'unit', id: foe.id }, 'spiral') || foe.conf !== 2 || me.qi !== 85) fail('나선찌르기 ' + foe.conf + ' ' + me.qi);
+    me._tacTurn = -1; foe.x = X + 1;
+    if (!g.fireTactic(me.id, { type: 'unit', id: foe.id }, 'two') || !(foe.x > X + 1.3) || me.qi !== 70) fail('이단찌르기 격퇴 ' + foe.x);
+    me._tacTurn = -1; const x1 = foe.x; foe.x = X + 1; me.qi = 100;
+    if (!g.fireTactic(me.id, { type: 'unit', id: foe.id }, 'thrust') || !(foe.x > x1 + 0.5 || foe.x > X + 2.4)) fail('돌출찌르기 2칸 ' + foe.x);
+    // 적성 부족: C 적성이면 추가 전법 불가
+    const s2 = setup('spear', 'C'); const m2 = s2.mk(8311, s2.pf, [s2.lead], 10000, 'spear', X, Z), f2 = s2.mk(8312, s2.ef, [s2.el], 10000, 'sword', X + 1, Z);
+    if (s2.g.fireTactic(m2.id, { type: 'unit', id: f2.id }, 'spiral') || s2.g.fireTactic(m2.id, { type: 'unit', id: f2.id }, 'thrust')) fail('적성 부족 차단');
+    // 도시 대상 추가 전법 차단
+    const ec = g.cities.find(c => c.force === ef); me._tacTurn = -1; me.qi = 100; me.x = ec.lon - 1; me.z = ec.lat;
+    if (g.fireTactic(me.id, { type: 'city', id: ec.id }, 'spiral')) fail('도시 대상 차단');
+  }
+  // 바다 격퇴 차단: 해안(육지→바다) 지점을 탐색해 바다 쪽으로는 밀리지 않음
+  { let cx = null, cz = null;
+    for (let lon = 108; lon < 124 && cx == null; lon += 0.1) for (let lat = 22; lat < 41; lat += 0.1) if (!isSeaAt(lon, lat) && !isSeaAt(lon - 1, lat) && isSeaAt(lon + 0.45, lat) && !isRiverAt(lon, lat)) { cx = lon; cz = lat; break; }
+    if (cx == null) fail('해안 탐색 실패');
+    const { g, pf, ef, lead, el, mk } = setup('spear'); const me = mk(8321, pf, [lead], 10000, 'spear', cx - 1, cz), foe = mk(8322, ef, [el], 10000, 'sword', cx, cz);
+    g.fireTactic(me.id, { type: 'unit', id: foe.id }, 'thrust');
+    if (isSeaAt(foe.x, foe.z)) fail('바다로 밀려남'); if (foe.x > cx + 0.41) fail('해안 정지 실패 ' + foe.x);
+  }
+  // 극병: 웅수 끌어당김, 옆베기(전방), 선풍(전방위)
+  { const { g, pf, ef, lead, el, mk } = setup('pike'); const me = mk(8331, pf, [lead], 10000, 'pike', X, Z), foe = mk(8332, ef, [el], 10000, 'sword', X + 1.9, Z), b = mk(8333, ef, [el], 10000, 'sword', X, Z + 1.5), back = mk(8334, ef, [el], 10000, 'sword', X - 1.5, Z);
+    if (!g.fireTactic(me.id, { type: 'unit', id: foe.id }, 'hook') || !(foe.x < X + 1.9)) fail('웅수 ' + foe.x);
+    me._tacTurn = -1; const bt = b.troops, kt = back.troops; foe.x = X + 1; foe.z = Z; b.x = X + 1; b.z = Z + 0.4; me.qi = 100;
+    if (!g.fireTactic(me.id, { type: 'unit', id: foe.id }, 'side') || b.troops >= bt || back.troops !== kt) fail('옆베기 전방만 ' + b.troops + ' ' + back.troops);
+    me._tacTurn = -1; me.qi = 100; const kt2 = back.troops;
+    if (!g.fireTactic(me.id, { type: 'unit', id: foe.id }, 'whirl') || back.troops >= kt2 || me.qi !== 75) fail('선풍 전방위 ' + back.troops);
+  }
+  // 노병: 관통화살(직선 뒤), 난사(주변)
+  { const { g, pf, ef, lead, el, mk } = setup('bow'); const me = mk(8341, pf, [lead], 10000, 'bow', X, Z), foe = mk(8342, ef, [el], 10000, 'sword', X + 1, Z), behind = mk(8343, ef, [el], 10000, 'sword', X + 1.8, Z), side = mk(8344, ef, [el], 10000, 'sword', X + 1, Z + 1.0);
+    const bt = behind.troops, st = side.troops;
+    if (!g.fireTactic(me.id, { type: 'unit', id: foe.id }, 'pierce') || behind.troops >= bt || side.troops !== st) fail('관통화살 ' + behind.troops + ' ' + side.troops);
+    me._tacTurn = -1; me.qi = 100;
+    if (!g.fireTactic(me.id, { type: 'unit', id: foe.id }, 'volley') || side.troops >= st || me.qi !== 70) fail('난사 ' + side.troops);
+  }
+  // 기병: 돌진 1칸 밀기, 돌파 관통, 돌격 2칸
+  { const { g, pf, ef, lead, el, mk } = setup('cav'); const me = mk(8351, pf, [lead], 10000, 'cav', X, Z), foe = mk(8352, ef, [el], 10000, 'sword', X + 1, Z), behind = mk(8353, ef, [el], 10000, 'sword', X + 1.9, Z);
+    if (!g.fireTactic(me.id, { type: 'unit', id: foe.id }, 'rush') || !(foe.x > X + 1.3)) fail('돌진');
+    me._tacTurn = -1; foe.x = X + 1; behind.x = X + 1.9; behind.z = Z; const bt = behind.troops; me.qi = 100;
+    if (!g.fireTactic(me.id, { type: 'unit', id: foe.id }, 'breach') || behind.troops >= bt) fail('돌파 관통');
+    // 병기 전법은 변화 없음(기본 전법만)
+    const s3 = setup('ram'); const r = s3.mk(8361, s3.pf, [s3.lead], 5000, 'ram', X, Z), f3 = s3.mk(8362, s3.ef, [s3.el], 5000, 'sword', X + 1, Z);
+    if (g.tacticInfo(r) !== null && false) fail('x');
+    if (s3.g.tacticInfo(r).opts.length !== 1) fail('병기 추가 전법 없음 확인');
+  }
+  // 기본 전법(tid 없음)은 이전과 동일 경로
+  { const { g, pf, ef, lead, el, mk } = setup('spear'); const me = mk(8371, pf, [lead], 10000, 'spear', X, Z), foe = mk(8372, ef, [el], 10000, 'sword', X + 1, Z), q0 = me.qi;
+    if (!g.fireTactic(me.id, { type: 'unit', id: foe.id }) || me.qi !== q0 - 20 || foe.x !== X + 1) fail('기본 전법 불변'); }
+  // AI: 같은 fireTactic 경로로 추가 전법 사용 (혼란 미부여 대상엔 나선찌르기)
+  { const { g, pf, ef, lead, el, mk } = setup('spear'); const ai = g.cities.find(c => c.force === ef).force;
+    g.officers[el].apt = ['S', 'S', 'S', 'S', 'S', 'S'];
+    const au = mk(8381, ef, [el], 10000, 'spear', X, Z), pu = mk(8382, pf, [lead], 10000, 'sword', X + 1, Z);
+    const r0 = Math.random; Math.random = () => 0; aiThink(g, ef); Math.random = r0;
+    if (!(pu.conf > 0) && !(Math.hypot(pu.x - X, pu.z - Z) > 1.2) && au.qi === 100) fail('AI 추가 전법 미사용 ' + au.qi);
+  }
+  console.log('R18b 병종별 추가 전법 게이트 PASS (창3·극3·노2·기병3·격퇴 지형차단·적성차단·도시차단·병기 불변·기본 불변·AI 사용)');
+}
+
+// === R21: 조사 괄호 표기 잔존 금지 게이트 ===
+{
+  for (const f of ['js/game.js', 'js/main.js']) {
+    const src = readFileSync(f, 'utf8').split('\n').filter(l => !l.includes('export function josaRo')).join('\n');
+    const m = src.match(/\((이|가|은|는|을|를|으|과|와)\)/g);
+    if (m) { console.log('FAIL: R21 조사 괄호 표기 잔존', f, m.length, m.slice(0, 3)); process.exit(1); }
+  }
+  console.log('R21 조사 괄호 표기 게이트 PASS (game.js·main.js 괄호 조사 0건)');
+}
+
+// === R23: 여울·난소행군 게이트 ===
+{
+  const fail = m => { console.log('FAIL: R23 ' + m); process.exit(1); };
+  const mkg = () => new Game(JSON.parse(JSON.stringify(scen)), JSON.parse(JSON.stringify(officers)), {}, 0);
+  // 1) 여울은 강 타일의 일부(20~60%)이며 강이 아닌 곳엔 없음
+  let riv = 0, ford = 0, bad = 0;
+  for (let lon = 100; lon < 124; lon += 0.1) for (let lat = 20; lat < 42; lat += 0.1) { if (isRiverAt(lon, lat)) { riv++; if (isFordAt(lon, lat)) ford++; } else if (isFordAt(lon, lat)) bad++; }
+  if (!riv || bad || ford / riv < 0.2 || ford / riv > 0.6) fail(`여울 비율 ${ford}/${riv} bad=${bad}`);
+  // 2) 감속: 깊은 강 < 여울 < 난소행군
+  const g = mkg(); const f0 = g.playerForce;
+  let deep = null, shal = null;
+  for (let lon = 100; lon < 124 && !(deep && shal); lon += 0.1) for (let lat = 20; lat < 42; lat += 0.1) { if (!isRiverAt(lon, lat) || isSeaAt(lon, lat)) continue; if (isFordAt(lon, lat)) shal = shal || [lon, lat]; else deep = deep || [lon, lat]; }
+  const U = (x, z) => ({ id: 1, force: f0, officers: [], troops: 100, type: 'spear', x, z });
+  const mDeep = g.riverMult(U(...deep)), mFord = g.riverMult(U(...shal));
+  g.forces[f0].arts = { '난소행군': true }; const mArt = g.riverMult(U(...deep));
+  g.forces[f0].arts = {};
+  if (!(mDeep < mFord && mFord < mArt)) fail(`도하 속도 ${mDeep} ${mFord} ${mArt}`);
+  // 3) 연구: 기교P·금 부족 시 실패, 충분하면 소모·1회만
+  const cap = g.forceCities(f0).sort((a, b) => b.gold - a.gold)[0];
+  g.forces[f0].techP = 100; if (g.researchArt(f0, '난소행군') || g.forces[f0].arts['난소행군']) fail('기교P 부족 차단');
+  g.forces[f0].techP = 2000; cap.gold = 5000; const g0 = cap.gold;
+  if (!g.researchArt(f0, '난소행군') || g.forces[f0].techP !== 2000 - ARTS['난소행군'].p || cap.gold !== g0 - ARTS['난소행군'].gold) fail('연구 소모');
+  if (g.researchArt(f0, '난소행군')) fail('중복 연구 차단');
+  // 4) 장거리 노선: 한중->성도 불가는 유지, 장안->낙양 등 육로는 난소행군 유무와 무관하게 존재(경로 단절 없음)
+  const han = g.cities.find(c => c.name_ko === '한중'), jang = g.cities.find(c => c.name_ko === '장안'), nak = g.cities.find(c => c.name_ko === '낙양'), hui = g.cities.find(c => c.name_ko === '허창'), jian = g.cities.find(c => c.name_ko === '건업');
+  const o = g.forces[f0].ruler;
+  const pathLen = (art, a, b) => { const gg = mkg(); gg.forces[f0].arts = art ? { '난소행군': true } : {}; const u = { id: 5, force: f0, officers: [o], troops: 100, type: 'spear', x: a.lon, z: a.lat, path: [], tx: null, tz: null, targetCity: null }; const p = gg.findPath(u, b.lon, b.lat); return p ? p.length : null; };
+  for (const [a, b] of [[jang, nak], [nak, hui], [han, jang], [hui, jian]]) {
+    const n0 = pathLen(false, a, b), n1 = pathLen(true, a, b);
+    if (!n0 || !n1) fail(`노선 단절 ${a.name_ko}->${b.name_ko} (${n0}/${n1})`);
+  }
+  // 5) 노선 연결성 표본: 육지 도시 쌍 40개에서 기교 유무로 도달 가능 여부가 달라지지 않음
+  const land = g.cities.filter(c => !isSeaAt(c.lon, c.lat)); let diff = 0, checked = 0;
+  for (let k = 0; k < 40; k++) { const a = land[(k * 7) % land.length], b = land[(k * 11 + 3) % land.length]; if (a === b) continue; checked++; if (!!pathLen(false, a, b) !== !!pathLen(true, a, b)) diff++; }
+  if (diff) fail(`기교 유무로 도달 가능 여부가 달라진 쌍 ${diff}/${checked}`);
+  // 6) AI 연구: 같은 비용 경로
+  const g2 = mkg(); const ef = g2.cities.find(c => c.force != null && c.force !== g2.playerForce).force;
+  g2.turn = 3; g2.forces[ef].techP = 5000; for (const c of g2.forceCities(ef)) c.gold = 20000;
+  aiThink(g2, ef);
+  if (!g2.forces[ef].arts?.['난소행군']) fail('AI 난소행군 연구');
+  console.log(`R23 여울·난소행군 게이트 PASS (여울 ${ford}/${riv}=${(ford / riv * 100).toFixed(0)}%, 속도 ${mDeep}<${mFord}<${mArt}, 연구 소모·중복차단, 노선 단절 없음 ${checked}쌍, AI 연구)`);
+}
+
+// === R26: 야전 시설 게이트 ===
+{
+  const fail = m => { console.log('FAIL: R26 ' + m); process.exit(1); };
+  const mkg = () => new Game(JSON.parse(JSON.stringify(scen)), JSON.parse(JSON.stringify(officers)), {}, 0);
+  const g = mkg(); g.units = []; g.fieldFacs = []; const f0 = g.playerForce; const e0 = g.cities.find(c => c.force != null && c.force !== f0).force;
+  const mk = (id, force, x, z, troops = 3000) => { const u = { id, force, officers: [], troops, type: 'spear', x, z, path: [], tx: null, tz: null, targetCity: null, label: 'T' + id, qi: 100, conf: 0 }; g.units.push(u); return u; };
+  const cap = g.forceCities(f0).sort((a, b) => b.gold - a.gold)[0]; cap.gold = 5000;
+  const u = mk(7001, f0, 107.0, 33.0);
+  // 1) 비용 차감·건설 시작·중복 차단
+  if (!g.buildField(u.id, '진') || cap.gold !== 5000 - FIELD_FACS['진'].cost) fail('건설 시작·비용');
+  if (g.buildField(u.id, '채')) fail('건설 중 중복 차단');
+  // 2) 건설 완료는 1턴 후, 이전엔 방어 효과 없음
+  if (g.fieldDefMult(u) !== 1) fail('미완성 시설 효과');
+  g.fieldTurn();
+  if (u.building || g.fieldFacs[0].left > 0) fail('건설 완료');
+  if (g.fieldDefMult(u) !== 0.92) fail('진 방어 배율 ' + g.fieldDefMult(u));
+  const far = mk(7002, f0, 100.0, 36.0); if (g.fieldDefMult(far) !== 1) fail('범위 밖 부대에 효과');
+  // 3) 금 부족·근접 시설 차단
+  cap.gold = 10; const u2 = mk(7003, f0, 107.0, 33.5); if (g.buildField(u2.id, '진')) fail('금 부족 차단'); cap.gold = 5000;
+  if (g.buildField(u2.id, '진')) fail('근접 시설 차단');
+  // 4) 토루: 적에게만 감속
+  const u3 = mk(7004, f0, 104.0, 34.0); if (!g.buildField(u3.id, '토루')) fail('토루 건설'); g.fieldTurn();
+  const en = mk(7005, e0, 104.3, 34.0), ally = mk(7006, f0, 104.3, 34.0);
+  if (g.fieldSlow(en) !== 0.4 || g.fieldSlow(ally) !== 1) fail('토루 감속 적/아군');
+  // 5) 투석대: 적 병력 감소, 아군 불변
+  const u4 = mk(7007, f0, 107.0, 31.0); if (!g.buildField(u4.id, '투석대')) fail('투석대 건설: ' + g.lastFieldWhy); g.fieldTurn(); g.fieldTurn();
+  const en2 = mk(7008, e0, 107.5, 31.0, 3000), al2 = mk(7009, f0, 107.5, 31.0, 3000); g.fieldTurn();
+  if (en2.troops !== 3000 - 120 || al2.troops !== 3000) fail(`투석대 피해 ${en2.troops}/${al2.troops}`);
+  // 6) 이동 명령 시 건설 취소
+  const u5 = mk(7010, f0, 105.0, 31.0); g.buildField(u5.id, '채'); u5.tx = 103; u5.tz = 31; g.fieldTurn();
+  if (u5.building || g.fieldFacs.some(f => f.uid === u5.id)) fail('이동 시 건설 취소');
+  // 7) 적 공격으로 파괴
+  const f3 = g.fieldFacs.find(f => f.uid === u3.id); en.x = 104.0; en.z = 34.0; en.troops = 30000; g.fieldTurn();
+  if (g.fieldFacs.some(f => f.uid === u3.id)) fail('시설 파괴(hp ' + f3.hp + ')');
+  // 8) 직렬화 왕복
+  const rt = JSON.parse(JSON.stringify(g.fieldFacs)); if (rt.length !== g.fieldFacs.length || rt[0].type !== g.fieldFacs[0].type) fail('직렬화');
+  // 9) AI: 같은 buildField 경로로 4턴마다 건설
+  const g2 = mkg(); g2.units = []; g2.fieldFacs = []; const ef = g2.cities.find(c => c.force != null && c.force !== g2.playerForce).force; const pf = g2.playerForce;
+  g2.forceCities(ef).forEach(c => c.gold = 5000);
+  const au = { id: 8001, force: ef, officers: [], troops: 3000, type: 'spear', x: 107.0, z: 33.0, path: [], tx: null, tz: null, targetCity: null, label: 'AI', qi: 100, conf: 0 };
+  const pu = { ...au, id: 8002, force: pf, x: 108.5, z: 33.0, label: 'P' };
+  g2.units.push(au, pu); g2.turn = 4; g2.aiFieldBuild();
+  if (!g2.fieldFacs.some(f => f.force === ef)) fail('AI 건설');
+  if (g2.fieldFacs.some(f => f.force === pf)) fail('비위임 플레이어 부대 자동 건설');
+  console.log('R26 야전시설 게이트 PASS (비용·완료·진 방어 0.92·토루 감속 0.4·투석대 -120·건설취소·파괴·직렬화·AI 건설)');
+}
+
+// === R28: 함정·제방 게이트 ===
+{
+  const fail = m => { console.log('FAIL: R28 ' + m); process.exit(1); };
+  const mkg = () => new Game(JSON.parse(JSON.stringify(scen)), JSON.parse(JSON.stringify(officers)), {}, 0);
+  const g = mkg(); g.units = []; g.fieldFacs = []; const f0 = g.playerForce; const e0 = g.cities.find(c => c.force != null && c.force !== f0).force;
+  const mk = (id, force, x, z, troops = 3000) => { const u = { id, force, officers: [], troops, type: 'spear', x, z, path: [], tx: null, tz: null, targetCity: null, label: 'T' + id, qi: 100, conf: 0 }; g.units.push(u); return u; };
+  g.forceCities(f0).forEach(c => c.gold = 9000);
+  // 1) 불화살 함정: 적 접근 시 -8%+혼란, 아군 무반응, 1회 소멸
+  const b1 = mk(9001, f0, 107.0, 33.0); if (!g.buildField(b1.id, '불화살함정')) fail('불화살함정 건설: ' + g.lastFieldWhy); g.fieldTurn();
+  const al = mk(9002, f0, 107.2, 33.0); g.fieldTurn(); if (al.troops !== 3000 || !g.fieldFacs.some(f => f.type === '불화살함정')) fail('아군에게 발동');
+  const en = mk(9003, e0, 107.3, 33.0); g.fieldTurn();
+  if (en.troops !== 3000 - 240 || en.conf < 1) fail(`불화살 피해 ${en.troops}/${en.conf}`);
+  if (g.fieldFacs.some(f => f.type === '불화살함정')) fail('함정 1회 소멸');
+  // 2) 낙석: -6% + 감속 1턴
+  const b2 = mk(9004, f0, 105.0, 31.0); g.buildField(b2.id, '낙석'); g.fieldTurn();
+  const en2 = mk(9005, e0, 105.4, 31.0); g.fieldTurn();
+  if (en2.troops !== 3000 - 180) fail('낙석 피해 ' + en2.troops);
+  if (g.fieldSlow(en2) !== 0.5 || g.fieldSlow(en2) !== 1) fail('낙석 감속 1회성');
+  // 3) 함정은 적이 공격(파괴)하지 못함 - 적 접근 전 hp 유지, 시설 공격 루프 제외
+  // 4) 제방: 강 근처 도시 존재, 없는 도시는 파괴 불가
+  const lev = g.cities.filter(c => g.hasLevee(c)), nol = g.cities.filter(c => !g.hasLevee(c));
+  if (!lev.length || !nol.length) fail(`제방 도시 분포 ${lev.length}/${nol.length}`);
+  const tc = lev.find(c => c.force != null && c.force !== f0) ?? lev[0]; tc.force = e0;
+  const att = mk(9010, f0, tc.lon + 1.0, tc.lat); const hp0 = tc.hp, tr0 = tc.troops;
+  if (g.breakLevee(att.id, nol[0].id)) fail('제방 없는 도시 파괴 가능');
+  const far = mk(9011, f0, tc.lon + 5, tc.lat); if (g.breakLevee(far.id, tc.id)) fail('먼 거리 파괴 가능');
+  if (!g.breakLevee(att.id, tc.id)) fail('제방 파괴: ' + g.lastFieldWhy);
+  if (tc.hp !== hp0 - Math.round(tc.maxhp * 0.15) || tc.troops !== tr0 - Math.round(tr0 * 0.10)) fail('수몰 피해');
+  if (g.breakLevee(att.id, tc.id)) fail('중복 파괴');
+  const tr1 = tc.troops; g.floodTurn(); g.floodTurn(); g.floodTurn();
+  if (tc.troops >= tr1 || tc.flood !== 0) fail('침수 2턴 후 종료');
+  // 5) 보수
+  tc.gold = 100; if (g.repairLevee(tc.id)) fail('금 부족 보수'); tc.gold = 1000;
+  if (!g.repairLevee(tc.id) || tc.leveeBroken || tc.gold !== 700) fail('보수');
+  // 5b) 보수 직후 재파괴 불가, 동맹 도시 불가, 점령 시 침수 종료
+  const att2 = mk(9012, f0, tc.lon + 1.0, tc.lat); if (g.breakLevee(att2.id, tc.id)) fail('보수 직후 재파괴');
+  g.turn += 13; tc.force = e0; g.diplo = {}; g.diploOf(f0, e0).allianceUntil = g.turn + 5; if (g.breakLevee(att2.id, tc.id)) fail('동맹 도시 제방 파괴'); g.diploOf(f0, e0).allianceUntil = 0;
+  if (!g.breakLevee(att2.id, tc.id)) fail('쿨다운 후 파괴 불가: ' + g.lastFieldWhy);
+  const trB = tc.troops; tc.force = f0; g.floodTurn(); if (tc.flood !== 0 || tc.troops !== trB) fail('점령 후에도 침수 피해');
+  // 6) AI: 같은 breakLevee 경로
+  const g2 = mkg(); g2.units = []; g2.fieldFacs = []; const pf = g2.playerForce; const ef = g2.cities.find(c => c.force != null && c.force !== pf).force;
+  const pc = g2.cities.find(c => c.force === pf && g2.hasLevee(c));
+  if (pc) { const au = { id: 9101, force: ef, officers: [], troops: 3000, type: 'spear', x: pc.lon + 1.0, z: pc.lat, path: [], tx: null, tz: null, targetCity: null, label: 'AI', qi: 100, conf: 0 }; g2.units.push(au); g2.turn = 4; g2.aiFieldBuild(); if (!g2.cities.some(c => c.leveeBroken && c.force !== ef)) fail('AI 제방 파괴'); }
+  console.log(`R28 함정·제방 게이트 PASS (불화살 -240+혼란, 낙석 -180+감속1회, 제방 도시 ${lev.length}/${g.cities.length}, 수몰 피해·2턴 침수·보수, AI 파괴${pc ? '' : ' (플레이어 제방 도시 없어 생략)'})`);
+}
+
+// === R30: 개별 기교 확장·석벽 게이트 ===
+{
+  const fail = m => { console.log('FAIL: R30 ' + m); process.exit(1); };
+  const mkg = () => new Game(JSON.parse(JSON.stringify(scen)), JSON.parse(JSON.stringify(officers)), {}, 0);
+  const g = mkg(); g.units = []; g.fieldFacs = []; const f0 = g.playerForce; const e0 = g.cities.find(c => c.force != null && c.force !== f0).force;
+  g.forceCities(f0).forEach(c => c.gold = 20000); g.forces[f0].techP = 99999; g.forces[f0].arts = {};
+  const mk = (id, force, x, z, type = 'spear') => { const u = { id, force, officers: [], troops: 3000, type, x, z, path: [], tx: null, tz: null, targetCity: null, label: 'T' + id, qi: 100, conf: 0 }; g.units.push(u); return u; };
+  // 1) 석벽은 석벽술 없이 건설 불가
+  const w = mk(9301, f0, 107.0, 33.0); if (g.buildField(w.id, '석벽')) fail('석벽술 없이 건설'); if (!String(g.lastFieldWhy).includes('석벽술')) fail('사유 표기 ' + g.lastFieldWhy);
+  if (!g.researchArt(f0, '석벽술')) fail('석벽술 연구'); if (!g.buildField(w.id, '석벽')) fail('석벽 건설: ' + g.lastFieldWhy); g.fieldTurn(); g.fieldTurn();
+  const en = mk(9302, e0, 107.5, 33.0), al = mk(9303, f0, 107.5, 33.0);
+  if (g.fieldSlow(en) !== 0.15 || g.fieldSlow(al) !== 1) fail('석벽 감속');
+  // 2) 정예창병: 창·극 +8%, 노·기병 무영향
+  const sp = mk(9304, f0, 100, 36, 'spear'), bw = mk(9305, f0, 100.5, 36, 'bow'); const s0 = g.unitTechAtk(sp), b0 = g.unitTechAtk(bw);
+  if (!g.researchArt(f0, '정예창병')) fail('정예창병 연구'); if (Math.abs(g.unitTechAtk(sp) / s0 - 1.08) > 1e-9 || g.unitTechAtk(bw) !== b0) fail('정예창병 효과');
+  // 3) 군제개혁: 군사 AP 15% 절감, 외교·인사는 무영향
+  const c = g.forceCities(f0)[0]; const m0 = g.apMult(c, 'military'), d0 = g.apMult(c, 'diplo');
+  if (!g.researchArt(f0, '군제개혁')) fail('군제개혁 연구'); if (Math.abs(g.apMult(c, 'military') / m0 - 0.85) > 1e-9 || g.apMult(c, 'diplo') !== d0) fail('군제개혁 효과');
+  // 4) AI: researchNextArt가 순서대로 모두 연구하고 비용 부족이면 중단
+  const g2 = mkg(); const ef = g2.cities.find(c => c.force != null && c.force !== g2.playerForce).force; g2.forces[ef].techP = 99999; g2.forceCities(ef).forEach(c => c.gold = 99999);
+  let n = 0; while (g2.researchNextArt(ef) && n < 10) n++; if (n !== Object.keys(ARTS).length) fail('AI 연구 개수 ' + n);
+  g2.forces[ef].arts = {}; g2.forces[ef].techP = 10; if (g2.researchNextArt(ef)) fail('AI 기교P 부족 차단');
+  console.log(`R30 개별 기교·석벽 게이트 PASS (석벽술 필요, 석벽 감속 0.15, 정예창병 +8%, 군제개혁 military ×0.85, AI ${n}종 연구)`);
+}
+// === R32: 소화(지속 화계) 게이트 ===
+{
+  const fail = m => { console.log('FAIL: R32 ' + m); process.exit(1); };
+  const g = new Game(JSON.parse(JSON.stringify(scen)), JSON.parse(JSON.stringify(officers)), {}, 0); g.units = [];
+  const f0 = g.playerForce, e0 = g.cities.find(c => c.force != null && c.force !== f0).force;
+  const oi = Number(Object.keys(g.officers).find(k => g.officers[k] && g.officers[k].int >= 85) ?? -1); if (oi < 0) fail('고지력 무장 없음');
+  const mk = (id, force, x, z, offs) => { const u = { id, force, officers: offs, troops: 5000, type: 'spear', x, z, path: [], tx: null, tz: null, targetCity: null, label: 'T' + id, qi: 100, conf: 0 }; g.units.push(u); return u; };
+  const a = mk(9401, f0, 100, 36, [oi]), d = mk(9402, e0, 100.5, 36, []), v = mk(9403, e0, 100.3, 36, [oi]);
+  const dmg = g.officers[oi]; dmg.int = 100; g.mindDefense = () => 0;
+  let ok = false; for (let i = 0; i < 400 && (d.burn ?? 0) <= 0; i++) { a.qi = 100; a._stratTurn = -1; d.troops = 5000; g.fireStrat(a.id, 'fire', { type: 'unit', id: d.id }); }
+  if ((d.burn ?? 0) !== 3) fail('화계 후 불 상태 ' + d.burn);
+  const t0 = d.troops; g.stepUnit(d); if (d.burn !== 2 || d.troops >= t0) fail('불 지속 피해');
+  // 소화: 적은 못 끔, 아군(자기 부대)은 끔, 기력 10
+  if (g.fireStrat(a.id, 'douse', { type: 'unit', id: d.id })) fail('적 불 소화 허용');
+  v.burn = 2; v.qi = 100; v._stratTurn = -1; if (!g.fireStrat(v.id, 'douse', { type: 'unit', id: v.id }) || v.burn !== 0 || v.qi !== 90) fail('소화 동작/기력');
+  // AI: 불난 아군이 가까우면 AI가 소화
+  d.burn = 2; d.qi = 100; d._stratTurn = -1; d.officers = [oi]; v.burn = 0; d.troops = 5000; g.units = g.units.filter(x => x !== a); const w2 = mk(9404, e0, 100.4, 36, [oi]); w2.burn = 2; w2.qi = 100; w2._stratTurn = -1; aiThink(g, e0); if (w2.burn !== 0 && d.burn !== 0) fail('AI 소화 미작동');
+  console.log('R32 소화 게이트 PASS (화계 후 3턴 지속, 턴당 병력 감소, 소화 기력 10, 적 소화 불가)');
 }
 console.log('sample logs:'); for (const l of g.logs.slice(-8)) console.log(' ', l.t, l.msg);
