@@ -26,6 +26,18 @@ export const STRATS = {
   confuse: { name: '혼란', cooldown: 3, minInt: 80, turns: 2 }, // 수비측: 공격 부대 행동 정지
 };
 
+// === 기교 연구 (자체 수치) ===
+export const TECH_BRANCHES = ['창병','극병','노병','기병','연병','발명','방위','화공'];
+export const TECH_P = [1000, 2000, 3000, 5000];      // 단계별 필요 기교P
+export const TECH_GOLD = [1000, 2000, 5000, 10000];  // 단계별 연구 비용 (금)
+export const TECH_DESC = {
+  '창병': '창병 부대 공격력 단계당 +5%', '극병': '극병 부대 공격력 단계당 +5%',
+  '노병': '노병 부대 공격력 단계당 +5%', '기병': '기병 부대 공격력 단계당 +5%',
+  '연병': '부대가 받는 피해 단계당 -3%', '발명': '공성(성 공격) 피해 단계당 +10%',
+  '방위': '도시가 받는 피해 단계당 -5%', '화공': '화계 피해 단계당 +15%',
+};
+const TYPE2TECH = { spear: '창병', pike: '극병', bow: '노병', cav: '기병' };
+
 export class Game {
   constructor(scen, officers, skills, playerForceId) {
     this.officers = officers; // by idx
@@ -36,7 +48,7 @@ export class Game {
     this.cities = scen.cities.map(c => ({ ...c, commerce: Math.round(c.revenue/10), farm: Math.round(c.harvest/100), hp: c.maxhp, officers: [], troops: c.troops }));
     this.cityById = {}; this.cities.forEach(c => this.cityById[c.id] = c);
     this.forces = {};
-    for (const f of scen.forces) this.forces[f.id] = { id: f.id, ruler: f.ruler, alive: true, ap: 60 };
+    for (const f of scen.forces) this.forces[f.id] = { id: f.id, ruler: f.ruler, alive: true, ap: 60, techP: 0, techs: Object.fromEntries(TECH_BRANCHES.map(b => [b, 0])) };
     for (const o of scen.officers) {
       const rec = { idx: o.idx, status: o.status, force: o.force ?? null, city: o.city ?? null, loyal: o.loyal };
       this.officers[o.idx].state = rec;
@@ -77,6 +89,20 @@ export class Game {
     return m;
   }
   unitDefMult(u) { return this.unitHasSkill(u, '강직') ? 0.85 : 1; }
+  // === 기교 (자체 수치) ===
+  techLv(fid, b) { return this.forces[fid]?.techs?.[b] ?? 0; }
+  unitTechAtk(u) { const b = TYPE2TECH[u.type]; return b ? 1 + 0.05 * this.techLv(u.force, b) : 1; }
+  gainTechP(fid, n) { const f = this.forces[fid]; if (f?.alive) f.techP = (f.techP ?? 0) + n; }
+  researchTech(fid, b) { // 기교P + 금 소비, 계통당 4단계
+    const f = this.forces[fid];
+    if (!f?.alive || !TECH_BRANCHES.includes(b)) return false;
+    const lv = this.techLv(fid, b); if (lv >= 4) return false;
+    const cap = this.forceCities(fid).sort((x, y) => y.gold - x.gold)[0];
+    if ((f.techP ?? 0) < TECH_P[lv] || !cap || cap.gold < TECH_GOLD[lv]) return false;
+    f.techP -= TECH_P[lv]; cap.gold -= TECH_GOLD[lv]; f.techs[b] = lv + 1;
+    this.log(`【기교】${this.forceName(fid)} ${b} ${lv + 1}단계 연구 완료 (기교P ${TECH_P[lv]}·금 ${TECH_GOLD[lv]} 소비)`, fid === this.playerForce);
+    return true;
+  }
   develop(cityId, kind) { // kind: 'commerce' | 'farm', 비용 금 300, AP 30
     const c = this.cityById[cityId], f = this.forces[c.force];
     if (c.gold < 300 || f.ap < 30 || c[kind] >= 100) return false;
@@ -84,6 +110,7 @@ export class Game {
     c.gold -= 300; f.ap -= 30;
     const gain = Math.round(4 + best/20);
     c[kind] = Math.min(100, c[kind] + gain);
+    this.gainTechP(c.force, 25); // 커맨드 실행 기교P
     this.log(`${c.name_ko} ${kind==='commerce'?'상업':'농업'} 개발 +${gain} (담당 정치 ${best})`, c.force === this.playerForce);
     return true;
   }
@@ -95,6 +122,7 @@ export class Game {
     c.gold -= 200; c.food -= 1000; f.ap -= 30;
     const cap = c.metropolis ? 150000 : 100000;
     c.troops = Math.min(cap, c.troops + n);
+    this.gainTechP(c.force, 25); // 커맨드 실행 기교P
     this.log(`${c.name_ko} 징병 +${n} (담당 매력 ${best})`, c.force === this.playerForce);
     return true;
   }
@@ -245,7 +273,7 @@ export class Game {
     }
     // 공성: 도시 내구/병사 공격
     const lead = this.officers[u.officers[0]];
-    let dmg = Math.round(u.troops * 0.12 * ut.atk * (0.7 + lead.war/150) * this.aptMult(u) * this.unitDmgMult(u, true));
+    let dmg = Math.round(u.troops * 0.12 * ut.atk * (0.7 + lead.war/150) * this.aptMult(u) * this.unitDmgMult(u, true) * this.unitTechAtk(u) * (1 + 0.1 * this.techLv(u.force, '발명')));
     let loss = Math.round(c.troops * 0.06 / ut.def + 150);
     // 전법: 병종 적성 B 이상 + 기력 소모, 무력이 높을수록 발동 잘됨
     const tac = TACTICS[u.type];
@@ -260,7 +288,7 @@ export class Game {
     const caster = u.officers.map(i => this.officers[i]).sort((a, b) => b.int - a.int)[0];
     if (caster && caster.int >= STRATS.fire.minInt && u.qi >= STRATS.fire.qi && Math.random() < Math.min(0.5, 0.1 + caster.int/300 + (this.unitHasSkill(u, '풍계') ? 0.15 : 0))) {
       u.qi -= STRATS.fire.qi;
-      const burn = Math.round(c.troops * 0.08);
+      const burn = Math.round(c.troops * 0.08 * (1 + 0.15 * this.techLv(u.force, '화공')));
       c.troops = Math.max(0, c.troops - burn);
       c.hp = Math.max(0, c.hp - Math.round(burn * 0.5));
       this.log(`【계략】${caster.name_ko}의 화계! ${c.name_ko} 수비병 -${burn}`, u.force === this.playerForce);
@@ -275,15 +303,18 @@ export class Game {
       }
     }
     if (this.cityHasSkill(c, '수성')) dmg = Math.round(dmg * 0.85); // 수성: 주둔 도시 방어 보정
+    if (c.force != null) dmg = Math.round(dmg * (1 - 0.05 * this.techLv(c.force, '방위'))); // 방위 기교: 도시 방어
     c.troops = Math.max(0, c.troops - dmg);
     c.hp = Math.max(0, c.hp - Math.round(dmg*0.5));
     u.troops = Math.max(0, u.troops - loss);
+    this.gainTechP(u.force, Math.min(50, Math.floor(dmg / 100))); // 전투 기교P
     this.log(`${u.label}이(가) ${c.name_ko}을(를) 공격 (적병 -${dmg}, 아군 -${loss})`, u.force === this.playerForce);
     if (u.troops <= 0) { this.units = this.units.filter(x => x !== u); this.log(`${u.label} 부대가 전멸했습니다`, false); return; }
     if (c.troops <= 0 || c.hp <= 0) {
       const old = c.force;
       c.force = u.force; c.district = null;
       c.hp = Math.round(c.maxhp * 0.4);
+      this.gainTechP(u.force, 200); // 도시 함락 기교P
       this.log(`【${c.name_ko}】함락! ${old != null ? this.forceName(old) : '공백지'} → ${this.forceName(u.force)}`, true);
       // 수비 무장 일부 포로/퇴각은 후속 구현 — 일단 공격측 도시에 그대로 둠
       u.tx = null; u.targetCity = null;
@@ -305,7 +336,7 @@ export class Game {
       if ((att.conf ?? 0) > 0) return 0; // 혼란은 stepUnit에서 감소 처리됨
       const utA = UNIT_TYPES[att.type], utD = UNIT_TYPES[def.type];
       const lead = this.officers[att.officers[0]];
-      let dmg = Math.round(att.troops * 0.05 * utA.atk * (0.7 + lead.war/150) / utD.def * this.aptMult(att) * this.unitDmgMult(att) * this.unitDefMult(def));
+      let dmg = Math.round(att.troops * 0.05 * utA.atk * (0.7 + lead.war/150) / utD.def * this.aptMult(att) * this.unitDmgMult(att) * this.unitDefMult(def) * this.unitTechAtk(att) * (1 - 0.03 * this.techLv(def.force, '연병')));
       // 전법 (공성과 같은 규칙)
       const tac = TACTICS[att.type];
       const aptLv = att.type === 'sword' ? 1 : APT_LV(lead.apt?.[APT_IDX[att.type]]);
@@ -323,7 +354,7 @@ export class Game {
       // 계략: 화계
       if (caster && caster.int >= STRATS.fire.minInt && !this.unitHasSkill(def, '위장') && (att.qi ?? 100) >= STRATS.fire.qi && Math.random() < Math.min(0.5, 0.1 + caster.int/300 + (this.unitHasSkill(att, '풍계') ? 0.15 : 0))) {
         att.qi -= STRATS.fire.qi;
-        const burn = Math.round(def.troops * 0.06);
+        const burn = Math.round(def.troops * 0.06 * (1 + 0.15 * this.techLv(att.force, '화공')));
         def.troops = Math.max(0, def.troops - burn);
         this.log(`【계략】${caster.name_ko}의 화계! ${def.label} 병력 -${burn}`, att.force === this.playerForce);
       }
@@ -335,6 +366,7 @@ export class Game {
     if (b._guard) da = Math.round(da * TACTICS[b.type].guard);
     a.troops = Math.max(0, a.troops - db);
     b.troops = Math.max(0, b.troops - da);
+    this.gainTechP(a.force, Math.min(40, Math.floor(db / 100))); this.gainTechP(b.force, Math.min(40, Math.floor(da / 100))); // 전투 기교P
     this.log(`【야전】${a.label} ↔ ${b.label} 교전 (${a.label} -${db} / ${b.label} -${da})`, a.force === this.playerForce || b.force === this.playerForce);
     for (const u of [a, b]) {
       if (u.troops <= 0) {
