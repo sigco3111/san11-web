@@ -612,7 +612,7 @@ const ITEMS = [
 { id: 'laozi', name: '노자', kind: 'book' }, { id: 'sunzi', name: '손자병법', kind: 'book' },
 { id: 'yuxi', name: '전국옥새', kind: 'seal' },
 ];
-const RANKS = [[2,'주자사'],[4,'주목'],[6,'우림중랑장'],[8,'오관중랑장'],[12,'대장군'],[14,'대사마'],[18,'공'],[20,'왕']];
+const RANKS = [[2,'주자사'],[4,'주목'],[6,'우림중랑장'],[8,'오관중랑장'],[12,'대장군'],[14,'대사마'],[18,'공'],[20,'왕'],[24,'황제']];
 const MERIT = { develop: 30, recruit: 80, facility: 100, tactic: 40, stratagem: 30, capture: 150 };
 const DEBATE_CARDS = {
 질타: { dmg: 12 }, 강변: { dmg: 24, cd: 2, int: 80 }, 반박: { counter: 8 }, 경청: { heal: 12, cd: 2 }, 도발: { seal: true, cd: 3, int: 85 },
@@ -647,10 +647,22 @@ this.delegated = false;
 this.pendingJoin = null;
 this.logs = [];
 this.over = false;
+this.chronicle = [];
 }
-  log(msg, mine=false) { this.logs.push({ t: `${this.year}년 ${this.month}월`, msg, mine }); if (this.logs.length > 200) this.logs.shift(); }
+log(msg, mine=false) {
+    this.logs.push({ t: `${this.year}년 ${this.month}월`, msg, mine }); if (this.logs.length > 200) this.logs.shift();
+if (msg.includes('【')) { this.chronicle = this.chronicle ?? []; this.chronicle.push({ y: this.year, m: this.month, msg }); if (this.chronicle.length > 300) this.chronicle.shift(); }
+}
 forceName(fid) { const f = this.forces[fid]; return f ? this.officers[f.ruler].name_ko + '군' : '적병'; }
 forceCities(fid) { return this.cities.filter(c => c.force === fid); }
+inVision(x, z) {
+if (this.delegated || this.playerForce == null || !this.forces[this.playerForce]?.alive) return true;
+const R2 = 25;
+for (const c of this.cities) if (c.force === this.playerForce && (c.lon - x) ** 2 + (c.lat - z) ** 2 <= R2) return true;
+for (const u of this.units) if (u.force === this.playerForce && (u.x - x) ** 2 + (u.z - z) ** 2 <= R2) return true;
+return false;
+}
+cityVisible(c) { return c.force === this.playerForce || this.inVision(c.lon, c.lat); }
 forceOfficers(fid) { return Object.values(this.officers).filter(o => o.state && o.state.force === fid); }
 aliveForces() { return Object.values(this.forces).filter(f => f.alive); }
 totalGold(fid) { return this.forceCities(fid).reduce((s,c) => s + c.gold, 0); }
@@ -899,9 +911,10 @@ for (const f of Object.values(this.forces)) {
 if (!f.alive) continue;
 const r = this.forceRank(f.id);
 if (r && r !== f.rank) {
+const emp = r === '황제' && f.rank !== '황제';
 f.rank = r;
-for (const o of Object.values(this.officers)) if (o.state?.force === f.id) o.state.loyal = Math.min(100, (o.state.loyal ?? 70) + 5);
-        this.log(`【관작】${this.forceName(f.id)}이(가) ${r}(으)로 승진했습니다! 소속 무장 충성 상승`, true);
+for (const o of Object.values(this.officers)) if (o.state?.force === f.id) o.state.loyal = Math.min(100, (o.state.loyal ?? 70) + (emp ? 10 : 5));
+        this.log(emp ? `【황제】${this.forceName(f.id)}이(가) 황제에 올랐습니다! 소속 무장 충성 대폭 상승, 기교P 매월 +20` : `【관작】${this.forceName(f.id)}이(가) ${r}(으)로 승진했습니다! 소속 무장 충성 상승`, true);
 }
 }
 }
@@ -1063,6 +1076,7 @@ if (!u || !c) return;
 u.targetCity = targetCityId; u.tx = c.lon; u.tz = c.lat;
 }
 endTurn(aiThink) {
+if (this.over) return;
 if (this.pendingDuel || this.pendingDebate) return;
 for (const u of this.units) {
 const home = this.cities.find(c => c.force != null && c.force === u.force && c.lon === u.x && c.lat === u.z);
@@ -1158,6 +1172,7 @@ for (const f of Object.values(this.forces)) {
 if (!f.alive) continue;
 const sj = Math.min(3, this.forceFacLv(f.id, '서재'));
 if (sj) this.gainTechP(f.id, sj * 10);
+if (f.rank === '황제') this.gainTechP(f.id, 20);
 f.ab = f.ab ?? { '공격': 0, '방어': 0, '계략': 0, '내정': 0 };
 const abTodo = Object.keys(AB_BRANCHES).filter(b => (f.ab[b] ?? 0) < 3 && (f.techP ?? 0) >= AB_P[f.ab[b] ?? 0] + 300).sort((a, b) => AB_P[f.ab[a] ?? 0] - AB_P[f.ab[b] ?? 0]);
 if (abTodo.length && f.id !== this.playerForce) this.researchAbility(f.id, abTodo[0]);
@@ -1191,6 +1206,14 @@ if (!hasCity && !hasUnit) {
 f.alive = false;
         this.log(`【${this.forceName(f.id)}】이(가) 멸망했습니다!`, true);
 for (const o of this.forceOfficers(f.id)) { o.state.force = null; o.state.status = 'free'; o.state.found = false; }
+}
+}
+if (!this.over) {
+const owners = new Set(this.cities.map(c => c.force).filter(x => x != null));
+if (owners.size === 1) {
+const w = [...owners][0];
+this.over = true;
+        this.log(`【통일】${this.forceName(w)}이(가) 모든 도시를 제압해 천하를 통일했습니다! (${this.year}년 ${this.month}월, ${this.turn}턴)`, true);
 }
 }
 for (const c of this.cities) {
@@ -1708,7 +1731,7 @@ try {
 const data = {
 scenId: this.scenId, year: this.year, month: this.month, dan: this.dan, turn: this.turn,
 cities: this.cities, forces: this.forces, units: this.units, nextUnitId: this.nextUnitId,
-playerForce: this.playerForce, delegated: this.delegated, deadAck: this.deadAck, logs: this.logs.slice(-60), diplo: this.diplo, itemPool: this.itemPool,
+playerForce: this.playerForce, delegated: this.delegated, deadAck: this.deadAck, logs: this.logs.slice(-60), diplo: this.diplo, itemPool: this.itemPool, chronicle: this.chronicle, over: this.over,
 officerStates: Object.fromEntries(Object.entries(this.officers).filter(([,o]) => o.state).map(([i,o]) => [i, o.state])),
 };
 localStorage.setItem(SAVE_KEY, JSON.stringify(data));
@@ -1926,6 +1949,10 @@ for (const c of game.cities) map.addCity(c, c.force != null ? forceColor(c.force
 function refreshAll() {
 for (const c of game.cities) map.setCityColor(c.id, c.force != null ? forceColor(c.force) : '#777777');
 for (const u of game.units) {
+if (!(game.delegated || u.force === game.playerForce || game.inVision(u.x, u.z))) {
+if (map.unitMeshes[u.id]) map.removeUnit(u.id);
+continue;
+}
 if (!map.unitMeshes[u.id]) map.addUnit(worldUnit(u), forceColor(u.force));
 else map.updateUnit(worldUnit(u), forceColor(u.force));
 }
@@ -2055,27 +2082,41 @@ if (game.delegated && game.pendingStop) { game.pendingStop = false; game.delegat
 }, Math.max(120, 1400 / speed));
 }
 }
+function showChronicle() {
+const m = $('modal'); m.classList.remove('hidden');
+const ch = (game.chronicle ?? []).slice().reverse();
+  const body = ch.length ? ch.map(e => `<p class="st">[${e.y}년 ${e.m}월] ${e.msg}</p>`).join('') : '<p>기록된 사건이 없습니다.</p>';
+  m.innerHTML = `<div class="box" style="max-height:70vh;overflow:auto;max-width:560px"><h3>연감</h3>${body}<button id="chr-close">닫기</button></div>`;
+m.querySelector('#chr-close').onclick = () => m.classList.add('hidden');
+}
 function checkGameOver() {
+const owners = new Set(game.cities.map(c => c.force).filter(x => x != null));
+if (owners.size === 1) {
+if (!game._endShown) {
+game._endShown = true;
+      endModal(`【${game.forceName([...owners][0])}】이(가) 모든 도시를 제압해 천하를 통일했습니다! (${game.year}년 ${game.month}월, ${game.turn}턴)`, true);
+}
+return;
+}
 if (game.over) return;
 const f = game.forces[game.playerForce];
 if (f && !f.alive && !game.deadAck) {
 const others = game.aliveForces();
 if (others.length === 0) { endModal('천하가 정리되었습니다.'); return; }
     modal(`【${game.forceName(f.id)}】이(가) 멸망했습니다.`, [
-['다른 세력으로 계속', () => { game.deadAck = true; game.delegated = true; refreshHud(); setAuto(true); }],
+['다른 세력으로 계속', () => {
+modal('계속할 세력 선택', game.aliveForces().map(of => [game.forceName(of.id), () => { game.playerForce = of.id; game.deadAck = true; game.delegated = false; setAuto(false); refreshAll(); }]).concat([['취소', () => checkGameOver()]]));
+}],
 ['관전만 계속', () => { game.deadAck = true; game.delegated = true; refreshHud(); setAuto(true); }],
 ['게임 종료', () => endModal('게임을 종료했습니다. 타이틀로 돌아갑니다.')],
 ]);
 }
-const alive = game.aliveForces();
-if (alive.length === 1) {
-const w = alive[0];
-    endModal(`【${game.forceName(w.id)}】이(가) 천하를 통일했습니다! (${game.year}년 ${game.month}월)`);
 }
-}
-function endModal(text) {
+function endModal(text, spectator=false) {
 game.over = true; setAuto(false);
-modal(text, [['타이틀로', () => { localStorage.removeItem(SAVE_KEY); location.reload(); }]]);
+const btns = spectator ? [['관전 계속', () => { game.over = false; game.delegated = true; refreshAll(); setAuto(true); }]] : [];
+btns.push(['타이틀로', () => { localStorage.removeItem(SAVE_KEY); location.reload(); }]);
+modal(text, btns);
 }
 function modal(text, buttons) {
 const m = $('modal'); m.classList.remove('hidden');
@@ -2086,7 +2127,11 @@ function onPick(nx, ny) {
 if (!game || game.over) return;
 const hit = map.pick(nx, ny);
 if (!hit) { $('panel').classList.add('hidden'); selectedUnit = null; return; }
-if (hit.type === 'unit') { selectedUnit = hit.id; showUnitPanel(hit.id); return; }
+if (hit.type === 'unit') {
+const u = game.units.find(x => x.id === hit.id);
+if (u && !game.delegated && u.force !== game.playerForce && !game.inVision(u.x, u.z)) return;
+selectedUnit = hit.id; showUnitPanel(hit.id); return;
+}
 const c = game.cityById[hit.id];
 if (selectedUnit != null && game.units.find(u => u.id === selectedUnit && u.force === game.playerForce) && !game.delegated) {
 game.orderUnit(selectedUnit, hit.id);
@@ -2295,6 +2340,14 @@ const o = DATA.officers[idx];
 let lastCityId = null;
 function showCityPanel(c) {
 lastCityId = c.id;
+if (c.force !== game.playerForce && !game.delegated && !game.inVision(c.lon, c.lat)) {
+const p = $('panel'); p.classList.remove('hidden');
+const owner = c.force != null && game.forces[c.force]?.alive ? game.forceName(c.force) : '공백지';
+    p.innerHTML = `<h3>${c.name_ko} (${c.name_zh ?? ''})</h3>
+      <p class="st">소속: ${owner}</p>
+      <p class="st">시야 밖입니다 — 내 도시·부대가 접근해야 상세 정보를 확인할 수 있습니다.</p>`;
+return;
+}
 const p = $('panel'); p.classList.remove('hidden');
 const legion = game.cityLegion(c.id);
 const mine = c.force === game.playerForce && !game.delegated && !legion;
@@ -2446,7 +2499,7 @@ $('btn-continue').onclick = () => {
 const d = JSON.parse(localStorage.getItem(SAVE_KEY));
 const g = new Game(DATA.scenarios[d.scenId], DATA.officers, DATA.skills, d.playerForce);
 window.__game = g;
-Object.assign(g, { year: d.year, month: d.month, dan: d.dan, turn: d.turn, cities: d.cities, forces: d.forces, units: d.units, nextUnitId: d.nextUnitId, playerForce: d.playerForce, delegated: d.delegated, logs: d.logs, deadAck: d.deadAck });
+Object.assign(g, { year: d.year, month: d.month, dan: d.dan, turn: d.turn, cities: d.cities, forces: d.forces, units: d.units, nextUnitId: d.nextUnitId, playerForce: d.playerForce, delegated: d.delegated, logs: d.logs, deadAck: d.deadAck, chronicle: d.chronicle ?? [], over: d.over ?? false });
 g.cityById = {}; g.cities.forEach(c => g.cityById[c.id] = c);
 for (const c of g.cities) c.officers = [...new Set(c.officers ?? [])];
 g.diplo = d.diplo ?? {};
@@ -2458,7 +2511,7 @@ DATA.officers[i].state = st;
 if (st.bonus) for (const [k, v] of Object.entries(st.bonus)) DATA.officers[i][k] = Math.min(100, (DATA.officers[i][k] ?? 50) + v);
 if (st.grantSkill) DATA.officers[i].skill = st.grantSkill;
 }
-game = g; enterGame(); refreshAll();
+game = g; enterGame(); refreshAll(); checkGameOver();
 if (game.delegated) setAuto(true);
 };
 }
@@ -2474,6 +2527,7 @@ $('sel-speed').onchange = () => { if (game?.delegated) setAuto(true); };
 $('btn-rot-l').onclick = () => map && map.rotate90(1);
 $('btn-rot-r').onclick = () => map && map.rotate90(-1);
 $('btn-menu').onclick = () => modal('메뉴', [
+['연감', () => showChronicle()],
 ['저장하고 타이틀로', () => { game?.autosave(); location.reload(); }],
 ['타이틀로 (저장은 자동)', () => location.reload()],
 ['계속', () => {}],
