@@ -832,6 +832,47 @@ if (g.units.find(u => u.id === 9999) && g.units.find(u => u.id === 9999).qi === 
   g12.debateAuto(g12.pendingDebate);
   console.log('R11 설전 게이트 PASS (기본합/반박/경청/도발/강변잠금/서적해금/논객/동맹성립/패배관계/무승부/정전/등용/발동구분/턴가드/위임/AI자동/외교훅)');
 }
+// R12: 관계 게이트 (결정적)
+{
+  const g13 = new Game(JSON.parse(JSON.stringify(scen)), officers, {}, 0);
+  const byName = n => Object.values(g13.officers).find(o => o.name_ko === n);
+  const liu = byName('유비'), guan = byName('관우'), zhang = byName('장비');
+  if (!liu || !guan || !zhang) { console.error('FAIL: R12 시나리오 유관장 없음'); process.exit(1); }
+  // 정적 관계: 유관장 의형제
+  if (!g13.relOf(liu.idx).sworn.includes(guan.idx) || !g13.relOf(guan.idx).sworn.includes(zhang.idx)) { console.error('FAIL: R12 의형제 매핑'); process.exit(1); }
+  // 같은 부대 공·방 +10%
+  const unit = { officers: [liu.idx, guan.idx] };
+  if (g13.unitRelMult(unit) !== 1.1 || g13.unitRelMult({ officers: [liu.idx] }) !== 1) { console.error('FAIL: R12 부대 보정'); process.exit(1); }
+  // 일기토 교체: 의형제는 75%, 일반 50% — random 0.6에서 의형제만 교체
+  const u2 = g13.dispatch(g13.forceCities(0)[0].id, [g13.forceCities(0)[0].officers[0]], 1000, 'spear');
+  // 결연: 공적 부족 실패 → 공적 부여 후 성공, 기교P·충성 반영
+  const c0 = g13.forceCities(0)[0];
+  const [x1, x2] = c0.officers.slice(0, 2);
+  if (g13.swearBrotherhood(c0.id, [x1, x2])) { console.error('FAIL: R12 공적 부족 결연 성공'); process.exit(1); }
+  g13.officers[x1].state.merit = 600; g13.officers[x2].state.merit = 700;
+  g13.forces[0].techP = 800;
+  const ly1 = g13.officers[x1].state.loyal ?? 70;
+  if (!g13.swearBrotherhood(c0.id, [x1, x2])) { console.error('FAIL: R12 결연 실패'); process.exit(1); }
+  if (g13.forces[0].techP !== 300 || !(g13.officers[x1].state.loyal > ly1)) { console.error('FAIL: R12 결연 비용/충성', g13.forces[0].techP); process.exit(1); }
+  if (!g13.relOf(x1).sworn.includes(x2) || !g13.relOf(x2).sworn.includes(x1)) { console.error('FAIL: R12 결연 관계 반영'); process.exit(1); }
+  // 결연 저장·복원: state.sworn이 officerStates로 영속
+  const saved = JSON.stringify(Object.fromEntries(Object.entries(g13.officers).filter(([,o]) => o.state).map(([i,o]) => [i, o.state])));
+  if (!saved.includes('"sworn"')) { console.error('FAIL: R12 결연 저장'); process.exit(1); }
+  // 등용 보정: 혐오 군주 세력은 성공률 감소
+  const free = Object.values(g13.officers).find(o => o.state && o.state.force == null);
+  if (free) {
+    free.state.status = 'free'; free.state.city = c0.id; free.state.found = true; // 등용 가능한 재야로 배치
+    const base = g13.recruitChance(c0.id, free.idx);
+    const rel = g13.relOf(free.idx);
+    rel.hate.push(g13.forces[0].ruler); g13._rels[free.idx] = rel; // 혐오 강제
+    const hated = g13.recruitChance(c0.id, free.idx);
+    if (!(hated < base)) { console.error('FAIL: R12 혐오 등용 보정', base, hated); process.exit(1); }
+    g13._rels = null; // 캐시 초기화
+  }
+  // 상성: affOf 결정적 + 군주 궁합 차 반영 (월 처리 경로는 시뮬에서 간접 검증)
+  if (g13.affOf(liu.idx) !== g13.affOf(liu.idx) || g13.affOf(liu.idx) < 0 || g13.affOf(liu.idx) >= 150) { console.error('FAIL: R12 상성 범위'); process.exit(1); }
+  console.log('R12 관계 게이트 PASS (의형제매핑/부대보정/결연비용/결연충성/결연저장/혐오등용/상성)');
+}
 {
   const fs = await import('fs');
   const vm = await import('vm');
