@@ -80,6 +80,10 @@ function instancedFromScene(srcScene, placements) {
   const group = new THREE.Group();
   srcScene.traverse(m => {
     if (!m.isMesh) return;
+    const mats = Array.isArray(m.material) ? m.material : [m.material];
+    for (const mat of mats) {
+      if (mat && mat.isMeshStandardMaterial) { mat.metalness = 0; mat.roughness = 0.9; }
+    }
     const im = new THREE.InstancedMesh(m.geometry, m.material, placements.length);
     const tmp = new THREE.Matrix4();
     for (let i = 0; i < placements.length; i++) {
