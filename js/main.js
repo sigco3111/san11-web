@@ -1,7 +1,7 @@
 // 진입점: 화면 전환·UI·지도 연결
-import { Map3D, toWorld } from './map3d.js?v=r25';
-import { Game, SAVE_KEY, forceColor, UNIT_TYPES, ARTS, josa, josaRo, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL } from './game.js?v=r25';
-import { aiThink } from './ai.js?v=r25';
+import { Map3D, toWorld } from './map3d.js?v=r26';
+import { Game, SAVE_KEY, forceColor, UNIT_TYPES, ARTS, josa, josaRo, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL } from './game.js?v=r26';
+import { aiThink } from './ai.js?v=r26';
 
 const $ = id => document.getElementById(id);
 let DATA = null, game = null, map = null, selectedUnit = null, autoTimer = null, pendingFire = null; // R15: 직접 전법·계략 대기
@@ -9,7 +9,7 @@ let DATA = null, game = null, map = null, selectedUnit = null, autoTimer = null,
 async function loadData() {
   const [officers, skills, portraits, s184, s190, s251] = await Promise.all(
     ['data/officers670.json','data/skills.json','data/portraits.json','data/scenario-184.json','data/scenario-190.json','data/scenario-251.json']
-      .map(u => fetch(u + '?v=r25').then(r => r.json())));
+      .map(u => fetch(u + '?v=r26').then(r => r.json())));
   const byIdx = {};
   for (const o of officers) byIdx[o.idx] = o;
   DATA = { officers: byIdx, skills, portraits, scenarios: { '184': s184, '190': s190, '251': s251 } };
@@ -514,7 +514,7 @@ function showTech() {
     const lv = f?.ab?.[b] ?? 0; const maxed = lv >= 3;
     html += `<div class="officer"><div><div class="nm">${b}(${AB_NM[b]}) ${'●'.repeat(lv)}${'○'.repeat(3 - lv)}</div><div class="st">${maxed ? '최고 단계' : `기교P ${AB_P[lv]} · 전원 ${AB_NM[b]} +2${lv === 2 ? ' · 완료 시 특기 「' + AB_SKILL[b] + '」' : ''}`}</div></div>${maxed ? '<span class="st">최고 단계</span>' : `<button class="cmd cmd-abr" data-b="${b}">연구</button>`}</div>`;
   }
-  html += `<h3 style="margin-top:10px">개별 기교 <small>(설계 106행 예시 명칭, 비용·효과는 자체)</small></h3>`; // R23
+  html += `<h3 style="margin-top:10px">개별 기교 <small>(이 게임 자체 규칙: 비용과 효과는 직접 정한 값)</small></h3>`; // R23
   for (const [nm, a] of Object.entries(ARTS)) {
     const has = !!f?.arts?.[nm];
     html += `<div class="officer"><div><div class="nm">${nm} ${has ? '●' : '○'}</div><div class="st">${a.desc}${has ? '' : ` · 기교P ${a.p} · 금 ${a.gold}`}</div></div>${has ? '<span class="st">연구 완료</span>' : `<button class="cmd cmd-artr" data-a="${nm}">연구</button>`}</div>`;
