@@ -37,7 +37,6 @@ export const TACTICS = {
   beast:    { name: '방사',   qi: 20, mult: 1.6, burn: true },        // 목수: 화염 공격
   catapult: { name: '투석',   qi: 25, mult: 2.4 },                    // 투석기: 대데미지
   junk: { name: '불화살', qi: 15, mult: 1.7 },                  // 수군 공통 (B 이상)
-  lou:  { name: '격돌',   qi: 20, mult: 2.0, minApt: 2 },       // 누선 (A 이상)
   dou:  { name: '투석',   qi: 25, mult: 2.5, minApt: 3 },       // 투함 (S)
 };
 // R18: 병종별 추가 전법 (설계 68~72행 명칭·적성·기력, 효과 수치는 자체. minApt: B=1 A=2 S=3). 부대 대상에만 적용
@@ -61,7 +60,8 @@ export const TACTICS_EX = {
     { id: 'breach', name: '돌파', qi: 20, minApt: 2, eff: 'pierce', mult: 1.6 },
     { id: 'charge', name: '돌격(밀기)', qi: 25, minApt: 3, eff: 'push', n: 2, mult: 2.0 },
   ],
-  lou: [{ id: 'ram', name: '격돌(격퇴)', qi: 20, minApt: 2, eff: 'push', n: 1, mult: 2.0 }],
+  lou: [{ id: 'ram', name: '격돌', qi: 20, minApt: 2, eff: 'push', n: 1, mult: 2.0 }], // 설계 격돌(누선·투함, 1칸 격퇴, A 이상) 한 항목: 기본 항목과 중복이던 것을 하나로
+  dou: [{ id: 'ram', name: '격돌', qi: 20, minApt: 2, eff: 'push', n: 1, mult: 2.0 }],
 };
 export const STRATS = {
   fire:    { name: '화계', qi: 30, minInt: 75 },            // 공격측: 수비 병력 추가 소각
