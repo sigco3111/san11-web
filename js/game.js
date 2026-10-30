@@ -900,7 +900,7 @@ export class Game {
       if (done.length) {
         const f = done[Math.floor(Math.random() * done.length)];
         c.facilities = c.facilities.filter(x => x !== f);
-        this.log(`【적】${c.name_ko}의 ${f.key}이(가) 적에게 파괴되었습니다!`, true);
+        this.log(`【적】${c.name_ko}의 ${f.type}이(가) 적에게 파괴되었습니다!`, true);
       } else {
         const loot = Math.min(c.gold, 500);
         c.gold -= loot;
