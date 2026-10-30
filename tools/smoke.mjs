@@ -271,17 +271,33 @@ if (g.units.find(u => u.id === 9999) && g.units.find(u => u.id === 9999).qi === 
   const tBefore = tCity.troops;
   g8.stepUnit(u);
   if (tCity.troops !== tBefore || u.targetCity != null) { console.error('FAIL: 동맹 공성 차단', { tBefore, after: tCity.troops }); process.exit(1); }
-  // 정전 요청: 험악 대상 stub 성공 → +30
+  // 동맹 파기 → 관계 급락, 이후 공격 가능
+  g8.diploOf(0, tid).v = 70; g8.diploOf(0, tid).allianceUntil = g8.turn + 24;
+  g8.breakAlliance(0, tid);
+  if (g8.relation(0, tid) !== 30) { console.error('FAIL: 동맹 파기 관계', g8.relation(0, tid)); process.exit(1); }
+  // 정전 요청: 험악 대상 stub 성공 → +30 + 12턴 공격 금지 실효
   g8.diploOf(0, tid).v = 15;
   g8.forces[0].ap = 255; c8.gold = 9000;
   Math.random = () => 0.01;
   if (!g8.requestTruce(0, tid, c8.id)) { Math.random = origRandom; console.error('FAIL: 정전 요청'); process.exit(1); }
   Math.random = origRandom;
   if (g8.relation(0, tid) !== 45) { console.error('FAIL: 정전 관계 회복', g8.relation(0, tid)); process.exit(1); }
-  // 동맹 파기 → 관계 급락, 이후 공격 가능
-  g8.diploOf(0, tid).v = 70; g8.diploOf(0, tid).allianceUntil = g8.turn + 24;
-  g8.breakAlliance(0, tid);
-  if (g8.relation(0, tid) !== 30) { console.error('FAIL: 동맹 파기 관계', g8.relation(0, tid)); process.exit(1); }
+  if (!g8.isTruce(0, tid) || !g8.isPeace(0, tid)) { console.error('FAIL: 정전 상태'); process.exit(1); }
+  // 정전 중 공격 차단 (명령 + 공성)
+  const tCity2 = g8.cities.find(x => x.force === tid);
+  c8.troops = 20000; c8.spears = 9000; g8.forces[0].ap = 255;
+  const u2 = g8.dispatch(c8.id, [...new Set(c8.officers)].slice(0, 2), 5000, 'spear');
+  g8.orderUnit(u2.id, tCity2.id);
+  if (u2.targetCity != null) { console.error('FAIL: 정전 공격 명령 차단'); process.exit(1); }
+  u2.targetCity = tCity2.id; u2.tx = tCity2.lon; u2.tz = tCity2.lat; u2.x = tCity2.lon + 0.5; u2.z = tCity2.lat;
+  const t2b = tCity2.troops;
+  g8.stepUnit(u2);
+  if (tCity2.troops !== t2b) { console.error('FAIL: 정전 공성 차단'); process.exit(1); }
+  // 정전 만료 후 공격 가능
+  g8.diploOf(0, tid).truceUntil = g8.turn - 1;
+  g8.orderUnit(u2.id, tCity2.id);
+  if (u2.targetCity == null) { console.error('FAIL: 정전 만료 후 공격 가능'); process.exit(1); }
+
   // 항복 권고: 대상 도시 2 이하로 만들고 stub 성공 → 흡수
   const g9 = new Game(scen, officers, {}, 0);
   const victim = Object.values(g9.forces).find(f => f.alive && f.id !== 0 && g9.cities.filter(x => x.force === f.id).length <= 2);
@@ -289,10 +305,17 @@ if (g.units.find(u => u.id === 9999) && g.units.find(u => u.id === 9999).qi === 
     const vc = g9.cities.filter(x => x.force === victim.id);
     const c9 = g9.forceCities(0)[0];
     g9.forces[0].ap = 255; c9.gold = 5000;
+    // 흡수 대상에 야전 부대 추가 (출진 상태 시뮬레이션)
+    g9.units.push({ id: 999, force: victim.id, officers: [], troops: 4000, type: 'spear', x: 0, z: 0, path: [], tx: null, tz: null, targetCity: null, label: 't', qi: 100, conf: 0 });
     Math.random = () => 0.001;
     const ok = g9.demandSurrender(0, victim.id, c9.id);
     Math.random = origRandom;
     if (!ok || victim.alive || vc.some(x => x.force !== 0)) { console.error('FAIL: 항복 권고 흡수', { ok, alive: victim.alive }); process.exit(1); }
+    const uAbs = g9.units.find(u => u.id === 999);
+    if (!uAbs || uAbs.force !== 0) { console.error('FAIL: 항복 부대 귀속', uAbs?.force); process.exit(1); }
+    // 소속 무장 상태 정합성: victim 소속이던 무장이 모두 0으로
+    const stray = Object.values(g9.officers).filter(o => o.state?.force === victim.id);
+    if (stray.length) { console.error('FAIL: 항복 무장 귀속', stray.length); process.exit(1); }
   }
   // 동맹 만료: allianceUntil 지나면 해제
   g8.diploOf(0, tid).v = 70; g8.diploOf(0, tid).allianceUntil = g8.turn - 1;
@@ -311,7 +334,35 @@ if (g.units.find(u => u.id === 9999) && g.units.find(u => u.id === 9999).qi === 
     Math.random = origRandom;
     if (gA.relation(aiF.id, gA.playerForce) !== 30 + Math.round((8 + Math.max(50, ...aiCities[0].officers.map(i => gA.officers[i].pol)) / 10) * (aiCities[0].officers.some(i => gA.officers[i].skill === '논객') ? 1.5 : 1))) { console.error('FAIL: AI 친선 사절', gA.relation(aiF.id, gA.playerForce)); process.exit(1); }
   }
-  console.log('외교 확인: 5단계 매핑·친선 사절·동맹(24턴)·동맹 공격 차단·파기·정전/항복권고·만료·AI 사절 PASS');
+  // AI 동맹 제의: 호의 60+ 조건에서 실행 (같은 비용·조건)
+  {
+    const gB = new Game(scen, officers, {}, 0);
+    const aiF = Object.values(gB.forces).find(f => f.alive && f.id !== gB.playerForce && gB.cities.some(c => c.force === f.id && c.officers.length));
+    if (aiF) {
+      const aiC = gB.cities.filter(c => c.force === aiF.id).sort((x, y) => y.gold - x.gold)[0];
+      aiC.gold = 5000; aiF.ap = 255;
+      gB.diploOf(aiF.id, gB.playerForce).v = 70;
+      Math.random = () => 0.01; // 사절 스킵·동맹 실행·상대 수락
+      aiThink(gB, aiF.id);
+      Math.random = origRandom;
+      if (!gB.isAllied(aiF.id, gB.playerForce)) { console.error('FAIL: AI 동맹 제의'); process.exit(1); }
+      // AI 정전: 동맹 해제 후 험악+수세 조건
+      const gC = new Game(scen, officers, {}, 0);
+      const aF2 = Object.values(gC.forces).find(f => f.alive && f.id !== gC.playerForce && gC.cities.filter(c => c.force === f.id).length >= 1);
+      const cs = gC.cities.filter(c => c.force === aF2.id);
+      // 수세 조작: 도시 2개 이하로
+      for (const c of gC.cities) if (c.force === aF2.id && cs.indexOf(c) >= 2) c.force = null;
+      const cs2 = gC.cities.filter(c => c.force === aF2.id);
+      cs2[0].gold = 9000; cs2[0].officers = cs2[0].officers.length ? cs2[0].officers : [cs2[0].taesu ?? 0];
+      aF2.ap = 255;
+      gC.diploOf(aF2.id, gC.playerForce).v = 20;
+      Math.random = () => 0.4; // 사절(0.3) 스킵, 동맹(0.2) 스킵, 정전(0.5) 실행
+      aiThink(gC, aF2.id);
+      Math.random = origRandom;
+      if (!gC.isTruce(aF2.id, gC.playerForce) && gC.relation(aF2.id, gC.playerForce) <= 20) { console.error('FAIL: AI 정전 요청', gC.relation(aF2.id, gC.playerForce)); process.exit(1); }
+    }
+  }
+  console.log('외교 확인: 5단계 매핑·친선 사절·동맹(24턴)·동맹 공격 차단·파기·정전(12턴 공격금지·만료 후 공격가능)·항복(도시+무장+야전부대 귀속)·AI 사절/동맹/정전 PASS');
 }
 // 번들 부팅 게이트: 모듈 초기화 오류(TDZ·문법·import 잔류)를 배포 전 검출
 {
