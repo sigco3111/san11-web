@@ -1,6 +1,6 @@
 // 진입점: 화면 전환·UI·지도 연결
 import { Map3D, toWorld } from './map3d.js';
-import { Game, SAVE_KEY, forceColor, UNIT_TYPES, josa } from './game.js';
+import { Game, SAVE_KEY, forceColor, UNIT_TYPES, josa, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC } from './game.js';
 import { aiThink } from './ai.js';
 
 const $ = id => document.getElementById(id);
@@ -93,7 +93,7 @@ function refreshHud() {
   const f = game.forces[game.playerForce];
   $('hud-date').textContent = `${game.year}년 ${game.month}월 ${['상','중','하'][game.dan-1]}순 (${game.turn}턴)`;
   $('hud-force').textContent = game.playerForce != null && f?.alive ? `【${game.forceName(game.playerForce)}】${game.delegated ? ' (위임 중)' : ''}` : '관전 중';
-  $('hud-ap').textContent = f?.alive ? `행동력 ${f.ap}` : '';
+  $('hud-ap').textContent = f?.alive ? `행동력 ${f.ap} · 기교P ${f.techP ?? 0}` : '';
   $('hud-gold').textContent = f?.alive ? `금 ${game.totalGold(game.playerForce)}` : '';
   $('hud-food').textContent = f?.alive ? `병량 ${game.totalFood(game.playerForce)}` : '';
   $('btn-endturn').disabled = game.delegated || game.over;
@@ -168,11 +168,30 @@ function onPick(nx, ny) {
   selectedUnit = null;
   showCityPanel(c);
 }
+function showTech() {
+  const f = game.forces[game.playerForce];
+  const p = $('panel'); p.classList.remove('hidden');
+  let html = `<h3>기교 연구 <small>(기교P ${f?.techP ?? 0})</small></h3>`;
+  for (const b of TECH_BRANCHES) {
+    const lv = game.techLv(game.playerForce, b);
+    const done = lv >= 4;
+    html += `<div class="officer"><div><div class="nm">${b} ${'●'.repeat(lv)}${'○'.repeat(4 - lv)}</div><div class="st">${TECH_DESC[b]}</div></div>${done ? '<span class="st">최고 단계</span>' : `<button class="cmd cmd-techr" data-b="${b}">연구 (P${TECH_P[lv]}·금${TECH_GOLD[lv]})</button>`}</div>`;
+  }
+  html += `<button class="cmd" id="cmd-tech-back">← 도시 패널로</button>`;
+  p.innerHTML = html;
+  p.querySelectorAll('.cmd-techr').forEach(btn => btn.onclick = () => {
+    game.researchTech(game.playerForce, btn.dataset.b);
+    refreshAll(); showTech();
+  });
+  $('cmd-tech-back').onclick = () => { const c = lastCityId != null && game.cityById[lastCityId]; if (c) showCityPanel(c); else p.classList.add('hidden'); };
+}
 function officerRow(idx) {
   const o = DATA.officers[idx];
   return `<div class="officer"><span class="pimg" style="${portraitCss(idx)}"></span><div><div class="nm">${o.name_ko} <span class="st">${o.name_zh}</span></div><div class="st">통${o.ldr} 무${o.war} 지${o.int} 정${o.pol} 매${o.chr} · ${o.skill ? o.skill + ' — ' + (DATA.skills[o.skill] || '') : '특기 없음'} · 충성 ${o.state?.loyal ?? '-'}</div></div></div>`;
 }
+let lastCityId = null;
 function showCityPanel(c) {
+  lastCityId = c.id;
   const p = $('panel'); p.classList.remove('hidden');
   const mine = c.force === game.playerForce && !game.delegated;
   const owner = c.force != null && game.forces[c.force]?.alive ? game.forceName(c.force) : '공백지';
@@ -192,6 +211,7 @@ function showCityPanel(c) {
       <button class="cmd" id="cmd-recruit">징병 (금200·병량1000)</button>
       <button class="cmd" id="cmd-dispatch">출진</button>
       <button class="cmd" id="cmd-move">무장 이동</button>
+      <button class="cmd" id="cmd-tech">기교 연구</button>
     </div>`;
   }
   html += `<h3 style="margin-top:10px">주둔 무장 (${c.officers.length})</h3>`;
@@ -211,6 +231,7 @@ function showCityPanel(c) {
     $('cmd-recruit').onclick = () => { game.recruit(c.id); refreshAll(); showCityPanel(c); };
     $('cmd-dispatch').onclick = () => showDispatch(c);
     $('cmd-move').onclick = () => showMove(c);
+    $('cmd-tech').onclick = () => showTech();
     p.querySelectorAll('.cmd-rec').forEach(b => b.onclick = () => { game.recruitOfficer(c.id, Number(b.dataset.i)); refreshAll(); showCityPanel(c); });
   }
   const join = $('cmd-join');
