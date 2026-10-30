@@ -99,6 +99,7 @@ export class Game {
     const lv = this.techLv(fid, b); if (lv >= 4) return false;
     const cap = this.forceCities(fid).sort((x, y) => y.gold - x.gold)[0];
     if ((f.techP ?? 0) < TECH_P[lv] || !cap || cap.gold < TECH_GOLD[lv]) return false;
+    f.techs = f.techs ?? {}; // 레거시 세이브 호환
     f.techP -= TECH_P[lv]; cap.gold -= TECH_GOLD[lv]; f.techs[b] = lv + 1;
     this.log(`【기교】${this.forceName(fid)} ${b} ${lv + 1}단계 연구 완료 (기교P ${TECH_P[lv]}·금 ${TECH_GOLD[lv]} 소비)`, fid === this.playerForce);
     return true;
@@ -397,4 +398,4 @@ export function josa(name, pair) { // [을,를] 형태
   const code = name.charCodeAt(name.length-1);
   const jong = (code >= 0xAC00 && code <= 0xD7A3) ? (code-0xAC00)%28 : 0;
   return name + (jong ? pair[0] : pair[1]);
-}
+      }
