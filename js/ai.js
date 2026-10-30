@@ -130,7 +130,7 @@ export function aiThink(game, fid, legion = null) { // legion 지정 시 그 군
           if (c.spears >= n) type = 'spear'; else if (c.horses >= n) type = 'cav'; else if (c.pikes >= n) type = 'pike'; else if (c.bows >= n) type = 'bow';
           else if ((c.catapults ?? 0) > 0) type = 'catapult'; else if ((c.rams ?? 0) > 0) type = 'ram'; else if ((c.beasts ?? 0) > 0) type = 'beast'; else if ((c.towers ?? 0) > 0) type = 'tower'; // 병기: 공성 특화
           const u = game.dispatch(c.id, pick, n, type);
-          if (u) game.orderUnit(u.id, best.id);
+          if (u && !game.orderUnit(u.id, best.id)) game.orderUnit(u.id, c.id); // R17b: 출진 직후 목표 불가 시 원도시 대기
         }
       }
     }
@@ -142,7 +142,7 @@ export function aiThink(game, fid, legion = null) { // legion 지정 시 그 군
     let best = null, bd = 1e9;
     for (const e of foes) { const d = Math.hypot(e.lon - u.x, e.lat - u.z); if (d < bd) { bd = d; best = e; } }
     const homes = cities.slice().sort((a,b) => Math.hypot(a.lon-u.x,a.lat-u.z) - Math.hypot(b.lon-u.x,b.lat-u.z));
-    if (best && bd < 10 && u.troops > Math.max(best.troops * 1.2, 4000)) game.orderUnit(u.id, best.id);
+    if (best && bd < 10 && u.troops > Math.max(best.troops * 1.2, 4000)) { if (!game.orderUnit(u.id, best.id) && homes.length) game.orderUnit(u.id, homes[0].id); } // R17b: 노선 없음 시 귀환 회복
     else if (homes.length) game.orderUnit(u.id, homes[0].id);  // 귀환·합류
   }
   // 5) R15: AI도 같은 규칙으로 전법·계략 직접 발동 — 인접 적 부대·도시에 턴 1회, 비용·자격은 fireTactic/fireStrat과 동일
