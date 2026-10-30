@@ -1931,6 +1931,7 @@ else map.updateUnit(worldUnit(u), forceColor(u.force));
 }
 for (const id of Object.keys(map.unitMeshes)) if (!game.units.find(u => u.id == id)) map.removeUnit(id);
 refreshHud(); refreshLog();
+game.autosave();
 }
 function worldUnit(u) { const [x, z] = toWorld(u.x, u.z); return { id: u.id, x, z, label: u.label }; }
 function refreshHud() {
