@@ -240,6 +240,20 @@ colors.push(col.r, col.g, col.b);
 im.receiveShadow = true; im.castShadow = true;
 this.terrainGroup.add(im);
 this.terrainMesh = im;
+this.baseColors = Float32Array.from(colors);
+}
+setSeason(month) {
+if (!this.terrainMesh || !this.baseColors || this.season === month) return;
+this.season = month;
+const tint = month >= 3 && month <= 5 ? [1.0, 1.03, 0.95] : month >= 6 && month <= 8 ? [0.9, 1.06, 0.88] : month >= 9 && month <= 11 ? [1.1, 0.97, 0.8] : [1.15, 1.15, 1.2];
+const winter = tint[0] > 1.1;
+const col = new THREE.Color(), snow = new THREE.Color(0.93, 0.95, 1.0);
+for (let i = 0; i < this.baseColors.length / 3; i++) {
+col.setRGB(Math.min(1, this.baseColors[i*3] * tint[0]), Math.min(1, this.baseColors[i*3+1] * tint[1]), Math.min(1, this.baseColors[i*3+2] * tint[2]));
+if (winter) col.lerp(snow, 0.28);
+this.terrainMesh.setColorAt(i, col);
+}
+this.terrainMesh.instanceColor.needsUpdate = true;
 }
 buildWater() {
 const w = GN2*CELL + 8, d = GN2*CELL + 8;
@@ -371,18 +385,69 @@ this.cityMeshes[city.id] = { group: g, flag };
 setCityColor(cityId, colorHex) {
 const m = this.cityMeshes[cityId]; if (m) m.flag.material.color.set(colorHex);
 }
+unitBody(type) {
+const g = new THREE.Group();
+const mat = c => new THREE.MeshLambertMaterial({ color: c, flatShading: true });
+const add = (geo, color, x=0, y=0, z=0, rx=0, ry=0, rz=0) => { const m = new THREE.Mesh(geo, mat(color)); m.position.set(x, y, z); m.rotation.set(rx, ry, rz); m.castShadow = true; g.add(m); return m; };
+const soldier = (spearLen = 0, bow = false, blade = false, pikeHead = false) => {
+add(new THREE.ConeGeometry(0.45, 1.0, 5), 0x5a4a3a, 0, 0.65, 0);
+if (spearLen) add(new THREE.CylinderGeometry(0.03, 0.03, spearLen, 4), 0x8a7a5a, 0.3, 0.45 + spearLen/2, 0);
+if (pikeHead) add(new THREE.BoxGeometry(0.3, 0.06, 0.06), 0xb8b8c0, 0.3, 1.62, 0);
+if (bow) add(new THREE.TorusGeometry(0.35, 0.04, 4, 10, Math.PI), 0x7a5a3a, 0.35, 0.8, 0, 0, 0, Math.PI/2);
+if (blade) add(new THREE.BoxGeometry(0.08, 0.5, 0.02), 0xb8b8c0, 0.3, 0.9, 0, 0, 0, 0.5);
+};
+const hull = (len, wid, sailH, tower = false, masts = 1) => {
+add(new THREE.BoxGeometry(wid, 0.3, len), 0x6a4a2a, 0, 0.3, 0);
+add(new THREE.BoxGeometry(wid*0.7, 0.25, len*0.7), 0x7a5a3a, 0, 0.5, 0);
+for (let mi = 0; mi < masts; mi++) {
+const mz = masts === 1 ? 0 : (mi === 0 ? -len*0.25 : len*0.25);
+add(new THREE.CylinderGeometry(0.04, 0.04, sailH, 4), 0x4a3a2a, 0, 0.5 + sailH/2, mz);
+add(new THREE.BoxGeometry(0.05, sailH*0.55, sailH*0.45), 0xd8cfc0, 0, 0.6 + sailH*0.6, mz);
+}
+if (tower) add(new THREE.BoxGeometry(0.4, 0.5, 0.4), 0x5a4a3a, 0, 0.85, -len*0.15);
+};
+switch (type) {
+case 'sword': soldier(0, false, true); break;
+case 'spear': soldier(1.4); break;
+case 'pike': soldier(1.2, false, false, true); break;
+case 'bow': soldier(0, true); break;
+case 'cav':
+add(new THREE.BoxGeometry(0.5, 0.45, 1.0), 0x6a4a30, 0, 0.55, 0);
+add(new THREE.BoxGeometry(0.2, 0.3, 0.35), 0x6a4a30, 0, 0.75, 0.55);
+add(new THREE.ConeGeometry(0.3, 0.8, 5), 0x5a4a3a, 0, 1.25, 0); break;
+case 'ram':
+add(new THREE.BoxGeometry(0.9, 0.6, 1.1), 0x5a4a3a, 0, 0.6, 0);
+add(new THREE.CylinderGeometry(0.12, 0.12, 1.6, 6), 0x7a6a4a, 0, 0.5, 0.2, Math.PI/2, 0, 0); break;
+case 'tower':
+add(new THREE.BoxGeometry(0.8, 1.8, 0.8), 0x6a5a45, 0, 0.9, 0);
+add(new THREE.BoxGeometry(0.95, 0.25, 0.95), 0x5a4a3a, 0, 1.85, 0); break;
+case 'beast':
+add(new THREE.BoxGeometry(0.6, 0.5, 1.0), 0x7a5a3a, 0, 0.6, 0);
+add(new THREE.BoxGeometry(0.35, 0.35, 0.4), 0x7a5a3a, 0, 0.75, 0.6);
+for (const [lx, lz] of [[-0.2, 0.3], [0.2, 0.3], [-0.2, -0.3], [0.2, -0.3]]) add(new THREE.CylinderGeometry(0.07, 0.07, 0.5, 4), 0x5a4a30, lx, 0.25, lz);
+add(new THREE.BoxGeometry(0.5, 0.3, 0.6), 0x8a6a4a, 0, 0.95, -0.1); break;
+case 'catapult':
+add(new THREE.BoxGeometry(0.7, 0.3, 0.7), 0x5a4a3a, 0, 0.35, 0);
+add(new THREE.CylinderGeometry(0.05, 0.05, 1.1, 4), 0x7a6a4a, 0, 0.8, 0, 0.6, 0, 0);
+add(new THREE.BoxGeometry(0.25, 0.2, 0.25), 0x4a3a2a, 0, 1.25, -0.45); break;
+case 'junk': hull(1.3, 0.55, 1.0); break;
+case 'lou': hull(1.6, 0.65, 1.2, true); break;
+case 'dou': hull(1.9, 0.75, 1.4, true, 2); break;
+default: soldier();
+}
+return g;
+}
 addUnit(unit, colorHex) {
 const g = new THREE.Group();
-const body = new THREE.Mesh(new THREE.ConeGeometry(0.45, 1.0, 5),
-new THREE.MeshLambertMaterial({ color: 0x5a4a3a, flatShading: true }));
-body.position.y = 0.65; body.castShadow = true; g.add(body);
+const body = this.unitBody(unit.type ?? 'sword');
+g.add(body);
 const banner = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.45, 0.05),
 new THREE.MeshBasicMaterial({ color: new THREE.Color(colorHex) }));
 banner.position.set(0.35, 1.45, 0); g.add(banner);
 const label = this.makeLabel(unit.label, 0.6); label.position.y = 2.1; g.add(label);
 const y = this.levelAtWorld(unit.x, unit.z) * STEP;
 g.position.set(unit.x, Math.max(y, WATER_Y + 0.2), unit.z);
-g.userData.unitId = unit.id; body.userData.unitId = unit.id;
+g.userData.unitId = unit.id;
 this.unitGroup.add(g);
 this.unitMeshes[unit.id] = { group: g, banner };
 }
@@ -1260,7 +1325,7 @@ const d = Math.hypot(dx, dz);
 if (d > 1.2) {
 const nx = u.x + dx/d*speed, nz = u.z + dz/d*speed;
 if (SHIP_TYPES.has(u.type) && !isWaterAt(nx, nz)) {
-        if (!u._landWarn) { u._landWarn = true; this.log(`${u.label}이(가) 수로를 벗어나 더 이상 나아갈 수 없습니다`, u.force === this.playerForce); }
+        if (!u._landWarn) { u._landWarn = true; this.log(`${josa(u.label, ['이','가'])} 수로를 벗어나 더 이상 나아갈 수 없습니다`, u.force === this.playerForce); }
 return;
 }
 u._landWarn = false;
@@ -1309,7 +1374,7 @@ const def = c.officers.map(i => this.officers[i]).sort((a, b) => b.int - a.int)[
 const p = Math.max(0.05, Math.min(0.45, 0.15 + (def.int - lead.int)/250));
 if (def.int >= STRATS.confuse.minInt && !this.unitHasSkill(u, '위장') && Math.random() < p * (1 - this.mindDefense(u.force))) {
 c.lastStrat = this.turn; u.conf = STRATS.confuse.turns;
-        this.log(`【계략】${def.name_ko}의 혼란! ${u.label}이(가) ${STRATS.confuse.turns}턴간 움직이지 못합니다`, c.force === this.playerForce);
+        this.log(`【계략】${def.name_ko}의 혼란! ${josa(u.label, ['이','가'])} ${STRATS.confuse.turns}턴간 움직이지 못합니다`, c.force === this.playerForce);
 }
 }
 if (ut.siege) dmg = Math.round(dmg * ut.siege);
@@ -1320,7 +1385,7 @@ c.troops = Math.max(0, c.troops - dmg);
 c.hp = Math.max(0, c.hp - Math.round(dmg*0.5));
 u.troops = Math.max(0, u.troops - loss);
 this.gainTechP(u.force, Math.min(50, Math.floor(dmg / 100)));
-    this.log(`${u.label}이(가) ${c.name_ko}을(를) 공격 (적병 -${dmg}, 아군 -${loss})`, u.force === this.playerForce);
+    this.log(`${josa(u.label, ['이','가'])} ${josa(c.name_ko, ['을','를'])} 공격 (적병 -${dmg}, 아군 -${loss})`, u.force === this.playerForce);
     if (u.troops <= 0) { this.units = this.units.filter(x => x !== u); this.log(`${u.label} 부대가 전멸했습니다`, false); return; }
 if (c.troops <= 0 || c.hp <= 0) {
 const old = c.force;
@@ -1362,7 +1427,7 @@ if (att.type === 'cav') att._cavTactic = true;
 const caster = att.officers.map(i => this.officers[i]).sort((x, y) => y.int - x.int)[0];
 if (caster && (att._stratTurn ?? -1) !== this.turn && caster.int >= STRATS.confuse.minInt && !this.unitHasSkill(def, '위장') && (att.qi ?? 100) >= 25 && Math.random() < Math.min(0.35, 0.08 + caster.int/400) * (1 - this.mindDefense(def.force))) {
 att.qi -= 25; def.conf = Math.max(def.conf ?? 0, STRATS.confuse.turns);
-        this.log(`【계략】${caster.name_ko}의 혼란! ${def.label}이(가) ${STRATS.confuse.turns}턴간 움직이지 못합니다`, att.force === this.playerForce);
+        this.log(`【계략】${caster.name_ko}의 혼란! ${josa(def.label, ['이','가'])} ${STRATS.confuse.turns}턴간 움직이지 못합니다`, att.force === this.playerForce);
 }
 if (caster && (att._stratTurn ?? -1) !== this.turn && caster.int >= STRATS.fire.minInt && !this.unitHasSkill(def, '위장') && (att.qi ?? 100) >= STRATS.fire.qi && Math.random() < Math.min(0.5, 0.1 + caster.int/300 + (this.unitHasSkill(att, '풍계') ? 0.15 : 0)) * (1 - this.mindDefense(def.force))) {
 att.qi -= STRATS.fire.qi;
@@ -1397,7 +1462,7 @@ this.units = this.units.filter(x => x !== u);
 const home = this.forceCities(u.force).sort((pp, qq) => Math.hypot(pp.lon-u.x, pp.lat-u.z) - Math.hypot(qq.lon-u.x, qq.lat-u.z))[0];
 if (home) {
 u.targetCity = home.id; u.tx = home.lon; u.tz = home.lat;
-          this.log(`${u.label}이(가) ${home.name_ko}(으)로 퇴각합니다`, u.force === this.playerForce);
+          this.log(`${josa(u.label, ['이','가'])} ${josa(home.name_ko, ['으로','로'])} 퇴각합니다`, u.force === this.playerForce);
 }
 }
 }
@@ -1510,7 +1575,7 @@ u._stratTurn = this.turn;
 u.qi -= 25;
 this.gainMerit(caster.idx, MERIT.stratagem);
 d.conf = Math.max(d.conf ?? 0, STRATS.confuse.turns);
-      this.log(`【계략】${caster.name_ko}의 혼란! ${d.label}이(가) ${STRATS.confuse.turns}턴간 움직이지 못합니다`, u.force === this.playerForce);
+      this.log(`【계략】${caster.name_ko}의 혼란! ${josa(d.label, ['이','가'])} ${STRATS.confuse.turns}턴간 움직이지 못합니다`, u.force === this.playerForce);
 this.autosave();
 return true;
 }
@@ -2090,10 +2155,11 @@ if (!map.unitMeshes[u.id]) map.addUnit(worldUnit(u), forceColor(u.force));
 else map.updateUnit(worldUnit(u), forceColor(u.force));
 }
 for (const id of Object.keys(map.unitMeshes)) if (!game.units.find(u => u.id == id)) map.removeUnit(id);
+map.setSeason?.(game.month);
 refreshHud(); refreshLog();
 game.autosave();
 }
-function worldUnit(u) { const [x, z] = toWorld(u.x, u.z); return { id: u.id, x, z, label: u.label }; }
+function worldUnit(u) { const [x, z] = toWorld(u.x, u.z); return { id: u.id, x, z, label: u.label, type: u.type }; }
 function refreshHud() {
 document.documentElement.style.setProperty('--hud-h', ($('hud-top').offsetHeight + 6) + 'px');
 const f = game.forces[game.playerForce];
@@ -2137,7 +2203,8 @@ if (name === '위퇴각') ok = ok && game.unitHasItemKind(P.u, 'bow');
       return `<button class="cmd duel-cmd" data-c="${name}" ${ok ? '' : 'disabled'}>${name}${need ? ` (투지${need})` : ''}</button>`;
 };
     m.innerHTML = `<div class="box" style="min-width:420px">
-      <h3 style="color:#f66">일기토 — ${po.name_ko} vs ${eo.name_ko} (${d.bout}합)</h3>
+      <h3 style="color:#f66;text-align:center">일기토 (${d.bout}합)</h3>
+      <p style="text-align:center;margin:4px 0"><span class="pimg" style="${portraitCss(po.idx)};display:inline-block;width:64px;height:64px;border:2px solid #d44;border-radius:4px;vertical-align:middle"></span> <b style="font-size:20px;color:#f66;vertical-align:middle"> VS </b> <span class="pimg" style="${portraitCss(eo.idx)};display:inline-block;width:64px;height:64px;border:2px solid #47d;border-radius:4px;vertical-align:middle"></span><br><b>${po.name_ko}</b> vs <b>${eo.name_ko}</b></p>
       <p>${po.name_ko} 체력 ${bar(P.hp, 100, '#d44')} ${Math.max(0, P.hp)} · 투지 ${bar(P.spirit, 300, '#4a7fd4')} ${P.spirit}<br>
       ${eo.name_ko} 체력 ${bar(E.hp, 100, '#d44')} ${Math.max(0, E.hp)} · 투지 ${bar(E.spirit, 300, '#4a7fd4')} ${E.spirit}</p>
       <p style="font-size:12px;color:#cbB;min-height:54px">${d.log.slice(-3).join('<br>')}</p>
@@ -2189,7 +2256,8 @@ const ok = game.debateCardUsable(d, pk, c);
       return `<button class="cmd debate-card" data-c="${c}" ${ok ? '' : 'disabled'}>${c}${cd}${owned ? '' : ' 🔒'}</button>`;
 };
     m.innerHTML = `<div class="box" style="min-width:420px">
-      <h3 style="color:#6cf">설전 — ${po.name_ko} vs ${eo.name_ko} (${d.bout}합) <span style="font-size:12px;color:#aaa">${ctxName}</span></h3>
+      <h3 style="color:#6cf;text-align:center">설전 (${d.bout}합) <span style="font-size:12px;color:#aaa">${ctxName}</span></h3>
+      <p style="text-align:center;margin:4px 0"><span class="pimg" style="${portraitCss(P.o)};display:inline-block;width:64px;height:64px;border:2px solid #47d;border-radius:4px;vertical-align:middle"></span> <b style="font-size:20px;color:#6cf;vertical-align:middle"> VS </b> <span class="pimg" style="${portraitCss(E.o)};display:inline-block;width:64px;height:64px;border:2px solid #d44;border-radius:4px;vertical-align:middle"></span><br><b>${po.name_ko}</b> vs <b>${eo.name_ko}</b></p>
       <p>${po.name_ko} 논리 ${bar(P.hp, 100, '#d44')} ${Math.max(0, P.hp)}${P.seal ? ' · 봉인' : ''}<br>
       ${eo.name_ko} 논리 ${bar(E.hp, 100, '#d44')} ${Math.max(0, E.hp)}${E.seal ? ' · 봉인' : ''}</p>
       <p style="font-size:12px;color:#cbb;min-height:54px">${d.log.slice(-3).join('<br>')}</p>
@@ -2279,7 +2347,7 @@ selectedUnit = hit.id; showUnitPanel(hit.id); return;
 const c = game.cityById[hit.id];
 if (selectedUnit != null && game.units.find(u => u.id === selectedUnit && u.force === game.playerForce) && !game.delegated) {
 game.orderUnit(selectedUnit, hit.id);
-    game.log(`${game.units.find(u=>u.id===selectedUnit).label} → ${c.name_ko}(으)로 이동 명령`, true);
+    game.log(`${game.units.find(u=>u.id===selectedUnit).label} → ${josa(c.name_ko, ['으로','로'])} 이동 명령`, true);
 selectedUnit = null; $('panel').classList.add('hidden'); refreshLog();
 return;
 }
