@@ -1193,21 +1193,16 @@ export class Game {
       // 전법 (공성과 같은 규칙)
       const tac = TACTICS[att.type];
       const aptLv = att.type === 'sword' ? 1 : APT_LV(lead.apt?.[APT_IDX[att.type]]);
-      if (!tac && att.type !== 'sword' && (att._tacTurn ?? -1) < this.turn && Math.random() < Math.min(0.55, 0.15 + lead.war/250)) { // R39: 창·극·기병은 설계의 추가 전법(적성·기력·턴 1회 조건 동일)을 자동 전투에서도 같은 선택 규칙(pickTactic)으로 사용
+      if (att.type !== 'sword' && (att._tacTurn ?? -1) < this.turn && Math.random() < Math.min(0.55, 0.15 + lead.war/250)) { // 한 타격당 전법 기회 1회. 적성·기력·턴 1회·혼란 제한은 tacticInfo(직접 발동과 공통), 선택은 pickTactic(AI와 공통)
         const opt = this.pickTactic(att, def);
         if (opt) {
           att.qi -= opt.qi; att._tacTurn = this.turn; dmg = Math.round(dmg * opt.mult);
           this.gainMerit(att.officers[0], MERIT.tactic);
-          if (att.type === 'cav') att._cavTactic = true;
+          if (opt.guard) att._guard = true;
+          if (att.type === 'cav') att._cavTactic = true; // R10: 기병 전법 시 일기토 발동률 상승 (설계안 110행)
           const note = opt.eff ? this._tacExtra(att, def, opt, dmg) : '';
           this.log(`【전법】${lead.name_ko}의 ${opt.name}! 야전에서 ${def.label}에 큰 피해${note}`, att.force === this.playerForce);
         }
-      }
-      if (tac && att.type !== 'sword' && (att._tacTurn ?? -1) !== this.turn && aptLv >= (tac.minApt ?? 1) && (att.qi ?? 100) >= tac.qi && Math.random() < Math.min(0.55, 0.15 + lead.war/250)) {
-        att.qi -= tac.qi; dmg = Math.round(dmg * tac.mult);
-        if (tac.guard) att._guard = true;
-        if (att.type === 'cav') att._cavTactic = true; // R10: 기병 전법 시 일기토 발동률 상승 (설계안 110행)
-        this.log(`【전법】${lead.name_ko}의 ${tac.name}! 야전에서 ${def.label}에 큰 피해`, att.force === this.playerForce);
       }
       // 계략: 혼란
       const caster = att.officers.map(i => this.officers[i]).sort((x, y) => y.int - x.int)[0];
@@ -1258,11 +1253,27 @@ export class Game {
   }
 
   // === R15: 전법·계략 직접 발동 — 자동 발동과 같은 비용·수치, 플레이어가 부대 패널에서 대상을 직접 선택 (설계안 본편 조작) ===
-  pickTactic(u, eu) { // 추가 전법 선택 규칙 (AI와 자동 전투 공통): 혼란형 우선, 주변 적 2부대 이상이면 광역·관통형, 아니면 기력이 가장 큰 것
+  _tacHits(u, d, tac) { // 광역·관통형이 주 대상 외에 실제로 맞히는 적 부대 수 (_tacExtra와 같은 기하 조건)
+    const foes = this.units.filter(v => v !== d && v.force !== u.force && !this.isPeace(u.force, v.force));
+    if (tac.eff === 'whirl') return foes.filter(v => Math.hypot(v.x - u.x, v.z - u.z) < 2.2).length;
+    if (tac.eff === 'volley') return foes.filter(v => Math.hypot(v.x - d.x, v.z - d.z) < 1.5).length;
+    if (tac.eff === 'side' || tac.eff === 'pierce') {
+      const [ux, uz] = this._tacPushDir(u, d); const dd = Math.hypot(d.x - u.x, d.z - u.z); let n = 0;
+      for (const v of foes) { const rx = v.x - u.x, rz = v.z - u.z, r = Math.hypot(rx, rz); if (r > 2.2 || r < 1e-6) continue; const cos = (rx * ux + rz * uz) / r; if (tac.eff === 'side' ? cos > 0.5 : (cos > 0.93 && r > dd)) n++; }
+      return n;
+    }
+    return 0;
+  }
+  pickTactic(u, eu) { // 전법 선택 규칙 (AI와 자동 전투 공통, 기획에 선택 기준이 없어 이 게임의 구현 선택): 광역·관통형은 실제로 다른 적을 맞힐 때만 후보, 혼란형(상대가 혼란이 아닐 때) 우선, 광역 후보 다음, 그 외는 배율이 큰 것 순
     const info = this.tacticInfo(u); if (!info) return null;
-    const ex = info.opts.filter(o => o.id !== 'base'); if (!ex.length) return null;
-    const near = this.units.filter(x => x !== eu && x.force !== u.force && !this.isPeace(u.force, x.force) && Math.hypot(x.x - eu.x, x.z - eu.z) < 1.6).length;
-    return ex.find(o => o.eff === 'conf' && (eu.conf ?? 0) <= 0) || (near >= 1 ? ex.find(o => ['whirl', 'volley', 'side', 'pierce'].includes(o.eff)) : null) || ex.slice().sort((a, b) => b.qi - a.qi)[0];
+    const AREA = ['whirl', 'volley', 'side', 'pierce'];
+    const gap = Math.hypot(eu.x - u.x, eu.z - u.z);
+    const canPush = () => { const [ux, uz] = this._tacPushDir(u, eu); const nx = eu.x + ux * 0.4, nz = eu.z + uz * 0.4; return Number.isFinite(nx + nz) && this._tacStandable(eu, nx, nz) && !this.units.some(v => v !== eu && Math.hypot(v.x - nx, v.z - nz) < 0.35); };
+    const ok = info.opts.filter(o => AREA.includes(o.eff) ? (this._tacHits(u, eu, o) >= 1 || o.mult > 1) : o.eff === 'pull' ? gap > 0.75 : o.eff === 'push' ? canPush() : true); // 실제 효과가 있는 전법만 후보 (광역: 다른 적을 맞히거나 단독 대상에도 배율이 1 초과인 것(옆베기·관통화살). 배율 1 광역(선풍·난사)은 다른 적이 있을 때만, 끌어당김: 거리가 있음, 격퇴: 밀릴 자리가 있음)
+    if (!ok.length) return null;
+    return ok.find(o => o.eff === 'conf' && (eu.conf ?? 0) <= 0)
+      || ok.filter(o => AREA.includes(o.eff) && this._tacHits(u, eu, o) >= 1).sort((x, y) => this._tacHits(u, eu, y) - this._tacHits(u, eu, x) || y.mult - x.mult)[0]
+      || ok.slice().sort((x, y) => (y.eff === 'pull') - (x.eff === 'pull') || y.mult - x.mult || y.qi - x.qi)[0];
   }
   tacticInfo(u) { // 직접 전법 가능 여부 (자동 발동의 자격·기력 조건과 동일)
     const tac = u && u.type !== 'sword' ? TACTICS[u.type] : null; const hasEx = u && (TACTICS_EX[u.type]||[]).length > 0; // R36: 검병은 전법 없음 (설계 58행)
