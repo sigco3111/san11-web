@@ -153,4 +153,90 @@ if (g.units.find(u => u.id === 9999) && g.units.find(u => u.id === 9999).qi === 
   if (g5.buildFacility(c5.id, '시장', [])) { console.error('FAIL: 개발지 초과 건설'); process.exit(1); }
   console.log('내정시설 확인: 건설·공기(정치 가속)·시장 수입·병영 징병 x1.3·개발지 제한 PASS (담당 정치합', polSum + ')');
 }
+// R4 무장 중복 회귀 + 공적·충성·관작 (결정적)
+{
+  const g6 = new Game(scen, officers, {}, 0);
+  const F6 = g6.forces[0];
+  const mine = g6.forceCities(0);
+  // 회귀: 같은 이동 2회 실행해도 중복 없음
+  if (mine.length >= 2) {
+    const [a, b] = mine;
+    const mv = a.officers.slice(0, 2);
+    F6.ap = 255;
+    g6.moveOfficers(a.id, b.id, mv);
+    F6.ap = 255;
+    g6.moveOfficers(a.id, b.id, mv); // UI 이중 실행 재현
+    if (b.officers.length !== new Set(b.officers).size) { console.error('FAIL: 이동 중복', b.officers); process.exit(1); }
+  }
+  // 회귀: 출진→아군 도시 합류 후 중복 없음
+  {
+    const c = mine[0];
+    F6.ap = 255; c.troops = 20000; c.gold = 5000; c.spears = 5000;
+    const offs = [...new Set(c.officers)].slice(0, 2);
+    const u = g6.dispatch(c.id, offs, 5000, 'spear');
+    if (u) {
+      u.targetCity = c.id; u.tx = c.lon; u.tz = c.lat; u.x = c.lon + 0.5; u.z = c.lat;
+      g6.stepUnit(u); // 합류
+      if (c.officers.length !== new Set(c.officers).size) { console.error('FAIL: 합류 중복', c.officers); process.exit(1); }
+    }
+  }
+  // 공적: 개발 실행 무장 +30
+  {
+    const c = mine[0];
+    F6.ap = 255; c.gold = 5000; c.commerce = 50;
+    const top = [...new Set(c.officers)].sort((a, b) => g6.officers[b].pol - g6.officers[a].pol)[0];
+    const before = g6.officers[top].state?.merit ?? 0;
+    g6.develop(c.id, 'commerce');
+    const after = g6.officers[top].state?.merit ?? 0;
+    if (after - before !== 30) { console.error('FAIL: 개발 공적', { before, after }); process.exit(1); }
+  }
+  // 봉록·충성: 금 충분 → 충성 +1, 금 부족 → -4, 충성 25 이하 하야
+  {
+    const c = mine[0];
+    const offs = [...new Set(c.officers)];
+    const o0 = offs[0];
+    g6.officers[o0].state.loyal = 50; g6.officers[o0].state.merit = 0;
+    c.gold = 5000; g6.dan = 3;
+    const sal = g6.salaryOf(o0); // 10
+    const goldBefore = c.gold;
+    const income = Math.round((50 + c.commerce * 8 * (c.metropolis ? 1.5 : 1)) * (g6.cityHasSkill(c, '통상') ? 1.3 : 1));
+    const salSum = [...new Set(c.officers)].filter(i => g6.officers[i]?.state?.force != null).reduce((x, i) => x + g6.salaryOf(i), 0);
+    g6.endTurn(aiThink);
+    const st = g6.officers[o0].state;
+    if (st.loyal !== 51) { console.error('FAIL: 봉록 지급 충성', st.loyal); process.exit(1); }
+    if (c.gold !== goldBefore + income - salSum) { console.error('FAIL: 봉록 차감', { goldBefore, income, salSum, after: c.gold }); process.exit(1); }
+    // 미지급: 수입보다 봉록 합계가 크게 만들어 o0(마지막 순서)이 미지급되게 함
+    c.commerce = 0; c.gold = 0;
+    for (const i of offs) g6.officers[i].state.merit = 5000; // 봉록 50금/인
+    c.officers = [...offs.filter(i => i !== o0), o0];
+    g6.dan = 3;
+    g6.endTurn(aiThink);
+    if (st.loyal !== 47) { console.error('FAIL: 봉록 미지급 충성', st.loyal); process.exit(1); }
+    for (const i of offs) g6.officers[i].state.merit = 0;
+    // 하야: random stub
+    const origRandom = Math.random;
+    Math.random = () => 0;
+    st.loyal = 20; c.gold = 5000; g6.dan = 3;
+    g6.endTurn(aiThink);
+    Math.random = origRandom;
+    if (st.status !== 'free' || c.officers.includes(o0)) { console.error('FAIL: 하야 처리', st.status); process.exit(1); }
+  }
+  // 관작: 도시 2개 → 주자사, 황건 제외
+  {
+    const g7 = new Game(scen, officers, {}, 0);
+    const owned = g7.cities.filter(c => c.force === 0);
+    let added = 0;
+    for (const c of g7.cities) { if (c.force == null && owned.length + added < 2) { c.force = 0; added++; } }
+    g7.endTurn(aiThink);
+    if (g7.cities.filter(c => c.force === 0).length >= 2 && g7.forces[0].rank !== '주자사') { console.error('FAIL: 관작 승진', g7.forces[0].rank); process.exit(1); }
+    const hj = Object.values(g7.forces).find(f => g7.forceName(f.id).includes('황건'));
+    if (hj) {
+      let n = 0;
+      for (const c of g7.cities) { if (n < 2 && c.force == null) { c.force = hj.id; n++; } }
+      hj.rank = null; g7.checkRanks();
+      if (hj.rank) { console.error('FAIL: 황건 작위 부여', hj.rank); process.exit(1); }
+    }
+  }
+  console.log('공적·충성·관작 확인: 개발 공적+30·봉록 지급/미지급 충성·하야·관작 승진·황건 제외·무장 중복 회귀 PASS');
+}
 console.log('sample logs:'); for (const l of g.logs.slice(-8)) console.log(' ', l.t, l.msg);
