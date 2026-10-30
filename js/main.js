@@ -1,7 +1,7 @@
 // 진입점: 화면 전환·UI·지도 연결
-import { Map3D, toWorld } from './map3d.js?v=r17c';
-import { Game, SAVE_KEY, forceColor, UNIT_TYPES, josa, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL } from './game.js?v=r17c';
-import { aiThink } from './ai.js?v=r17c';
+import { Map3D, toWorld } from './map3d.js?v=r18';
+import { Game, SAVE_KEY, forceColor, UNIT_TYPES, josa, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL } from './game.js?v=r18';
+import { aiThink } from './ai.js?v=r18';
 
 const $ = id => document.getElementById(id);
 let DATA = null, game = null, map = null, selectedUnit = null, autoTimer = null, pendingFire = null; // R15: 직접 전법·계략 대기
@@ -9,7 +9,7 @@ let DATA = null, game = null, map = null, selectedUnit = null, autoTimer = null,
 async function loadData() {
   const [officers, skills, portraits, s184, s190, s251] = await Promise.all(
     ['data/officers670.json','data/skills.json','data/portraits.json','data/scenario-184.json','data/scenario-190.json','data/scenario-251.json']
-      .map(u => fetch(u + '?v=r17c').then(r => r.json())));
+      .map(u => fetch(u + '?v=r18').then(r => r.json())));
   const byIdx = {};
   for (const o of officers) byIdx[o.idx] = o;
   DATA = { officers: byIdx, skills, portraits, scenarios: { '184': s184, '190': s190, '251': s251 } };
@@ -643,6 +643,7 @@ function showUnitPanel(uid) {
     ${mine && game.tacticInfo?.(u) ? `<p><button class="cmd" id="up-tac">전법 ${game.tacticInfo(u).tac.name} (기력 ${game.tacticInfo(u).tac.qi})</button></p>` : ''}
     ${mine && (u.conf ?? 0) <= 0 && (u._stratTurn ?? -1) !== game.turn && u.officers.some(i => (DATA.officers[i]?.int ?? 0) >= 75) && (u.qi ?? 100) >= 30 ? '<p><button class="cmd" id="up-fire">계략 화계 (기력 30)</button></p>' : ''}
     ${mine && (u.conf ?? 0) <= 0 && (u._stratTurn ?? -1) !== game.turn && u.officers.some(i => (DATA.officers[i]?.int ?? 0) >= 80) && (u.qi ?? 100) >= 25 ? '<p><button class="cmd" id="up-conf">계략 혼란 (기력 25)</button></p>' : ''}
+    ${mine && (u.conf ?? 0) <= 0 && (u._stratTurn ?? -1) !== game.turn && u.officers.some(i => (DATA.officers[i]?.int ?? 0) >= 80) && (u.qi ?? 100) >= 15 ? '<button class="cmd" id="up-rumor">계략 위보 (기력 15)</button> <button class="cmd" id="up-calm">계략 진정 (기력 10)</button>' : ''}
     <p><button class="cmd" id="up-close">닫기</button></p>`;
   $('up-close').onclick = () => { $('panel').classList.add('hidden'); selectedUnit = null; pendingFire = null; };
   const armFire = (kind, label) => { // R15: 대상 선택 모드 진입
@@ -653,6 +654,8 @@ function showUnitPanel(uid) {
   if ($('up-tac')) $('up-tac').onclick = () => armFire('tactic', `전법 ${game.tacticInfo(u).tac.name}`);
   if ($('up-fire')) $('up-fire').onclick = () => armFire('fire', '계략 화계');
   if ($('up-conf')) $('up-conf').onclick = () => armFire('confuse', '계략 혼란');
+  if ($('up-rumor')) $('up-rumor').onclick = () => armFire('rumor', '계략 위보');
+  if ($('up-calm')) $('up-calm').onclick = () => armFire('calm', '계략 진정');
 }
 
 // === 부트 ===
