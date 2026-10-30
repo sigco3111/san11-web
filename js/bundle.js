@@ -144,8 +144,8 @@ class Map3D {
     this.view = 84;
     this.camTarget = new THREE.Vector3(8, 0, 4);
     this.camera = new THREE.OrthographicCamera();
-    this.scene.add(new THREE.HemisphereLight(0xcfe8ff, 0x3a2f1a, 1.0));
-    const sun = new THREE.DirectionalLight(0xfff2d8, 1.5);
+    this.scene.add(new THREE.HemisphereLight(0xcfe8ff, 0x3a2f1a, 1.25));
+    const sun = new THREE.DirectionalLight(0xfff2d8, 1.35);
     sun.position.set(50, 70, 25);
     sun.castShadow = true;
     sun.shadow.mapSize.set(2048, 2048);
@@ -821,13 +821,16 @@ function startGame(scenId, fid) {
   enterGame();
   game.log(`${DATA.officers[game.forces[fid].ruler].name_ko}(으)로 ${scenId}년 시나리오를 시작합니다.`, true);
   const cap = game.forceCities(fid)[0];
+  console.log('[probe] startGame cap=', cap && cap.id, cap && cap.lon, cap && cap.lat);
   if (cap) map.focusCity(cap);
+  console.log('[probe] after focus view=', map.view, 'target=', map.camTarget.x.toFixed(1), map.camTarget.z.toFixed(1));
   refreshAll();
 }
 function enterGame() {
   show('screen-game');
   if (!map) {
     map = new Map3D($('map-canvas'));
+    window.__map = map;
     map.onPick = onPick;
     (function loop() { map.render(); requestAnimationFrame(loop); })();
   }
