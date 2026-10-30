@@ -192,6 +192,7 @@ export class Game {
     this.pendingJoin = null;  // 턴 경계에서 인계할 세력
     this.logs = [];
     this.over = false;
+    this.unified = false; // R14: 통일 1회 판정 (관전 계속 중 재발동 방지)
     this.chronicle = []; // R14: 연감 — 【】 주요 사건 기록
   }
   log(msg, mine=false) {
@@ -782,11 +783,12 @@ export class Game {
       }
     }
     // R14: 천하 통일 판정 — 모든 도시를 한 세력이 제압 (설계안 102행 매뉴얼 문구)
-    if (!this.over) {
+    if (!this.over && !this.unified) {
       const owners = new Set(this.cities.map(c => c.force).filter(x => x != null));
       if (owners.size === 1) {
         const w = [...owners][0];
         this.over = true;
+        this.unified = true; // 관전 계속(over 해제) 후 재발동 방지
         this.log(`【통일】${this.forceName(w)}이(가) 모든 도시를 제압해 천하를 통일했습니다! (${this.year}년 ${this.month}월, ${this.turn}턴)`, true);
       }
     }
@@ -1327,7 +1329,7 @@ export class Game {
       const data = {
         scenId: this.scenId, year: this.year, month: this.month, dan: this.dan, turn: this.turn,
         cities: this.cities, forces: this.forces, units: this.units, nextUnitId: this.nextUnitId,
-        playerForce: this.playerForce, delegated: this.delegated, deadAck: this.deadAck, logs: this.logs.slice(-60), diplo: this.diplo, itemPool: this.itemPool, chronicle: this.chronicle, over: this.over, // R14
+        playerForce: this.playerForce, delegated: this.delegated, deadAck: this.deadAck, logs: this.logs.slice(-60), diplo: this.diplo, itemPool: this.itemPool, chronicle: this.chronicle, over: this.over, unified: this.unified, // R14
         officerStates: Object.fromEntries(Object.entries(this.officers).filter(([,o]) => o.state).map(([i,o]) => [i, o.state])),
       };
       localStorage.setItem(SAVE_KEY, JSON.stringify(data));
