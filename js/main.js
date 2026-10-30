@@ -1,7 +1,7 @@
 // 진입점: 화면 전환·UI·지도 연결
-import { Map3D, toWorld } from './map3d.js?v=r19';
-import { Game, SAVE_KEY, forceColor, UNIT_TYPES, josa, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL } from './game.js?v=r19';
-import { aiThink } from './ai.js?v=r19';
+import { Map3D, toWorld } from './map3d.js?v=r20';
+import { Game, SAVE_KEY, forceColor, UNIT_TYPES, josa, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL } from './game.js?v=r20';
+import { aiThink } from './ai.js?v=r20';
 
 const $ = id => document.getElementById(id);
 let DATA = null, game = null, map = null, selectedUnit = null, autoTimer = null, pendingFire = null; // R15: 직접 전법·계략 대기
@@ -9,7 +9,7 @@ let DATA = null, game = null, map = null, selectedUnit = null, autoTimer = null,
 async function loadData() {
   const [officers, skills, portraits, s184, s190, s251] = await Promise.all(
     ['data/officers670.json','data/skills.json','data/portraits.json','data/scenario-184.json','data/scenario-190.json','data/scenario-251.json']
-      .map(u => fetch(u + '?v=r19').then(r => r.json())));
+      .map(u => fetch(u + '?v=r20').then(r => r.json())));
   const byIdx = {};
   for (const o of officers) byIdx[o.idx] = o;
   DATA = { officers: byIdx, skills, portraits, scenarios: { '184': s184, '190': s190, '251': s251 } };
@@ -109,7 +109,49 @@ function refreshHud() {
   $('btn-delegate').textContent = game.delegated ? '직접 지휘' : '위임';
   $('hud-speed').classList.toggle('hidden', !game.delegated);
 }
+// === R19: 자체 합성 음향 (WebAudio, 외부 에셋 없음 - CC-BY 해당 없음). 기본 음소거, 토글, 설정 저장 ===
+const SND_KEY = 'cheonha-xi-web.sound.v1';
+let sndOn = false; try { sndOn = localStorage.getItem(SND_KEY) === '1'; } catch (e) {}
+let actx = null, musicTimer = null, sndLogN = 0, musicStep = 0;
+function sndCtx() { if (!actx) { const C = window.AudioContext || window.webkitAudioContext; if (C) actx = new C(); } if (actx && actx.state === 'suspended') actx.resume(); return actx; }
+function tone(f, t0, dur, type = 'sine', vol = 0.06) {
+  const c = sndCtx(); if (!c) return;
+  const o = c.createOscillator(), g = c.createGain();
+  o.type = type; o.frequency.setValueAtTime(f, c.currentTime + t0);
+  g.gain.setValueAtTime(0.0001, c.currentTime + t0);
+  g.gain.exponentialRampToValueAtTime(vol, c.currentTime + t0 + 0.02);
+  g.gain.exponentialRampToValueAtTime(0.0001, c.currentTime + t0 + dur);
+  o.connect(g); g.connect(c.destination); o.start(c.currentTime + t0); o.stop(c.currentTime + t0 + dur + 0.05);
+}
+function sfx(kind) {
+  if (!sndOn) return;
+  if (kind === 'hit') { tone(160, 0, 0.18, 'sawtooth', 0.07); tone(90, 0.03, 0.2, 'square', 0.05); }
+  else if (kind === 'strat') { tone(660, 0, 0.12, 'triangle'); tone(880, 0.1, 0.18, 'triangle'); }
+  else if (kind === 'duel') { tone(220, 0, 0.1, 'square', 0.06); tone(330, 0.12, 0.1, 'square', 0.06); tone(440, 0.24, 0.2, 'square', 0.06); }
+  else if (kind === 'city') { [392, 494, 587, 784].forEach((f, i) => tone(f, i * 0.12, 0.25, 'triangle', 0.07)); }
+  else if (kind === 'turn') { tone(330, 0, 0.1, 'sine', 0.04); }
+}
+function musicTick() { // 오음계(궁상각치우) 느린 선율 - 자체 작곡 (결정적 패턴)
+  if (!sndOn) return;
+  const scale = [262, 294, 330, 392, 440, 524], pat = [0, 2, 3, 2, 4, 3, 1, 2, 0, 3, 5, 3, 2, 1, 0, 1];
+  tone(scale[pat[musicStep % pat.length]] / 2, 0, 1.6, 'sine', 0.025); musicStep++;
+}
+function applySound() {
+  const b = document.getElementById('btn-sound'); if (b) { b.textContent = sndOn ? '음향 켬' : '음향 끔'; b.setAttribute('aria-pressed', sndOn ? 'true' : 'false'); }
+  if (musicTimer) { clearInterval(musicTimer); musicTimer = null; }
+  if (sndOn) { sndCtx(); musicTimer = setInterval(musicTick, 1800); }
+}
+function toggleSound() { sndOn = !sndOn; try { localStorage.setItem(SND_KEY, sndOn ? '1' : '0'); } catch (e) {} applySound(); if (sndOn) sfx('strat'); }
+function sndScanLogs() { // 새 로그 종류별 효과음 (켜져 있을 때만)
+  if (!game) return;
+  const L = game.logs; if (L.length < sndLogN) sndLogN = 0;
+  const fresh = L.slice(sndLogN); sndLogN = L.length;
+  if (!sndOn || !fresh.length) return;
+  const m = fresh.map(l => l.msg).join('\n');
+  if (/함락/.test(m)) sfx('city'); else if (/일기토|설전/.test(m)) sfx('duel'); else if (/【전법】/.test(m)) sfx('hit'); else if (/【계략】/.test(m)) sfx('strat');
+}
 function refreshLog() {
+  sndScanLogs();
   const el = $('logbox');
   el.innerHTML = game.logs.slice(-30).map(l => `<div class="${l.mine?'me':''}">[${l.t}] ${l.msg}</div>`).join('');
   el.scrollTop = el.scrollHeight;
@@ -696,6 +738,7 @@ async function boot() {
   $('sel-speed').onchange = () => { if (game?.delegated) setAuto(true); };
   $('btn-rot-l').onclick = () => map && map.rotate90(1);
   $('btn-rot-r').onclick = () => map && map.rotate90(-1);
+  if ($('btn-sound')) { $('btn-sound').onclick = toggleSound; applySound(); }
   $('btn-menu').onclick = () => modal('메뉴', [
     ['연감', () => showChronicle()], // R14
     ['저장하고 타이틀로', () => { game?.autosave(); location.reload(); }],
