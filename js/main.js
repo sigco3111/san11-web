@@ -170,7 +170,7 @@ function onPick(nx, ny) {
 }
 function officerRow(idx) {
   const o = DATA.officers[idx];
-  return `<div class="officer"><span class="pimg" style="${portraitCss(idx)}"></span><div><div class="nm">${o.name_ko} <span class="st">${o.name_zh}</span></div><div class="st">통${o.ldr} 무${o.war} 지${o.int} 정${o.pol} 매${o.chr} · ${skillKo(o.skill)} · 충성 ${o.state?.loyal ?? '-'}</div></div></div>`;
+  return `<div class="officer"><span class="pimg" style="${portraitCss(idx)}"></span><div><div class="nm">${o.name_ko} <span class="st">${o.name_zh}</span></div><div class="st">통${o.ldr} 무${o.war} 지${o.int} 정${o.pol} 매${o.chr} · ${o.skill ? o.skill + ' — ' + (DATA.skills[o.skill] || '') : '특기 없음'} · 충성 ${o.state?.loyal ?? '-'}</div></div></div>`;
 }
 function showCityPanel(c) {
   const p = $('panel'); p.classList.remove('hidden');
