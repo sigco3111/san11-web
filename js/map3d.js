@@ -429,20 +429,24 @@ export class Map3D {
     const g = new THREE.Group();
     const mat = c => new THREE.MeshLambertMaterial({ color: c, flatShading: true });
     const add = (geo, color, x=0, y=0, z=0, rx=0, ry=0, rz=0) => { const m = new THREE.Mesh(geo, mat(color)); m.position.set(x, y, z); m.rotation.set(rx, ry, rz); m.castShadow = true; g.add(m); return m; };
-    const soldier = (kind) => { // 보병: 무기를 과장되게 키워 줌 거리에서도 병종 구분 (저폴리 관례)
-      add(new THREE.ConeGeometry(0.45, 1.0, 5), 0x5a4a3a, 0, 0.65, 0);
+    const soldier = (kind) => { // 보병: 사람형 실루엣(다리·몸통·머리·투구) + 병종별 무기로 줌 아웃에서도 구분
+      add(new THREE.BoxGeometry(0.3, 0.42, 0.2), 0x3e3226, 0, 0.21, 0);            // 다리
+      add(new THREE.BoxGeometry(0.44, 0.55, 0.26), 0x5a4a3a, 0, 0.7, 0);           // 몸통(갑옷)
+      add(new THREE.BoxGeometry(0.5, 0.12, 0.3), 0x6a5a48, 0, 0.98, 0);            // 어깨
+      add(new THREE.SphereGeometry(0.16, 6, 5), 0xd8b896, 0, 1.16, 0);             // 머리
+      add(new THREE.ConeGeometry(0.19, 0.26, 6), 0x707078, 0, 1.34, 0);            // 투구
       if (kind === 'sword') { // 대형 방패 + 직검
-        add(new THREE.BoxGeometry(0.08, 0.7, 0.5), 0x8a4a3a, -0.4, 0.7, 0);
-        add(new THREE.BoxGeometry(0.1, 0.7, 0.04), 0xd8d8e0, 0.38, 1.0, 0, 0, 0, 0.4);
+        add(new THREE.BoxGeometry(0.08, 0.72, 0.5), 0x8a4a3a, -0.34, 0.75, 0);
+        add(new THREE.BoxGeometry(0.06, 0.8, 0.05), 0xd8d8e0, 0.36, 1.05, 0, 0, 0, 0.35);
       } else if (kind === 'spear') { // 머리 위로 솟은 굵은 장창 + 금속 촉
-        add(new THREE.CylinderGeometry(0.07, 0.07, 2.0, 5), 0x9a7a4a, 0.34, 1.3, 0);
-        add(new THREE.ConeGeometry(0.12, 0.4, 4), 0xd8d8e0, 0.34, 2.5, 0);
+        add(new THREE.CylinderGeometry(0.06, 0.06, 2.2, 5), 0x9a7a4a, 0.34, 1.35, 0);
+        add(new THREE.ConeGeometry(0.12, 0.42, 4), 0xd8d8e0, 0.34, 2.65, 0);
       } else if (kind === 'pike') { // 장극 + 대형 월아 날
-        add(new THREE.CylinderGeometry(0.07, 0.07, 1.7, 5), 0x9a7a4a, 0.34, 1.2, 0);
-        add(new THREE.BoxGeometry(0.55, 0.18, 0.08), 0xd8d8e0, 0.34, 2.0, 0);
-      } else if (kind === 'bow') { // 몸통만한 대형 활 아크
-        add(new THREE.TorusGeometry(0.55, 0.07, 5, 12, Math.PI), 0xc09a5a, 0.45, 1.0, 0, 0, 0, Math.PI/2);
-        add(new THREE.CylinderGeometry(0.02, 0.02, 1.1, 3), 0xe8e0d0, 0.45, 1.0, 0); // 시위
+        add(new THREE.CylinderGeometry(0.06, 0.06, 1.9, 5), 0x9a7a4a, 0.34, 1.2, 0);
+        add(new THREE.BoxGeometry(0.58, 0.18, 0.08), 0xd8d8e0, 0.34, 2.15, 0);
+      } else if (kind === 'bow') { // 몸통만한 대형 활 아크 + 시위
+        add(new THREE.TorusGeometry(0.55, 0.06, 5, 12, Math.PI), 0xc09a5a, 0.44, 1.0, 0, 0, 0, Math.PI/2);
+        add(new THREE.CylinderGeometry(0.02, 0.02, 1.08, 3), 0xe8e0d0, 0.44, 1.0, 0);
       }
     };
     const hull = (len, wid, sailH, tower = false, masts = 1) => {
