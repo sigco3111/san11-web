@@ -1775,4 +1775,27 @@ if (g.units.find(u => u.id === 9999) && g.units.find(u => u.id === 9999).qi === 
   d.burn = 2; d.qi = 100; d._stratTurn = -1; d.officers = [oi]; v.burn = 0; d.troops = 5000; g.units = g.units.filter(x => x !== a); const w2 = mk(9404, e0, 100.4, 36, [oi]); w2.burn = 2; w2.qi = 100; w2._stratTurn = -1; aiThink(g, e0); if (w2.burn !== 0 && d.burn !== 0) fail('AI 소화 미작동');
   console.log('R32 소화 게이트 PASS (화계 후 3턴 지속, 턴당 병력 감소, 소화 기력 10, 적 소화 불가)');
 }
+// === R33: 복병(숲 한정) 게이트 ===
+{
+  const fail = m => { console.log('FAIL: R33 ' + m); process.exit(1); };
+  const g = new Game(JSON.parse(JSON.stringify(scen)), JSON.parse(JSON.stringify(officers)), {}, 0); g.units = [];
+  const f0 = g.playerForce, e0 = g.cities.find(c => c.force != null && c.force !== f0).force;
+  const oi = Number(Object.keys(g.officers).find(k => g.officers[k] && g.officers[k].int >= 85)); g.officers[oi].int = 100; g.mindDefense = () => 0;
+  const mk = (id, force, x, z, type, offs) => { const u = { id, force, officers: offs, troops: 5000, type, x, z, path: [], tx: null, tz: null, targetCity: null, label: 'T' + id, qi: 100, conf: 0 }; g.units.push(u); return u; };
+  g.forestFn = (x, z) => x < 101;
+  const a = mk(9501, f0, 100, 36, 'spear', [oi]), d = mk(9502, e0, 100.5, 36, 'spear', []);
+  const cv = mk(9503, f0, 100.2, 35, 'cav', [oi]), rm = mk(9504, f0, 100.2, 37, 'ram', [oi]), op = mk(9505, f0, 102, 36, 'spear', [oi]);
+  if (!g.canAmbush(a) || g.canAmbush(cv) || g.canAmbush(rm) || g.canAmbush(op)) fail('숲/병종 조건');
+  let tries = 0, hit = false; while (!hit && tries++ < 200) { a.qi = 100; a._stratTurn = -1; d.troops = 5000; d.qi = 100; g.fireStrat(a.id, 'ambush', {}); hit = d.troops < 5000; }
+  if (!hit || d.qi !== 80 || Math.round(5000 * 0.93) !== d.troops) fail('복병 효과 ' + d.troops + '/' + d.qi);
+  if (a.qi !== 90) fail('기력 소비 ' + a.qi);
+  a._stratTurn = g.turn; if (g.fireStrat(a.id, 'ambush', {})) fail('턴당 1회');
+  cv.qi = 100; cv._stratTurn = -1; if (g.fireStrat(cv.id, 'ambush', {})) fail('기병 불가'); 
+  g.forestFn = () => false; a._stratTurn = -1; a.qi = 100; if (g.fireStrat(a.id, 'ambush', {})) fail('숲 밖 불가');
+  g.forestFn = (x) => x < 101; g.units = g.units.filter(u => u.id === 9501); const a2 = g.units[0]; a2.troops = 5000; a2.qi = 100; a2.force = f0;
+  const y = mk(9506, e0, 100.3, 36, 'spear', [oi]); y.qi = 100; y._stratTurn = -1; let aiHit = false;
+  for (let i = 0; i < 40 && !aiHit; i++) { y.qi = 100; y._stratTurn = -1; y.troops = 5000; a2.troops = 5000; aiThink(g, e0); aiHit = a2.troops < 5000 && y.qi <= 90; }
+  if (!aiHit) fail('AI 복병 미사용 (a2.troops=' + a2.troops + ', y.qi=' + y.qi + ')');
+  console.log('R33 복병 게이트 PASS (숲/병종 조건, 7% 피해+기력 -20, 기력 10, 턴당 1회, 기병·병기·숲 밖 불가, AI 복병 사용)');
+}
 console.log('sample logs:'); for (const l of g.logs.slice(-8)) console.log(' ', l.t, l.msg);
