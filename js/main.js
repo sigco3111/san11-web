@@ -676,4 +676,5 @@ async function boot() {
     ['계속', () => {}],
   ]);
 }
+window.addEventListener?.('resize', () => { if (game) document.documentElement.style.setProperty('--hud-h', ($('hud-top').offsetHeight + 6) + 'px'); }); // R14: 회전·뷰포트 변경 대응
 boot();
