@@ -1291,10 +1291,11 @@ export class Game {
   _tacMove(d, dx, dz, dist) { // 격퇴/끌어당김: 0.4 단위로 나아가며 지형·타 부대에 막히면 그 앞에서 정지. 이동 거리 반환
     let moved = 0;
     for (let k = 0; k < Math.ceil(dist / 0.4); k++) {
-      const nx = d.x + dx * 0.4, nz = d.z + dz * 0.4;
+      const st = Math.min(0.4, dist - moved); if (st <= 1e-9) break; // 마지막 걸음은 남은 거리만큼만 (1칸=0.9가 1.2로 넘치지 않게)
+      const nx = d.x + dx * st, nz = d.z + dz * st;
       if (!Number.isFinite(nx + nz) || !this._tacStandable(d, nx, nz)) break;
       if (this.units.some(v => v !== d && Math.hypot(v.x - nx, v.z - nz) < 0.35)) break;
-      d.x = nx; d.z = nz; moved += 0.4;
+      d.x = nx; d.z = nz; moved += st;
     }
     if (moved > 0 && d.tx != null && d.tz != null) { const np = this.findPath(d, d.tx, d.tz); if (np) d.path = np; else { d.path = []; d.tx = null; d.tz = null; d.targetCity = null; } } // 재탐색 실패 시 명령 취소(정지 부대 방지, AI가 다음 턴 재명령)
     return moved;
