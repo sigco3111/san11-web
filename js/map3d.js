@@ -1,6 +1,6 @@
 // 3D 저폴리 지도 엔진 (Three.js) - 고정 등각 아이소메트릭 + 계단식 지형 + 성곽/숲
 import * as THREE from 'three';
-import { loadGLBAssets } from './assets-3d.js';
+import { loadGLBAssets, applyEnvironment } from './assets-3d.js';
 
 const LON0 = 100, LON1 = 126.5, LAT0 = 21.5, LAT1 = 43;
 export function toWorld(lon, lat) {
@@ -269,6 +269,20 @@ export class Map3D {
     im.receiveShadow = true; im.castShadow = true;
     this.terrainGroup.add(im);
     this.terrainMesh = im;
+    this.baseColors = Float32Array.from(colors); // R16: 사계절 재채색용 기본 색
+  }
+  setSeason(month) { // R16: 사계절 표현 (설계안 지도) — 월에 따라 지형 색조 변경
+    if (!this.terrainMesh || !this.baseColors || this.season === month) return;
+    this.season = month;
+    const tint = month >= 3 && month <= 5 ? [1.0, 1.03, 0.95] : month >= 6 && month <= 8 ? [0.9, 1.06, 0.88] : month >= 9 && month <= 11 ? [1.1, 0.97, 0.8] : [1.15, 1.15, 1.2]; // 봄·여름·가을·겨울
+    const winter = tint[0] > 1.1;
+    const col = new THREE.Color(), snow = new THREE.Color(0.93, 0.95, 1.0);
+    for (let i = 0; i < this.baseColors.length / 3; i++) {
+      col.setRGB(Math.min(1, this.baseColors[i*3] * tint[0]), Math.min(1, this.baseColors[i*3+1] * tint[1]), Math.min(1, this.baseColors[i*3+2] * tint[2]));
+      if (winter) col.lerp(snow, 0.28);
+      this.terrainMesh.setColorAt(i, col);
+    }
+    this.terrainMesh.instanceColor.needsUpdate = true;
   }
 
   buildWater() {
@@ -411,18 +425,69 @@ export class Map3D {
     const m = this.cityMeshes[cityId]; if (m) m.flag.material.color.set(colorHex);
   }
 
+  unitBody(type) { // R16: 병종별 저폴리 모델 (임시 단일 원뿔 대체, 자체 제작 primitives)
+    const g = new THREE.Group();
+    const mat = c => new THREE.MeshLambertMaterial({ color: c, flatShading: true });
+    const add = (geo, color, x=0, y=0, z=0, rx=0, ry=0, rz=0) => { const m = new THREE.Mesh(geo, mat(color)); m.position.set(x, y, z); m.rotation.set(rx, ry, rz); m.castShadow = true; g.add(m); return m; };
+    const soldier = (spearLen = 0, bow = false, blade = false, pikeHead = false) => {
+      add(new THREE.ConeGeometry(0.45, 1.0, 5), 0x5a4a3a, 0, 0.65, 0);
+      if (spearLen) add(new THREE.CylinderGeometry(0.03, 0.03, spearLen, 4), 0x8a7a5a, 0.3, 0.45 + spearLen/2, 0);
+      if (pikeHead) add(new THREE.BoxGeometry(0.3, 0.06, 0.06), 0xb8b8c0, 0.3, 1.62, 0);
+      if (bow) add(new THREE.TorusGeometry(0.35, 0.04, 4, 10, Math.PI), 0x7a5a3a, 0.35, 0.8, 0, 0, 0, Math.PI/2);
+      if (blade) add(new THREE.BoxGeometry(0.08, 0.5, 0.02), 0xb8b8c0, 0.3, 0.9, 0, 0, 0, 0.5);
+    };
+    const hull = (len, wid, sailH, tower = false, masts = 1) => {
+      add(new THREE.BoxGeometry(wid, 0.3, len), 0x6a4a2a, 0, 0.3, 0);
+      add(new THREE.BoxGeometry(wid*0.7, 0.25, len*0.7), 0x7a5a3a, 0, 0.5, 0);
+      for (let mi = 0; mi < masts; mi++) {
+        const mz = masts === 1 ? 0 : (mi === 0 ? -len*0.25 : len*0.25);
+        add(new THREE.CylinderGeometry(0.04, 0.04, sailH, 4), 0x4a3a2a, 0, 0.5 + sailH/2, mz);
+        add(new THREE.BoxGeometry(0.05, sailH*0.55, sailH*0.45), 0xd8cfc0, 0, 0.6 + sailH*0.6, mz);
+      }
+      if (tower) add(new THREE.BoxGeometry(0.4, 0.5, 0.4), 0x5a4a3a, 0, 0.85, -len*0.15);
+    };
+    switch (type) {
+      case 'sword': soldier(0, false, true); break;
+      case 'spear': soldier(1.4); break;
+      case 'pike': soldier(1.2, false, false, true); break;
+      case 'bow': soldier(0, true); break;
+      case 'cav': // 말 + 기수
+        add(new THREE.BoxGeometry(0.5, 0.45, 1.0), 0x6a4a30, 0, 0.55, 0);
+        add(new THREE.BoxGeometry(0.2, 0.3, 0.35), 0x6a4a30, 0, 0.75, 0.55);
+        add(new THREE.ConeGeometry(0.3, 0.8, 5), 0x5a4a3a, 0, 1.25, 0); break;
+      case 'ram': // 충거: 수레 + 충각
+        add(new THREE.BoxGeometry(0.9, 0.6, 1.1), 0x5a4a3a, 0, 0.6, 0);
+        add(new THREE.CylinderGeometry(0.12, 0.12, 1.6, 6), 0x7a6a4a, 0, 0.5, 0.2, Math.PI/2, 0, 0); break;
+      case 'tower': // 정란: 높은 탑
+        add(new THREE.BoxGeometry(0.8, 1.8, 0.8), 0x6a5a45, 0, 0.9, 0);
+        add(new THREE.BoxGeometry(0.95, 0.25, 0.95), 0x5a4a3a, 0, 1.85, 0); break;
+      case 'beast': // 목수: 짐승 + 등 위 구조물
+        add(new THREE.BoxGeometry(0.6, 0.5, 1.0), 0x7a5a3a, 0, 0.6, 0);
+        add(new THREE.BoxGeometry(0.35, 0.35, 0.4), 0x7a5a3a, 0, 0.75, 0.6);
+        for (const [lx, lz] of [[-0.2, 0.3], [0.2, 0.3], [-0.2, -0.3], [0.2, -0.3]]) add(new THREE.CylinderGeometry(0.07, 0.07, 0.5, 4), 0x5a4a30, lx, 0.25, lz);
+        add(new THREE.BoxGeometry(0.5, 0.3, 0.6), 0x8a6a4a, 0, 0.95, -0.1); break;
+      case 'catapult': // 투석기: 대좌 + 발사대 + 투석통
+        add(new THREE.BoxGeometry(0.7, 0.3, 0.7), 0x5a4a3a, 0, 0.35, 0);
+        add(new THREE.CylinderGeometry(0.05, 0.05, 1.1, 4), 0x7a6a4a, 0, 0.8, 0, 0.6, 0, 0);
+        add(new THREE.BoxGeometry(0.25, 0.2, 0.25), 0x4a3a2a, 0, 1.25, -0.45); break;
+      case 'junk': hull(1.3, 0.55, 1.0); break;
+      case 'lou': hull(1.6, 0.65, 1.2, true); break;
+      case 'dou': hull(1.9, 0.75, 1.4, true, 2); break;
+      default: soldier();
+    }
+    return g;
+  }
   addUnit(unit, colorHex) {
     const g = new THREE.Group();
-    const body = new THREE.Mesh(new THREE.ConeGeometry(0.45, 1.0, 5),
-      new THREE.MeshLambertMaterial({ color: 0x5a4a3a, flatShading: true }));
-    body.position.y = 0.65; body.castShadow = true; g.add(body);
+    const body = this.unitBody(unit.type ?? 'sword'); // R16: 병종별 모델
+    g.add(body);
     const banner = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.45, 0.05),
       new THREE.MeshBasicMaterial({ color: new THREE.Color(colorHex) }));
     banner.position.set(0.35, 1.45, 0); g.add(banner);
     const label = this.makeLabel(unit.label, 0.6); label.position.y = 2.1; g.add(label);
     const y = this.levelAtWorld(unit.x, unit.z) * STEP;
     g.position.set(unit.x, Math.max(y, WATER_Y + 0.2), unit.z);
-    g.userData.unitId = unit.id; body.userData.unitId = unit.id;
+    g.userData.unitId = unit.id;
     this.unitGroup.add(g);
     this.unitMeshes[unit.id] = { group: g, banner };
   }
