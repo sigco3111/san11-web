@@ -1,6 +1,6 @@
 // 진입점: 화면 전환·UI·지도 연결
 import { Map3D, toWorld } from './map3d.js';
-import { Game, SAVE_KEY, forceColor, UNIT_TYPES, josa, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS } from './game.js';
+import { Game, SAVE_KEY, forceColor, UNIT_TYPES, josa, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD } from './game.js';
 import { aiThink } from './ai.js';
 
 const $ = id => document.getElementById(id);
@@ -345,7 +345,21 @@ function showCityPanel(c) {
     병사 ${c.troops.toLocaleString()} · 내구 ${c.hp}/${c.maxhp}<br>
     금 ${c.gold.toLocaleString()} · 병량 ${c.food.toLocaleString()}<br>
     상업 ${c.commerce} · 농업 ${c.farm}${c.metropolis ? ' · 대도시' : ''}${c.specialty.length ? ' · 특색: '+c.specialty.join(',') : ''}<br>
-    병장: 창${c.spears} 극${c.pikes} 노${c.bows} 군마${c.horses}</p>`;
+    병장: 창${c.spears} 극${c.pikes} 노${c.bows} 군마${c.horses} · 병기: 충거${c.rams ?? 0} 정란${c.towers ?? 0} 목수${c.beasts ?? 0} 투석${c.catapults ?? 0} · 선박: 주가${c.junks ?? 0} 누선${c.lous ?? 0} 투함${c.dous ?? 0}</p>`;
+  if (mine) {
+    if (game.cityFac(c, '공방').length) {
+      html += `<p style="font-size:12px">병기 생산 (공방): ` + Object.entries(SIEGE_BUILD).map(([k, s]) => {
+        const cost = Math.round(s.gold * ((c.specialty ?? []).includes('병기') ? 0.75 : 1));
+        return `<button class="cmd cmd-siege" data-k="${k}">${s.name} (금${cost})</button>`;
+      }).join(' ') + '</p>';
+    }
+    if (game.cityFac(c, '조선소').length) {
+      html += `<p style="font-size:12px">선박 건조 (조선소): ` + Object.entries(SHIP_BUILD).map(([k, s]) => {
+        const cost = Math.round(s.gold * ((c.specialty ?? []).includes('선박') ? 0.75 : 1));
+        return `<button class="cmd cmd-ship" data-k="${k}">${s.name} (금${cost})</button>`;
+      }).join(' ') + '</p>';
+    }
+  }
   if (game.delegated && c.force != null && c.force !== game.playerForce && game.forces[c.force]?.alive) {
     html += `<button class="cmd" id="cmd-join">이 세력으로 참가 (${game.forceName(c.force)})</button>`;
   }
@@ -382,6 +396,8 @@ function showCityPanel(c) {
     $('cmd-dev-c').onclick = () => { game.develop(c.id, 'commerce'); refreshAll(); showCityPanel(c); };
     $('cmd-dev-f').onclick = () => { game.develop(c.id, 'farm'); refreshAll(); showCityPanel(c); };
     $('cmd-recruit').onclick = () => { game.recruit(c.id); refreshAll(); showCityPanel(c); };
+    p.querySelectorAll('.cmd-siege').forEach(b => b.onclick = () => { game.produceSiege(c.id, b.dataset.k); refreshAll(); showCityPanel(c); });
+    p.querySelectorAll('.cmd-ship').forEach(b => b.onclick = () => { game.produceShip(c.id, b.dataset.k); refreshAll(); showCityPanel(c); });
     $('cmd-dispatch').onclick = () => showDispatch(c);
     $('cmd-move').onclick = () => showMove(c);
     $('cmd-tech').onclick = () => showTech();
@@ -405,7 +421,12 @@ function showDispatch(c) {
   const cap = Math.min(c.troops, 20000);
   p.innerHTML = `<h3>${c.name_ko} 출진 편성</h3>
     <p>병사: <input id="dsp-troops" type="number" value="${Math.min(5000, cap)}" min="500" max="${cap}" step="500" style="width:90px"></p>
-    <p>병종: <select id="dsp-type">${Object.entries(UNIT_TYPES).map(([k,v]) => `<option value="${k}">${v.name}</option>`).join('')}</select></p>
+    <p>병종: <select id="dsp-type">${Object.entries(UNIT_TYPES).map(([k,v]) => {
+      const need = Object.entries(v.cost)[0];
+      const have = need ? (c[need[0]] ?? 0) : 1;
+      const stock = need ? ` (보유 ${have})` : '';
+      return `<option value="${k}" ${have < 1 ? 'disabled' : ''}>${v.name}${stock}</option>`;
+    }).join('')}</select></p>
     <p>부장 (최대 3):</p>
     ${c.officers.map(i => `<label style="display:block"><input type="checkbox" class="dsp-off" value="${i}"> ${DATA.officers[i].name_ko} (무${DATA.officers[i].war}/통${DATA.officers[i].ldr})</label>`).join('')}
     <p><button class="cmd" id="dsp-go">출진</button> <button class="cmd" id="dsp-back">취소</button></p>
