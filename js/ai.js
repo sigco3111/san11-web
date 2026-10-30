@@ -165,6 +165,8 @@ export function aiThink(game, fid, legion = null) { // legion 지정 시 그 군
     if (!game.units.includes(u) || (u._stratTurn ?? -1) === game.turn) continue;
     const caster = u.officers.map(i => game.officers[i]).sort((a, b) => b.int - a.int)[0];
     if (!caster) continue;
+    const burning = game.units.find(x => x.force === u.force && (x.burn ?? 0) > 0 && inR(x.x, x.z));
+    if (burning && caster.int >= 60 && (u.qi ?? 100) >= 10 && game.fireStrat(u.id, 'douse', { type: 'unit', id: burning.id })) continue; // R32 소화
     const tgt = game.units.find(x => x.force !== u.force && !game.isPeace(u.force, x.force) && !game.unitHasSkill(x, '위장') && inR(x.x, x.z));
     const ally = game.units.find(x => x !== u && x.force === u.force && (x.conf ?? 0) > 0 && inR(x.x, x.z));
     if (ally && caster.int >= 70 && (u.qi ?? 100) >= 10) game.fireStrat(u.id, 'calm', { type: 'unit', id: ally.id }); // R18 진정: 혼란 아군 우선
