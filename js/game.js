@@ -142,6 +142,9 @@ export const ITEMS = [
 // === 공적·관작 (자체 수치) ===
 const RANKS = [[2,'주자사'],[4,'주목'],[6,'우림중랑장'],[8,'오관중랑장'],[12,'대장군'],[14,'대사마'],[18,'공'],[20,'왕']]; // 설계안 사다리(황제는 R14 통합). 황건 세력은 작위 불가
 const MERIT = { develop: 30, recruit: 80, facility: 100, tactic: 40, stratagem: 30, capture: 150 }; // 공적 부여량 (자체 수치)
+const DEBATE_CARDS = { // R11: 설전 화술 (자체 명칭·수치). int=서적 미보유 시 필요 지력, cd=재사용 대기 합
+  질타: { dmg: 12 }, 강변: { dmg: 24, cd: 2, int: 80 }, 반박: { counter: 8 }, 경청: { heal: 12, cd: 2 }, 도발: { seal: true, cd: 3, int: 85 },
+};
 
 export class Game {
   constructor(scen, officers, skills, playerForceId) {
@@ -151,6 +154,7 @@ export class Game {
     this.year = scen.year; this.month = scen.month; this.dan = 1; // 1~3 (旬)
     this.turn = 1;
     this.pendingDuel = null; // R10: 진행 중 일기토 (저장 대상 아님)
+    this.pendingDebate = null; // R11: 진행 중 설전 (저장 대상 아님)
     this.cities = scen.cities.map(c => ({ ...c, commerce: Math.round(c.revenue/10), farm: Math.round(c.harvest/100), hp: c.maxhp, officers: [], troops: c.troops, facilities: [] }));
     this.cityById = {}; this.cities.forEach(c => this.cityById[c.id] = c);
     this.forces = {};
@@ -352,6 +356,7 @@ export class Game {
       return true;
     }
     this.log(`【외교】${this.forceName(tid)}이(가) ${this.forceName(fid)}의 동맹 제의를 거절했습니다`, fid === this.playerForce || tid === this.playerForce);
+    this.tryDebate({ kind: 'alliance', fid, tid, cityId }); // R11: 결렬 시 설전 발동 가능
     return false;
   }
   requestTruce(fid, tid, cityId) { // 정전 요청: 불화 이하 대상, 금 2000·AP 30, 성공 시 관계 +30 (자체 수치)
@@ -368,6 +373,7 @@ export class Game {
       return true;
     }
     this.log(`【외교】${this.forceName(tid)}이(가) 정전 요청을 거절했습니다`, fid === this.playerForce || tid === this.playerForce);
+    this.tryDebate({ kind: 'truce', fid, tid, cityId }); // R11: 결렬 시 설전 발동 가능
     return false;
   }
   demandSurrender(fid, tid, cityId) { // 항복 권고: 대상 도시 2개 이하, 금 1000·AP 30, 매력 보정 (자체 수치)
@@ -505,6 +511,7 @@ export class Game {
       return true;
     }
     this.log(`${c.name_ko}의 ${t.name_ko} 등용에 실패했습니다`, c.force === this.playerForce);
+    this.tryDebate({ kind: 'recruit', fid: c.force, tid: c.force, cityId, officerIdx }); // R11: 실패 시 설전 발동 가능
     return false;
   }
   moveOfficers(fromCity, toCity, idxs) {
@@ -572,7 +579,7 @@ export class Game {
 
   // === 턴 진행 ===
   endTurn(aiThink) {
-    if (this.pendingDuel) return; // R10: 일기토 결판 전 턴 진행 불가
+    if (this.pendingDuel || this.pendingDebate) return; // R10/R11: 일기토·설전 결판 전 턴 진행 불가
     // 전 부대 기력 회복
     for (const u of this.units) u.qi = Math.min(100, (u.qi ?? 100) + 10);
     // 부대 이동·전투
@@ -1038,6 +1045,91 @@ export class Game {
     return d;
   }
   duelAuto(d) { let guard = 0; while (d && !d.done && guard++ < 200) this.duelTick(d, this.duelPolicy(d, 'a'), this.duelPolicy(d, 'b')); }
+  // === R11: 설전 — 화술 카드 논전 (설계안 114행: 외교·등용 협상에서 발생, 논객 특기 강함 / 서적=모든 화술, 규칙·수치 자체) ===
+  hasItemKindOff(idx, kind) { return (this.officers[idx]?.state?.items ?? []).some(id => ITEMS.find(x => x.id === id)?.kind === kind); }
+  debateCards(idx) { // 사용 가능 화술: 서적 보유 시 전부 해금, 아니면 지력 요구 충족분 (자체 규칙)
+    const o = this.officers[idx], book = this.hasItemKindOff(idx, 'book');
+    const out = {};
+    for (const [k, v] of Object.entries(DEBATE_CARDS)) if (book || (v.int ?? 0) <= (o?.int ?? 0)) out[k] = v;
+    return out;
+  }
+  debateCardList() { return DEBATE_CARDS; }
+  debateCardUsable(d, k, card) { const s = d[k]; return !!card && !s.seal && !!this.debateCards(s.o)[card] && (s.cds[card] ?? 0) <= 0; }
+  startDebate(aIdx, bIdx, ctx) { return { a: { o: aIdx, hp: 100, cds: {}, seal: false }, b: { o: bIdx, hp: 100, cds: {}, seal: false }, bout: 0, log: [], done: false, winner: null, ctx }; }
+  debatePolicy(d, k) { // AI 화술 선택 (플레이어 위임 시에도 동일 규칙)
+    const s = d[k], o = d[k === 'a' ? 'b' : 'a'];
+    const usable = c => this.debateCardUsable(d, k, c);
+    if (s.hp <= 25 && usable('경청')) return '경청';
+    if (usable('도발') && Math.random() < 0.3) return '도발';
+    if (o.hp >= 40 && usable('반박') && Math.random() < 0.35) return '반박';
+    if (usable('강변')) return '강변';
+    return '질타';
+  }
+  debateTick(d, cardA, cardB) { // 1합 진행: 양측 화술 동시 공개
+    if (d.done) return d;
+    d.bout++;
+    const name = s => this.officers[s.o].name_ko;
+    const mult = s => (0.8 + (this.officers[s.o]?.int ?? 50) / 200) * (this.officers[s.o]?.skill === '논객' ? 1.25 : 1); // 지력 보정 + 논객 특기 +25% (자체)
+    const okCard = (k, c) => { const s = d[k]; return c && this.debateCards(s.o)[c] && (s.cds[c] ?? 0) <= 0; };
+    if (!okCard('a', cardA)) cardA = null;
+    if (!okCard('b', cardB)) cardB = null;
+    if (d.a.seal) { if (cardA) d.log.push(`${name(d.a)}은(는) 도발에 말려 화술을 쓰지 못했습니다`); cardA = null; d.a.seal = false; }
+    if (d.b.seal) { if (cardB) d.log.push(`${name(d.b)}은(는) 도발에 말려 화술을 쓰지 못했습니다`); cardB = null; d.b.seal = false; }
+    const defA = cardA ? DEBATE_CARDS[cardA] : null, defB = cardB ? DEBATE_CARDS[cardB] : null;
+    let dmgA = 0, dmgB = 0; // dmgA: a가 b에게 주는 피해
+    if (defA?.dmg) { if (cardB === '반박') { dmgB += Math.round(DEBATE_CARDS.반박.counter * mult(d.b)); d.log.push(`${name(d.b)}의 반박! ${name(d.a)}의 ${cardA}을(를) 되돌림`); } else dmgA += Math.round(defA.dmg * mult(d.a)); }
+    if (defB?.dmg) { if (cardA === '반박') { dmgA += Math.round(DEBATE_CARDS.반박.counter * mult(d.a)); d.log.push(`${name(d.a)}의 반박! ${name(d.b)}의 ${cardB}을(를) 되돌림`); } else dmgB += Math.round(defB.dmg * mult(d.b)); }
+    if (defA?.heal) { d.a.hp = Math.min(100, d.a.hp + defA.heal); d.log.push(`${name(d.a)}의 경청 (논리 +${defA.heal})`); }
+    if (defB?.heal) { d.b.hp = Math.min(100, d.b.hp + defB.heal); d.log.push(`${name(d.b)}의 경청 (논리 +${defB.heal})`); }
+    if (defA?.seal) { d.b.seal = true; d.log.push(`${name(d.a)}의 도발! ${name(d.b)}의 다음 화술 봉인`); }
+    if (defB?.seal) { d.a.seal = true; d.log.push(`${name(d.b)}의 도발! ${name(d.a)}의 다음 화술 봉인`); }
+    d.b.hp -= dmgA; d.a.hp -= dmgB;
+    if (dmgA) d.log.push(`${name(d.a)}의 ${cardA} → ${dmgA} 피해`);
+    if (dmgB) d.log.push(`${name(d.b)}의 ${cardB} → ${dmgB} 피해`);
+    for (const [s, c] of [[d.a, cardA], [d.b, cardB]]) { for (const k of Object.keys(s.cds)) s.cds[k]--; if (c && DEBATE_CARDS[c]?.cd) s.cds[c] = DEBATE_CARDS[c].cd; }
+    d.log.push(`${d.bout}합: ${name(d.a)} ${Math.max(0, d.a.hp)} / ${name(d.b)} ${Math.max(0, d.b.hp)}`);
+    if (d.a.hp <= 0 || d.b.hp <= 0 || d.bout >= 15) this.finishDebate(d);
+    return d;
+  }
+  finishDebate(d) { // 승패 적용: 제의측(a) 승리 시 협상 재심 성공, 패배 시 결렬·관계 -5, 15합 무승부 가능 (자체)
+    d.done = true;
+    const an = this.officers[d.a.o].name_ko, bn = this.officers[d.b.o].name_ko;
+    let w = null;
+    if (d.a.hp > 0 && d.b.hp <= 0) w = 'a';
+    else if (d.b.hp > 0 && d.a.hp <= 0) w = 'b';
+    else if (d.a.hp > 0 && d.b.hp > 0 && d.a.hp !== d.b.hp) w = d.a.hp > d.b.hp ? 'a' : 'b';
+    d.winner = w;
+    const ctx = d.ctx ?? {};
+    if (w === 'a') {
+      if (ctx.kind === 'alliance') { const dd = this.diploOf(ctx.fid, ctx.tid); dd.allianceUntil = this.turn + 24; this.log(`【설전】${an}이(가) ${bn}을(를) 논파! ${this.forceName(ctx.fid)}과(와) ${this.forceName(ctx.tid)}이(가) 24턴 동맹을 맺었습니다!`, true); }
+      else if (ctx.kind === 'truce') { const dd = this.diploOf(ctx.fid, ctx.tid); dd.truceUntil = this.turn + 12; const v = this.changeRelation(ctx.fid, ctx.tid, 30); this.log(`【설전】${an}이(가) ${bn}을(를) 논파! 정전 성립 (12턴간 공격 금지, 관계 → ${v})`, true); }
+      else if (ctx.kind === 'recruit') { const c = this.cityById[ctx.cityId], t = this.officers[ctx.officerIdx]; if (c && t?.state && t.state.force == null) { t.state.status = 'serving'; t.state.force = c.force; if (!c.officers.includes(t.idx)) c.officers.push(t.idx); this.gainMerit(d.a.o, MERIT.recruit); this.log(`【설전】${an}의 설파 끝에 ${t.name_ko}이(가) 【${this.forceName(c.force)}】에 등용되었습니다! (${c.name_ko})`, true); } }
+    } else if (w === 'b') {
+      if (ctx.kind === 'alliance' || ctx.kind === 'truce') { const v = this.changeRelation(ctx.fid, ctx.tid, -5); this.log(`【설전】${bn}이(가) ${an}을(를) 논파 — 협상 결렬 (관계 → ${v} ${this.relStage(v)})`, ctx.fid === this.playerForce || ctx.tid === this.playerForce); }
+      else this.log(`【설전】${bn}이(가) ${an}을(를) 논파 — 등용 결렬`, ctx.fid === this.playerForce);
+    } else this.log(`【설전】${an} vs ${bn} — ${d.bout}합 무승부`, ctx.fid === this.playerForce || ctx.tid === this.playerForce);
+    this.pendingDebate = null;
+    return d;
+  }
+  debateAuto(d) { let guard = 0; while (d && !d.done && guard++ < 100) this.debateTick(d, this.debatePolicy(d, 'a'), this.debatePolicy(d, 'b')); }
+  tryDebate(ctx) { // 협상 결렬 시 30% 설전 발동 (자체 확률). 제의측 지력 최고 무장 vs 상대측 지력 최고 무장 (등용은 사자 vs 대상 무장)
+    const c = this.cityById[ctx.cityId];
+    let aIdx = null, bIdx = null;
+    if (ctx.kind === 'recruit') {
+      aIdx = (c?.officers ?? []).slice().sort((x, y) => (this.officers[y]?.int ?? 0) - (this.officers[x]?.int ?? 0))[0] ?? null;
+      bIdx = ctx.officerIdx;
+    } else {
+      aIdx = (c?.officers ?? []).slice().sort((x, y) => (this.officers[y]?.int ?? 0) - (this.officers[x]?.int ?? 0))[0] ?? null;
+      bIdx = Object.values(this.officers).filter(o => o.state?.force === ctx.tid).sort((x, y) => y.int - x.int)[0]?.idx ?? null;
+    }
+    if (aIdx == null || bIdx == null) return false;
+    if (Math.random() >= 0.3) return false;
+    const d = this.startDebate(aIdx, bIdx, ctx);
+    this.log(`【설전】${this.officers[aIdx].name_ko} vs ${this.officers[bIdx].name_ko} — 설전 시작!`, ctx.fid === this.playerForce || ctx.tid === this.playerForce);
+    if ((ctx.fid !== this.playerForce && ctx.tid !== this.playerForce) || this.delegated) this.debateAuto(d); // AI끼리·위임 시 같은 규칙으로 자동 진행
+    else this.pendingDebate = d;
+    return true;
+  }
   autosave() {
     try {
       const data = {
