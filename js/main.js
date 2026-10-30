@@ -257,7 +257,7 @@ function showUnitPanel(uid) {
   const mine = u.force === game.playerForce && !game.delegated;
   p.innerHTML = `<h3>${u.label} (${UNIT_TYPES[u.type].name})</h3>
     <p>소속: ${game.forceName(u.force)} · 병력 ${u.troops.toLocaleString()}<br>
-    부장: ${u.officers.map(i => DATA.officers[i].name_ko).join(', ')}</p>
+    부장: ${u.officers.map(i => DATA.officers[i].name_ko).join(', ')}<br>기력 ${u.qi ?? 100} / 100${(u.conf ?? 0) > 0 ? ` · <span style='color:#e66'>혼란 ${u.conf}턴</span>` : ''}</p>
     ${mine ? '<p style="color:#ffd700">목표 도시를 클릭하면 이동 명령을 내립니다.</p>' : ''}
     <p><button class="cmd" id="up-close">닫기</button></p>`;
   $('up-close').onclick = () => { $('panel').classList.add('hidden'); selectedUnit = null; };
