@@ -1,4 +1,4 @@
-import { TACTICS, RULES, Game, STRATS, UNIT_TYPES, ITEMS, FACILITIES, AB_BRANCHES, AB_P, AB_SKILL, isWaterAt, isSeaAt, isRiverAt, isFordAt, ARTS, FIELD_FACS, TECH_P, TECH_GOLD } from '../js/game.js';
+import { TACTICS, RULES, Game, josa, STRATS, UNIT_TYPES, ITEMS, FACILITIES, AB_BRANCHES, AB_P, AB_SKILL, isWaterAt, isSeaAt, isRiverAt, isFordAt, ARTS, FIELD_FACS, TECH_P, TECH_GOLD } from '../js/game.js';
 import { aiThink } from '../js/ai.js';
 import { readFileSync } from 'fs';
 const officers = {}; for (const o of JSON.parse(readFileSync('data/officers670.json'))) officers[o.idx] = o;
@@ -2539,6 +2539,14 @@ console.log('sample logs:'); for (const l of g.logs.slice(-8)) console.log(' ', 
   console.log('R105 로스터·위치 정합 게이트 PASS (정상주둔 유지/타도시중복 정리/재야 정리/배치 보존/기록도시 복귀/멱등)');
 }
 
+// === R106: 조사(을/를·이/가) 판정 게이트 — 부대 라벨('장막 5k')처럼 끝이 숫자·라틴·공백이면 마지막 한글 음절 받침 기준 ===
+{
+  const fail = m => { console.log('FAIL: R106 ' + m); process.exit(1); };
+  const cases = [['장막 5k', ['을','를'], '장막 5k을'], ['손견 8k', ['이','가'], '손견 8k이'], ['적병 3k', ['은','는'], '적병 3k은'], ['장막', ['을','를'], '장막을'], ['진류', ['을','를'], '진류를'], ['완', ['은','는'], '완은'], ['함락!', ['을','를'], '함락!를']];
+  for (const [n, p, e] of cases) { const r = josa(n, p); if (r !== e) fail(n + ' → ' + r + ' (기대 ' + e + ')'); }
+  console.log('R106 조사 판정 게이트 PASS (라벨 접미 7예)');
+}
+
 // === R104: 대시보드 부족 경고 문구 — 개월 수 기간임이 드러나는 표기 게이트 ===
 {
   const fail = m => { console.log('FAIL: R104-wording ' + m); process.exit(1); };
@@ -2546,4 +2554,4 @@ console.log('sample logs:'); for (const l of g.logs.slice(-8)) console.log(' ', 
   for (const t of ['개월 후 병량 부족 예상', '개월 후 금 부족 예상']) if (!src.includes(t)) fail('기간 표기 누락: ' + t);
   if (/LackMonth\}월 (병량|금) 부족 예상/.test(src)) fail('구 표기(달력 월 오독 가능) 잔존');
   console.log('R104 부족 경고 기간 표기 게이트 PASS');
-      }
+    }
