@@ -1,12 +1,12 @@
 // 진입점: 화면 전환·UI·지도 연결
-import { Map3D, toWorld } from './map3d.js?v=r107';
-import { Game, SAVE_KEY, RULES, forceColor, UNIT_TYPES, ARTS, OFFICES, restoreOfficer, FIELD_FACS, TRAPS, SHIP_TYPES, TAC_SHIP_OK, josa, josaRo, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL, AB_PICK } from './game.js?v=r107';
-import { aiThink } from './ai.js?v=r107';
+import { Map3D, toWorld } from './map3d.js?v=r108';
+import { Game, SAVE_KEY, RULES, forceColor, UNIT_TYPES, ARTS, OFFICES, restoreOfficer, FIELD_FACS, TRAPS, SHIP_TYPES, TAC_SHIP_OK, josa, josaRo, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL, AB_PICK } from './game.js?v=r108';
+import { aiThink } from './ai.js?v=r108';
 
 const $ = id => document.getElementById(id);
 let DATA = null, game = null, map = null, selectedUnit = null, autoTimer = null, pendingFire = null; // R15: 직접 전법·계략 대기
 
-const BUILD_ID = 'r107'; // 빌드 ID (index.html의 meta[name=build]와 같아야 함 - 오래된 캐시된 index와 새 스크립트의 혼합 감지)
+const BUILD_ID = 'r108'; // 빌드 ID (index.html의 meta[name=build]와 같아야 함 - 오래된 캐시된 index와 새 스크립트의 혼합 감지)
 function checkBuildSkew() {
   const idx = document.querySelector('meta[name="build"]')?.content;
   if (idx === BUILD_ID) { sessionStorage.removeItem('cheonha-xi-web.skew'); return; } // 일치하면 재시도 표식 해제
@@ -19,7 +19,7 @@ checkBuildSkew();
 async function loadData() {
   const [officers, skills, portraits, s184, s190, s251] = await Promise.all(
     ['data/officers670.json','data/skills.json','data/portraits.json','data/scenario-184.json','data/scenario-190.json','data/scenario-251.json']
-      .map(u => fetch(u + '?v=r107').then(r => r.json())));
+      .map(u => fetch(u + '?v=r108').then(r => r.json())));
   const byIdx = {};
   for (const o of officers) byIdx[o.idx] = o;
   DATA = { officers: byIdx, skills, portraits, scenarios: { '184': s184, '190': s190, '251': s251 } };
@@ -179,6 +179,10 @@ function doTurn() {
   refreshAll();
   if (selectedUnit != null && !$('panel').classList.contains('hidden')) { // 턴 처리 후 열려 있는 부대 패널 갱신 (건설 완료·병력·기력 반영)
     if (game.units.find(x => x.id === selectedUnit)) showUnitPanel(selectedUnit); else { $('panel').classList.add('hidden'); selectedUnit = null; }
+  } else if ($('panel').dataset.view === 'city' && lastCityId != null && !$('panel').classList.contains('hidden')) { // R108: 열려 있는 도시 패널(기본 화면)도 턴 반영 — 병력·로스터 정체 방지. 스크롤 위치는 유지하고, 출진·기교 등 하위 화면의 입력 중인 상태는 덮지 않음
+    const c = game.cityById[lastCityId];
+    if (c) { const p = $('panel'), st = p.scrollTop; showCityPanel(c); p.scrollTop = st; }
+    else { $('panel').classList.add('hidden'); lastCityId = null; }
   }
   checkGameOver();
   if (game.pendingDuel) showDuel(); // R10: 일기토 모달
@@ -433,7 +437,7 @@ function onPick(nx, ny) {
   selectedUnit = null;
   showCityPanel(c);
 }
-function showAdvisor(c) { // 군사 임명: 지력 70 이상만 (설계안 명시)
+function showAdvisor(c) { $('panel').dataset.view='advisor'; // 군사 임명: 지력 70 이상만 (설계안 명시)
   const p = $('panel');
   const f = game.forces[c.force];
   const serving = Object.values(DATA.officers).filter(o => o.state?.force === c.force).sort((a, b) => b.int - a.int);
@@ -449,7 +453,7 @@ function showAdvisor(c) { // 군사 임명: 지력 70 이상만 (설계안 명�
   p.querySelectorAll('.cmd-adv').forEach(b => b.onclick = () => { game.appointAdvisor(Number(b.dataset.i)); refreshAll(); showAdvisor(c); });
   $('adv-back').onclick = () => showCityPanel(c);
 }
-function showLegions(c) { // 군단 편성: 도시 묶음을 도독에게 위임 (제2군단~, 제1군단은 군주 직할)
+function showLegions(c) { $('panel').dataset.view='legion'; // 군단 편성: 도시 묶음을 도독에게 위임 (제2군단~, 제1군단은 군주 직할)
   const p = $('panel');
   const f = game.forces[c.force];
   const own = game.forceCities(c.force);
@@ -489,7 +493,7 @@ function showLegions(c) { // 군단 편성: 도시 묶음을 도독에게 위임
   };
   render();
 }
-function showTrade(c) { // 상인: 월별 환율, 금↔병량 (자체 수치)
+function showTrade(c) { $('panel').dataset.view='trade'; // 상인: 월별 환율, 금↔병량 (자체 수치)
   const p = $('panel');
   const rate = game.tradeRate();
   const myF = game.forces[c.force];
@@ -507,7 +511,7 @@ function showTrade(c) { // 상인: 월별 환율, 금↔병량 (자체 수치)
   };
   render();
 }
-function showDiplomacy(c) {
+function showDiplomacy(c) { $('panel').dataset.view='diplo';
   const p = $('panel'); p.classList.remove('hidden');
   const myF = game.forces[c.force];
   const others = Object.values(game.forces).filter(f => f.alive && f.id !== c.force);
@@ -587,7 +591,7 @@ function showFacilities(c) {
   });
   $('cmd-fac-back').onclick = () => showCityPanel(c);
 }
-function showTech() {
+function showTech() { $('panel').dataset.view='tech';
   const f = game.forces[game.playerForce];
   const p = $('panel'); p.classList.remove('hidden');
   let html = `<h3>기교 연구 <small>(기교P ${f?.techP ?? 0}${game.forceHasSkill(game.playerForce, '지도') ? ' · 특기 「지도」: 연구 금 반액' : ''})</small></h3>`;
@@ -642,7 +646,7 @@ function officerRow(idx) {
 }
 let lastCityId = null;
 function showCityPanel(c) {
-  lastCityId = c.id;
+  lastCityId = c.id; $('panel').dataset.view = 'city';
   if (c.force !== game.playerForce && !game.delegated && !game.inVision(c.lon, c.lat)) { // R14: 시야 밖 적 도시 — 상세 정보 비공개
     const p = $('panel'); p.classList.remove('hidden');
     const owner = c.force != null && game.forces[c.force]?.alive ? game.forceName(c.force) : '공백지';
@@ -752,7 +756,7 @@ function showCityPanel(c) {
     $('panel').classList.add('hidden'); refreshLog();
   };
 }
-function showDispatch(c) {
+function showDispatch(c) { $('panel').dataset.view='dispatch';
   const p = $('panel');
   const capBase = game.unitTroopCap(c.force); // 기본 상한 (군제개혁 +3000 포함)
   const leadOf = () => Number(document.querySelector('.dsp-off:checked')?.value ?? -1); // 주장 = DOM 순 첫 번째 선택 무장 (dispatch officerIdxs[0]과 동일 규칙)
@@ -806,6 +810,7 @@ function showMove(c) {
   };
 }
 function showUnitPanel(uid) {
+  $('panel').dataset.view = 'unit';
   const u = game.units.find(x => x.id === uid); if (!u) return;
   const p = $('panel'); p.classList.remove('hidden');
   const mine = u.force === game.playerForce && !game.delegated;
