@@ -2156,6 +2156,21 @@ console.log('sample logs:'); for (const l of g.logs.slice(-8)) console.log(' ', 
   const built = (g.fieldFacs ?? []).find(x => x.force === ai);
   if (!built) fail('AI 시설 미건설');
   if (built.type !== '불화살함정' && built.type !== '낙석') fail('근접 위협에 함정 아닌 ' + built.type);
+  // R63: 건설 지속·완공·발동 — 건설 부대가 같은 think의 후반 섹션에서 재지정(tx)되면 다음 fieldTurn이 건설을 중단시키는 회귀 방지
+  const leftAtBuild = built.left;
+  g.fieldTurn();
+  const still = (g.fieldFacs ?? []).find(x => x.force === ai);
+  if (!still) fail('R63: 건설이 다음 fieldTurn에 중단됨');
+  if (still.left >= leftAtBuild) fail('R63: 건설 진행 안 됨');
+  for (let k = 0; k < 5 && still.left > 0; k++) g.fieldTurn();
+  if (still.left > 0) fail('R63: 건설 미완료');
+  const foe = g.units.find(u => u.id === 9002);
+  const beforeT = foe.troops;
+  foe.x = still.x; foe.z = still.z; foe.conf = 0; foe.slowT = 0; // 적이 완공 함정 반경 내로 접근
+  g.fieldTurn();
+  if (foe.troops >= beforeT) fail('R63: 함정 피해 없음');
+  if (!(foe.conf > 0 || foe.slowT > 0)) fail('R63: 함정 부가효과(혼란·둔화) 없음');
+  if ((g.fieldFacs ?? []).some(x => x.force === ai && (x.type === '낙석' || x.type === '불화살함정'))) fail('R63: 함정 1회 발동 후 미소멸');
   // 원거리 위협: 지원 시설 없으면 진/채
   const g2 = new Game(JSON.parse(JSON.stringify(scen)), JSON.parse(JSON.stringify(officers)), {}, 0);
   g2.units = [];
@@ -2177,5 +2192,5 @@ console.log('sample logs:'); for (const l of g.logs.slice(-8)) console.log(' ', 
   g3.units.push({ id: 9005, force: ai, officers: [g3.forces[ai].ruler], troops: 5000, type: 'spear', x: p3[0], z: p3[1], path: [], tx: null, tz: null, targetCity: null, label: 'AI대기 5k', qi: 100, conf: 0 });
   aiThink(g3, ai);
   if ((g3.fieldFacs ?? []).some(x => x.force === ai)) fail('위협 없는데 건설');
-  console.log('R-facai AI 야전시설 게이트 PASS (근접 함정·원거리 진/채·무위협 미건설)');
-                                                                         }
+  console.log('R-facai AI 야전시설 게이트 PASS (근접 함정·원거리 진/채·무위협 미건설·R63 건설지속/완공/함정발동)');
+      }
