@@ -1176,7 +1176,7 @@ export class Game {
     if (u.food == null && this.econV === 2) u.food = Math.round(u.troops * RULES.garrisonFood * RULES.unitFoodMonths); // 휴대 병량 지연 초기화 (econV 2 전용)
     const eat = this.econV === 2 ? Math.round(u.troops * RULES.garrisonFood / 3) : 0; // 턴(10일)당 소비 = 월 소비의 1/3
     if (this.econV === 2) { // 구 경제(econV 1)는 부대 병량 소비·탈영 없음
-      if (u.food >= eat) u.food -= eat;
+      if (u.food >= eat && (eat > 0 || u.food > 0)) u.food -= eat; // R80: 턴 소비가 0으로 반내림되는 미세 부대(병력 3 이하)도 병량 0이면 탈영·전멸 — 기존에는 eat=0이라 굶주림 불가
       else {
         u.food = 0;
         const des = Math.max(1, Math.round(u.troops * 0.03)); // 병량 0: 턴당 3% 탈영 (자체 수치)
