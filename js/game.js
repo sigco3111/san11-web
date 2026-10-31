@@ -365,7 +365,7 @@ export class Game {
   repairFac(uid, facId) { // 부대가 인접 시설 보수 시작 (이동하면 중단). 성공 시 true. 금 불요 (매뉴얼)
     const u = this.units.find(x => x.id === uid), f = (this.fieldFacs ?? []).find(f => f.id === facId);
     const why = this.canRepairFac(u, f); if (why) { this.lastRepairWhy = why; return false; }
-    u.repairing = facId; u.path = []; u.tx = null; u.tz = null; u.targetCity = null; u.targetFac = null;
+    u.repairing = facId; u.path = []; u.tx = null; u.tz = null; u.targetCity = null; u.targetFac = null; u.targetRepair = null;
     this.log(`【야전】${josa(u.label, ['이','가'])} ${f.type} 보수를 시작했습니다`, u.force === this.playerForce);
     return true;
   }
@@ -1051,6 +1051,17 @@ export class Game {
       if (Math.hypot(ep[0] - f.x, ep[1] - f.z) > 1.6) { this.log(`${josa(u.label, ['은','는'])} 수로가 닿지 않아 ${josa(f.type, ['을','를'])} 공격할 수 없습니다`, u.force === this.playerForce); return false; }
     }
     u.targetFac = facId; u.targetCity = null; u.tx = f.x; u.tz = f.z; u.path = path;
+    return true;
+  }
+  orderFacRepair(uid, facId) { // R88: 손상 아군 시설로 이동해 보수 — 매뉴얼 P.41 인접 제약은 보수 시작 시점에 유지 (이동 후 보수). 성공 시 true
+    const u = this.units.find(x => x.id === uid), f = (this.fieldFacs ?? []).find(f => f.id === facId);
+    if (!u || !f) return false;
+    if (f.force !== u.force || f.left > 0 || TRAPS[f.type]) return false; // 아군 완공 시설만, 함정 제외
+    const sp = FIELD_FACS[f.type]; if (!sp || f.hp >= sp.hp) return false; // 손상 시설만
+    if (SIEGE_TYPES.has(u.type)) return false; // 매뉴얼: 병기는 補修 불가
+    const path = this.findPath(u, f.x, f.z);
+    if (!path) return false;
+    u.targetRepair = facId; u.targetCity = null; u.targetFac = null; u.tx = f.x; u.tz = f.z; u.path = path;
     return true;
   }
 
