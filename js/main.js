@@ -1,12 +1,12 @@
 // 진입점: 화면 전환·UI·지도 연결
-import { Map3D, toWorld } from './map3d.js?v=r121';
-import { Game, SAVE_KEY, RULES, forceColor, UNIT_TYPES, ARTS, OFFICES, restoreOfficer, FIELD_FACS, TRAPS, SHIP_TYPES, TAC_SHIP_OK, josa, josaRo, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL, AB_PICK } from './game.js?v=r121';
-import { aiThink } from './ai.js?v=r121';
+import { Map3D, toWorld } from './map3d.js?v=r122';
+import { Game, SAVE_KEY, RULES, forceColor, UNIT_TYPES, ARTS, OFFICES, restoreOfficer, FIELD_FACS, TRAPS, SHIP_TYPES, TAC_SHIP_OK, josa, josaRo, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL, AB_PICK } from './game.js?v=r122';
+import { aiThink } from './ai.js?v=r122';
 
 const $ = id => document.getElementById(id);
 let DATA = null, game = null, map = null, selectedUnit = null, autoTimer = null, pendingFire = null; // R15: 직접 전법·계략 대기
 
-const BUILD_ID = 'r121'; // 빌드 ID (index.html의 meta[name=build]와 같아야 함 - 오래된 캐시된 index와 새 스크립트의 혼합 감지)
+const BUILD_ID = 'r122'; // 빌드 ID (index.html의 meta[name=build]와 같아야 함 - 오래된 캐시된 index와 새 스크립트의 혼합 감지)
 function checkBuildSkew() {
   const idx = document.querySelector('meta[name="build"]')?.content;
   if (idx === BUILD_ID) { sessionStorage.removeItem('cheonha-xi-web.skew'); return; } // 일치하면 재시도 표식 해제
@@ -19,7 +19,7 @@ checkBuildSkew();
 async function loadData() {
   const [officers, skills, portraits, s184, s190, s251] = await Promise.all(
     ['data/officers670.json','data/skills.json','data/portraits.json','data/scenario-184.json','data/scenario-190.json','data/scenario-251.json']
-      .map(u => fetch(u + '?v=r121').then(r => r.json())));
+      .map(u => fetch(u + '?v=r122').then(r => r.json())));
   const byIdx = {};
   for (const o of officers) byIdx[o.idx] = o;
   DATA = { officers: byIdx, skills, portraits, scenarios: { '184': s184, '190': s190, '251': s251 } };
@@ -795,16 +795,17 @@ function showDispatch(c) { $('panel').dataset.view='dispatch';
     const inp = $('dsp-troops'); inp.max = t; if (Number(inp.value) > t) inp.value = t;
     $('dsp-cap').textContent = `상한 ${t.toLocaleString()} = 기본 ${capBase.toLocaleString()}(군제 포함) + 주장 관직 +${ofc.toLocaleString()}`;
   };
-  document.querySelectorAll('.dsp-off').forEach(cb => cb.onchange = () => { const lim = game.dispatchCap(c.force); if (document.querySelectorAll('.dsp-off:checked').length > lim) { cb.checked = false; alert(`한 부대에는 무장 ${lim}명까지 편성할 수 있습니다.`); } refreshCap(); }); // 3명 제한: 체크 단계에서 거부·안내
+  document.querySelectorAll('.dsp-off').forEach(cb => cb.onchange = () => { const lim = game.dispatchCap(c.force); if (document.querySelectorAll('.dsp-off:checked').length > lim) { cb.checked = false; game.log(`한 부대에는 무장 ${lim}명까지 편성할 수 있습니다.`, true); refreshLog(); } refreshCap(); }); // 3명 제한: 체크 단계에서 거부·안내
   refreshCap();
   $('dsp-go').onclick = () => {
     const troops = Math.min(Math.min(c.troops, capTotal()), Number($('dsp-troops').value));
     const type = $('dsp-type').value;
     const offs = [...document.querySelectorAll('.dsp-off:checked')].map(x => Number(x.value)).slice(0, game.dispatchCap(c.force));
-    if (!offs.length) { alert('부장을 선택하세요.'); return; }
+    if (!offs.length) { game.log('부장을 선택하세요.', true); refreshLog(); return; }
     const u = game.dispatch(c.id, offs, troops, type);
-    if (!u) { alert('출진할 수 없습니다 (행동력·병장·병력 부족).'); return; }
+    if (!u) { game.log('출진할 수 없습니다 (행동력·병장·병력 부족).', true); refreshLog(); return; }
     map.addUnit(worldUnit(u), forceColor(u.force));
+    game.autosave(); // R122: R13 정책 정합 — 출진도 실행 직후 영속 (턴 종료 전 리로드 소실 방지)
     refreshHud(); refreshLog(); showCityPanel(c);
   };
 }
@@ -821,6 +822,7 @@ function showMove(c) {
     const to = Number($('mv-to').value);
     if (!offs.length || !to) return;
     game.moveOfficers(c.id, to, offs);
+    game.autosave(); // R122: 무장 이동도 실행 직후 영속 (R13 정책 정합)
     refreshHud(); refreshLog(); showCityPanel(c);
   };
 }
