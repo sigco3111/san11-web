@@ -158,7 +158,7 @@ export const FACILITIES = {
   '공방':   { cost: 300, turns: 3, desc: '병기 생산: 충거·정란·목수·투석기 (특색 병기 도시 할인)' },
   '조선소': { cost: 300, turns: 3, desc: '선박 건조: 주가·누선·투함 (특색 선박 도시 할인)' },
   // R13: PK 신 내정시설 10종 (설계안 121행 — 부절대·군사부는 설계안 명명, 나머지는 자체 설계·자체 수치)
-  '부절대': { cost: 400, turns: 3, desc: '턴 시작 행동력 회복 +10 (합산 최대 +30)' },
+  '부절대': { cost: 400, turns: 3, desc: '턴 시작 행동력 회복 +10 (합산 최대 +30) · 이 도시에 억류된 포로의 충성 추가 하락 (매뉴얼)' }, // R111: 포로 충성 효과는 매뉴얼 명시(符節台)
   '군사부': { cost: 400, turns: 3, desc: '이 도시의 군사 커맨드(출진·징병·생산) 행동력 25% 절감' },
   '인재부': { cost: 400, turns: 3, desc: '이 도시의 인사 커맨드(수색·등용·이동) 행동력 25% 절감' },
   '외교부': { cost: 400, turns: 3, desc: '이 도시의 외교 커맨드 행동력 25% 절감' },
@@ -274,7 +274,7 @@ export class Game {
     this.econGraceUntil = null; // 구 병량 경제 저장 마이그레이션 유예 종료 턴 (null=유예 없음, 신규 게임은 즉시 적용)
     this.econV = 2; // 병량 경제 규칙 버전: 1=구(월 수입·주둔 소비 없음·구 봉록), 2=신(계절 수입·주둔/휴대 소비·신 봉록). 신규 게임은 2, 구 저장은 로드 시 1 복원
     this.pendingDebate = null; // R11: 진행 중 설전 (저장 대상 아님)
-    this.cities = scen.cities.map(c => ({ ...c, commerce: Math.round(c.revenue/10), farm: Math.round(c.harvest/100), hp: c.maxhp, officers: [], troops: c.troops, facilities: [] }));
+    this.cities = scen.cities.map(c => ({ ...c, commerce: Math.round(c.revenue/10), farm: Math.round(c.harvest/100), hp: c.maxhp, officers: [], troops: c.troops, facilities: [], captives: [] })); // R111: 억류 포로 명단
     this.cityById = {}; this.cities.forEach(c => this.cityById[c.id] = c);
     this.forces = {};
     for (const f of scen.forces) this.forces[f.id] = { id: f.id, ruler: f.ruler, alive: true, ap: 60, techP: 0, techs: Object.fromEntries(TECH_BRANCHES.map(b => [b, 0])), advisor: null, legions: [], ab: { '공격': 0, '방어': 0, '계략': 0, '내정': 0 } };
@@ -345,6 +345,7 @@ export class Game {
         cities: cities.length,
         officers: new Set(cities.flatMap(c => c.officers).concat(this.units.filter(u => u.force === fid).flatMap(u => u.officers).filter(i => this.officers[i]))).size,
         garrison: cities.reduce((sm, c) => sm + c.troops, 0),
+        captives: cities.reduce((sm, c) => sm + (c.captives ?? []).length, 0), // R111: 억류 포로 수 (매뉴얼 情報의 捕虜 항목)
         fieldUnits: units.length,
         fieldTroops: units.reduce((sm, u) => sm + u.troops, 0),
         gold: cities.reduce((sm, c) => sm + c.gold, 0),
@@ -555,7 +556,7 @@ export class Game {
   tacMult(u, m) { return m > 1 && (u.type === 'spear' || u.type === 'pike') && this.forces[u.force]?.arts?.['창병단련'] ? m * 1.15 : m; } // 개별 기교 창병단련: 창병·극병 전법 위력 +15% (자체 잠정값)
   fireSpread(att, d) { // 개별 기교 신화계: 화계가 성공하면 대상 주변 3칸(2.7) 안 다른 적 부대에도 번짐 (자체 잠정값: 병력 -6%·불 3턴)
     if (!this.forces[att.force]?.arts?.['신화계']) return 0; let n = 0;
-    for (const x of [...this.units]) { if (x === d || x.force === att.force || this.isPeace(att.force, x.force) || Math.hypot(x.x - d.x, x.z - d.z) > 2.7) continue; const l = Math.round(x.troops * 0.06 * (1 + 0.15 * this.techLv(att.force, '화공'))); x.troops = Math.max(0, x.troops - l); x.burn = 3; n++; if (x.troops <= 0) { this._rehomeOfficers(x); this.units = this.units.filter(y => y !== x); this.log(`${x.label} 부대가 전멸했습니다`, false); } }
+    for (const x of [...this.units]) { if (x === d || x.force === att.force || this.isPeace(att.force, x.force) || Math.hypot(x.x - d.x, x.z - d.z) > 2.7) continue; const l = Math.round(x.troops * 0.06 * (1 + 0.15 * this.techLv(att.force, '화공'))); x.troops = Math.max(0, x.troops - l); x.burn = 3; n++; if (x.troops <= 0) { this._rehomeOfficers(x, att.force); this.units = this.units.filter(y => y !== x); this.log(`${x.label} 부대가 전멸했습니다`, false); } }
     if (n) this.log(`【기교】신화계로 불이 주변 적 부대 ${n}개로 번졌습니다`, att.force === this.playerForce); return n;
   }
   unitTechAtk(u) { const b = TYPE2TECH[u.type]; return (b ? 1 + 0.05 * this.techLv(u.force, b) : 1) * ((u.type === 'spear' || u.type === 'pike') && this.forces[u.force]?.arts?.['정예창병'] ? 1.08 : 1); }
@@ -864,7 +865,7 @@ export class Game {
       if (r && r !== f.rank) {
         const emp = r === '황제' && f.rank !== '황제';
         f.rank = r;
-        for (const o of Object.values(this.officers)) if (o.state?.force === f.id) o.state.loyal = Math.min(100, (o.state.loyal ?? 70) + (emp ? 10 : 5)); // R14: 황제 즉위는 +10 (자체)
+        for (const o of Object.values(this.officers)) if (o.state?.force === f.id && o.state.status !== 'captive') o.state.loyal = Math.min(100, (o.state.loyal ?? 70) + (emp ? 10 : 5)); // R14: 황제 즉위는 +10 (자체) / R111: 억류 포로는 원 세력 관작 충성 상승 제외 (포로 충성은 억류 요인으로만 변동 — 자체 정합)
         this.log(emp ? `【황제】${josa(this.forceName(f.id), ['이','가'])} 황제에 올랐습니다! 소속 무장 충성 대폭 상승, 기교P 매월 +20` : `【관작】${josa(this.forceName(f.id), ['이','가'])} ${josaRo(r)} 승진했습니다! 소속 무장 충성 상승`, true);
       }
     }
@@ -923,11 +924,20 @@ export class Game {
   freeOfficers(cityId) { // 그 도시에 머무는 재야 무장
     return Object.values(this.officers).filter(o => o.state?.status === 'free' && o.state.city === cityId);
   }
+  captiveOfficers(cityId) { // R111: 그 도시에 억류된 포로 (매뉴얼 捕虜 — 拠点陥落·部隊壊滅·一騎討ち敗北로 발생)
+    return (this.cityById[cityId]?.captives ?? []).map(i => this.officers[i]).filter(o => o?.state?.status === 'captive' && o.state.city === cityId);
+  }
+  availableOfficers(fid) { // R111: 소속 무장 중 포로 제외 (임무·연구·편성 등 활동 대상)
+    return this.forceOfficers(fid).filter(o => o.state?.status !== 'captive');
+  }
   recruitChance(cityId, officerIdx) { // 등용 성공률 (자체 수치): 사자 매력·상대 매력·충성·군주 매력 반영
     const c = this.cityById[cityId], t = this.officers[officerIdx];
     if (!c || c.force == null || !this.forces[c.force]?.alive || !c.officers.length) return 0;
-    if (!t?.state || t.state.status !== 'free' || t.state.city !== cityId) return 0;
-    if (t.state.found === false) return 0; // 미발견 재야는 수색 필요
+    if (!t?.state) return 0;
+    const ownCap = t.state.status === 'captive' && t.state.city === cityId && t.state.captor === c.force; // R111: 자세력이 억류한 포로 (매뉴얼 登用 대상)
+    if (!(t.state.status === 'free' && t.state.city === cityId) && !ownCap) return 0;
+    if (t.state.force != null && this.forces[t.state.force]?.ruler === t.idx) return 0; // R111: 타 세력 군주는 등용 불가 (매뉴얼 登用できない武将 — 他勢力の君主)
+    if (t.state.status === 'free' && t.state.found === false) return 0; // 미발견 재야는 수색 필요
     const envoy = Math.max(...c.officers.map(i => this.officers[i].chr));
     const ruler = this.officers[this.forces[c.force].ruler]?.chr ?? 50;
     const loyal = t.state.loyal ?? 70;
@@ -937,7 +947,7 @@ export class Game {
     const rf = this.forces[c.force];
     if (rf && rel.hate.includes(rf.ruler)) mod -= 0.15; // 군주 혐오
     if (rel.sworn.some(i => { const f2 = this.officers[i]?.state?.force; return f2 != null && f2 !== c.force; }) || (rel.spouse != null && (this.officers[rel.spouse]?.state?.force != null) && this.officers[rel.spouse].state.force !== c.force)) mod -= 0.2; // 의형제·부부가 타 세력 소속
-    return Math.max(0.1, Math.min(0.9, 0.45 + (envoy - t.chr)/200 + (ruler - 50)/500 - loyal/400 + (this.cityHasSkill(c, '등용') ? 0.1 : 0) + (this.cityHasSkill(c, '이간') ? 0.1 : 0) + mod)); // R17: 이간 특기 +0.1 (자체 수치)
+    return Math.max(0.1, Math.min(0.9, 0.45 + (envoy - t.chr)/200 + (ruler - 50)/500 - loyal/400 + (this.cityHasSkill(c, '등용') ? 0.1 : 0) + (this.cityHasSkill(c, '이간') ? 0.1 : 0) + (ownCap ? 0.15 : 0) + mod)); // R17: 이간 특기 +0.1 / R111: 포로 등용 +0.15 (자체 수치)
   }
   recruitOfficer(cityId, officerIdx) { // 재야 무장 등용: 금 100, AP 20 (자체 규칙)
     const c = this.cityById[cityId], f = this.forces[c.force];
@@ -952,6 +962,7 @@ export class Game {
     if (Math.random() < p) {
       const envoyIdx = c.officers.length ? [...c.officers].sort((a, b) => this.officers[b].chr - this.officers[a].chr)[0] : null;
       if (envoyIdx != null) this.gainMerit(envoyIdx, MERIT.recruit);
+      if (t.state.captor != null) { c.captives = (c.captives ?? []).filter(j => j !== officerIdx); delete t.state.captor; delete t.state.captiveSince; } // R111: 포로 등용 — 억류 명단에서 해제
       t.state.status = 'serving'; t.state.force = c.force;
       if (!c.officers.includes(officerIdx)) c.officers.push(officerIdx);
       this.log(`【등용】${josa(t.name_ko, ['이','가'])} 【${this.forceName(c.force)}】에 등용되었습니다 (${c.name_ko}, 사자 매력 ${envoy})`, true);
@@ -960,6 +971,31 @@ export class Game {
     this.log(`${c.name_ko}의 ${t.name_ko} 등용에 실패했습니다`, c.force === this.playerForce);
     this.tryDebate({ kind: 'recruit', fid: c.force, tid: c.force, cityId, officerIdx }); // R11: 실패 시 설전 발동 가능
     return false;
+  }
+  releaseCaptive(cityId, officerIdx) { // R111: 포로 석방 (매뉴얼 追放 커맨드 — 敵の捕虜の解放 시 ▲技巧P / AP·기교P 수치·원 세력 복귀 처리는 자체)
+    const c = this.cityById[cityId], t = this.officers[officerIdx];
+    if (!c || c.force == null || !this.forces[c.force]?.alive) return false;
+    if (!t?.state || t.state.status !== 'captive' || t.state.city !== cityId || t.state.captor !== c.force) return false;
+    if (this._blocked(c)) return false; // 군단 소속
+    const f = this.forces[c.force];
+    const apc = Math.ceil(20 * this.apMult(c, 'personnel')); // R13 인재부
+    if (f.ap < apc) return false;
+    f.ap -= apc;
+    c.captives = (c.captives ?? []).filter(j => j !== officerIdx);
+    delete t.state.captor; delete t.state.captiveSince;
+    const orig = t.state.force;
+    let dest = '재야';
+    if (orig != null && this.forces[orig]?.alive) {
+      const home = this.cities.filter(cc => cc.force === orig).sort((p, q) => Math.hypot(p.lon - c.lon, p.lat - c.lat) - Math.hypot(q.lon - c.lon, q.lat - c.lat))[0];
+      t.state.status = 'serving'; t.state.city = home?.id ?? null;
+      if (home && !home.officers.includes(officerIdx)) home.officers.push(officerIdx);
+      t.state.loyal = Math.min(100, (t.state.loyal ?? 70) + 10); // 석방 은혜 충성 회복 (자체 수치)
+      dest = this.forceName(orig);
+    } else { t.state.status = 'free'; t.state.force = null; t.state.found = false; } // 원 세력 멸망 — 그 자리에서 재야
+    this.gainTechP(c.force, 50); // 매뉴얼: 포로 해방 ▲技巧P (수치 자체)
+    this.log(`【석방】${josa(t.name_ko, ['이','가'])} 풀려났습니다 (${c.name_ko} → ${dest}, 기교P +50)`, c.force === this.playerForce);
+    this.autosave();
+    return true;
   }
   moveOfficers(fromCity, toCity, idxs) {
     const a = this.cityById[fromCity], b = this.cityById[toCity], f = this.forces[a.force];
@@ -1303,6 +1339,12 @@ export class Game {
         if (o.state.city != null && this.cityById[o.state.city]) this.log(`${josa(o.name_ko, ['이','가'])} ${this.cityById[o.state.city].name_ko}에 등장했습니다 (재야)`);
       }
     }
+    // R111: 포로 충성 하락 (매뉴얼 — 捕虜の「忠誠」이 내려가며 부절대 개발 도시는 더 빠름. 기본 -2/턴·부절대 추가 -2는 자체 수치)
+    for (const o of Object.values(this.officers)) {
+      const st = o?.state; if (!st || st.status !== 'captive') continue;
+      const hold = this.cityById[st.city];
+      st.loyal = Math.max(0, (st.loyal ?? 70) - 2 - (hold && this.cityFac(hold, '부절대').length ? 2 : 0));
+    }
     // 세력 AP 회복·AI
     for (const f of Object.values(this.forces)) {
       if (!f.alive) continue;
@@ -1319,8 +1361,19 @@ export class Game {
         f.alive = false;
         this.log(`【${this.forceName(f.id)}】${josa(this.forceName(f.id), ['이','가']).slice(-1)} 멸망했습니다!`, true);
         this._delegateStop(`세력 멸망 — 【${this.forceName(f.id)}】`); // R109
+        for (const c0 of this.cities) for (const i of [...(c0.captives ?? [])]) { // R111: 멸망 세력이 억류 중이던 포로 해방 → 원 세력 복귀 (원 세력도 멸망이면 재야)
+          const o = this.officers[i]; const st = o?.state;
+          if (!st || st.status !== 'captive' || st.captor !== f.id) continue;
+          c0.captives = c0.captives.filter(j => j !== i);
+          delete st.captor; delete st.captiveSince;
+          const orig = st.force;
+          if (orig != null && orig !== f.id && this.forces[orig]?.alive) { const home0 = this.cities.filter(cc => cc.force === orig).sort((p, q) => Math.hypot(p.lon - c0.lon, p.lat - c0.lat) - Math.hypot(q.lon - c0.lon, q.lat - c0.lat))[0]; st.status = 'serving'; st.city = home0?.id ?? null; if (home0 && !home0.officers.includes(i)) home0.officers.push(i); }
+          else { st.status = 'free'; st.force = null; st.found = false; }
+        }
         for (const o of this.forceOfficers(f.id)) { // R86: 멸망 시 관직 해임 + 능력 가산 회수 (자체 처리: 관직은 세력 작위에 종속 — 재야가 관직을 유지할 수 없음)
-          const st = o.state; st.force = null; st.status = 'free'; st.found = false;
+          const st = o.state;
+          if (st.status === 'captive') { const hc = this.cityById[st.city]; if (hc?.captives) hc.captives = hc.captives.filter(j => j !== o.idx); delete st.captor; delete st.captiveSince; } // R111: 멸망 세력 소속 포로는 억류지에서 재야로
+          st.force = null; st.status = 'free'; st.found = false;
           if (st.office > 0) { for (const [k, v] of Object.entries(st._officeBonus ?? {})) o[k] = Math.max(1, (o[k] ?? 50) - v); st.office = 0; st._officeBonus = null; if (o.__restored) o.__restored.office = {}; }
         }
       }
@@ -1520,16 +1573,26 @@ export class Game {
     u.troops = Math.max(0, u.troops - loss);
     this.gainTechP(u.force, Math.min(50, Math.floor(dmg / 100))); // 전투 기교P는 계산 피해량 기준 유지
     this.log(`${josa(u.label, ['이','가'])} ${josa(c.name_ko, ['을','를'])} 공격 (적병 -${troopDmg}, 내구 -${hpDmg}, 아군 -${loss})`, u.force === this.playerForce);
-    if (u.troops <= 0) { this._rehomeOfficers(u); this.units = this.units.filter(x => x !== u); this.log(`${u.label} 부대가 전멸했습니다`, false); return; }
+    if (u.troops <= 0) { this._rehomeOfficers(u, c.force); this.units = this.units.filter(x => x !== u); this.log(`${u.label} 부대가 전멸했습니다`, false); return; } // R111: 반격 전멸은 수비측이 포박 판정
     if (c.troops <= 0 || c.hp <= 0) {
       const old = c.force;
       c.force = u.force; c.district = null;
-      if (old != null) { // R96: 함락 수비 무장 도주 — 포로는 후속 구현 유지. 원 세력 잔여 도시로 복귀시켜 무장 귀속·위치 불일치와 원 세력 마비 방지 (없으면 로스터에서만 제거, 멸망 판정이 재야 전환)
+      for (const i of [...(c.captives ?? [])]) { // R111: 함락 시 기존 억류 포로는 혼란 중 탈출해 원 세력 복귀 (매뉴얼 명시 없음 — 자체 규칙). 원 세력 멸망이면 재야
+        const o = this.officers[i]; const st = o?.state;
+        if (!st || st.status !== 'captive') continue;
+        c.captives = c.captives.filter(j => j !== i);
+        delete st.captor; delete st.captiveSince;
+        const orig = st.force;
+        if (orig != null && this.forces[orig]?.alive) { const home0 = this.cities.filter(cc => cc.force === orig).sort((p, q) => Math.hypot(p.lon - c.lon, p.lat - c.lat) - Math.hypot(q.lon - c.lon, q.lat - c.lat))[0]; st.status = 'serving'; st.city = home0?.id ?? null; if (home0 && !home0.officers.includes(i)) home0.officers.push(i); }
+        else { st.status = 'free'; st.force = null; st.found = false; }
+      }
+      if (old != null) { // R96 함락 수비 무장 도주 + R111 포박 (매뉴얼 拠点陥落으로 捕虜 발생 — 기본 25% + 함락 가산 15% = 40%, 자체 수치). 포박 실패·군주는 기존 도주 규칙
         const home = this.cities.filter(cc => cc.force === old).sort((p, q) => Math.hypot(p.lon - c.lon, p.lat - c.lat) - Math.hypot(q.lon - c.lon, q.lat - c.lat))[0];
         for (const i of [...c.officers]) {
           const o = this.officers[i];
           if (o?.state?.force !== old) continue;
           c.officers = c.officers.filter(j => j !== i);
+          if (this._captureOfficer(o, u.force, c.lon, c.lat, 0.15)) continue; // 포박 — 억류지는 함락된 이 도시(공격측 최인접)
           if (home) { if (!home.officers.includes(i)) home.officers.push(i); o.state.city = home.id; }
         }
       }
@@ -1548,17 +1611,43 @@ export class Game {
     for (const i of u.officers) { if (!c.officers.includes(i)) c.officers.push(i); this.officers[i].state.city = c.id; }
     this.units = this.units.filter(x => x !== u);
   }
-  _rehomeOfficers(u) { // R96: 부대 소실 시 탑승 무장의 도주 복귀 — 포로는 후속 구현(매뉴얼 포로 개념 확인, 확률 등 세부 미확정) 유지, 무장이 로스터에서 소실되는 것만 방지
+  _captureOfficer(o, captorForce, x, z, bonus = 0) { // R111: 포박 판정 (매뉴얼 — 拠点陥落·部隊壊滅·一騎討ち敗北로 捕虜 발생. 확률·수치 자체). 포박되면 true
+    const st = o?.state;
+    if (!st || st.force == null || st.status === 'captive') return false;
+    if (captorForce == null || captorForce === st.force || !this.forces[captorForce]?.alive) return false;
+    if (this.forces[st.force]?.ruler === o.idx) return false; // 군주는 포박하지 않음 (자체 — 세력 지휘 마비 방지)
+    if (Math.random() >= Math.min(0.85, 0.25 + bonus)) return false; // 기본 25% (자체 수치)
+    const hold = this.cities.filter(c => c.force === captorForce).sort((a, b) => Math.hypot(a.lon - x, a.lat - z) - Math.hypot(b.lon - x, b.lat - z))[0];
+    if (!hold) return false;
+    st.status = 'captive'; st.captor = captorForce; st.city = hold.id; st.captiveSince = this.turn;
+    hold.captives = hold.captives ?? [];
+    if (!hold.captives.includes(o.idx)) hold.captives.push(o.idx);
+    this.log(`【포박】${josa(o.name_ko, ['이','가'])} 【${this.forceName(captorForce)}】의 포로가 되었습니다 (${hold.name_ko} 억류)`, captorForce === this.playerForce || st.force === this.playerForce);
+    return true;
+  }
+  _rehomeOfficers(u, captor = null, capBonus = 0) { // R96 도주 복귀 + R111 포박: 격파 세력이 있으면 탑승 무장 포박 판정 우선 (매뉴얼 部隊壊滅), 포박되지 않은 무장은 기존 도주 규칙
     const home = this.cities.filter(c => c.force === u.force).sort((p, q) => Math.hypot(p.lon - u.x, p.lat - u.z) - Math.hypot(q.lon - u.x, q.lat - u.z))[0];
-    if (!home) return; // 도시 없음 — 멸망 판정이 재야 전환 처리
     for (const i of u.officers) {
       const o = this.officers[i]; if (!o) continue;
+      if (captor != null && this._captureOfficer(o, captor, u.x, u.z, capBonus)) continue;
+      if (!home) continue; // 도시 없음 — 멸망 판정이 재야 전환 처리
       if (!home.officers.includes(i)) home.officers.push(i);
       o.state.city = home.id;
     }
   }
   _reconcileOfficerRosters() { // R96: 기존 저장 복구 — ① 로스터·상태 불일치 정리 ② 로스터·부대 어디에도 없는 소속 무장을 소속 도시로 복귀. 멱등 (복귀 후엔 두 조건 모두 비일치)
     const svc = s => ['ruler', 'taesu', 'serving'].includes(s);
+    for (const c of this.cities) c.captives = (c.captives ?? []).filter(i => { const st = this.officers[i]?.state; return st?.status === 'captive' && st.city === c.id && st.captor === c.force; }); // R111: 억류 명단 정합 (멱등)
+    for (const o of Object.values(this.officers)) { // R111: 포로 상태 정합 — 억류 도시가 포박 세력 소유를 벗어났거나 포박 세력 멸망이면 원 세력 복귀·재야 정리
+      const st = o?.state; if (!st || st.status !== 'captive') continue;
+      const hold = this.cityById[st.city];
+      if (hold && hold.force === st.captor && this.forces[st.captor]?.alive) { hold.captives = hold.captives ?? []; if (!hold.captives.includes(o.idx)) hold.captives.push(o.idx); continue; }
+      const orig = st.force;
+      if (hold?.captives) hold.captives = hold.captives.filter(j => j !== o.idx); // 억류 명단에서 제거 (필터 통과분 정리)
+      delete st.captor; delete st.captiveSince;
+      if (orig != null && this.forces[orig]?.alive) { const home0 = this.cities.filter(cc => cc.force === orig).sort((p, q) => p.id - q.id)[0]; st.status = 'serving'; st.city = home0?.id ?? null; if (home0 && !home0.officers.includes(o.idx)) home0.officers.push(o.idx); }
+      else { st.status = 'free'; st.force = null; st.found = false; }
+    }
     for (const c of this.cities) for (const i of [...c.officers]) { // R105: ① 세력 불일치뿐 아니라 재야/무소속·위치 불일치(타 도시 중복 잔류 포함)도 정리 — 정상 주둔(소속 무장·세력 일치·state.city 일치)만 유지. 부대 탑승 무장(city=null)은 로스터에 없음이 정상이며 잘못 들어간 잔류분만 제거 (부대 소속은 ②에서 제외돼 영향 없음)
       const st = this.officers[i]?.state;
       if (st && svc(st.status) && st.force === c.force && st.city === c.id) continue;
@@ -1644,7 +1733,8 @@ export class Game {
     }
     for (const u of [a, b]) {
       if (u.troops <= 0) {
-        this._rehomeOfficers(u);
+        const other = u === a ? b : a;
+        this._rehomeOfficers(u, other.force, other.type === 'pike' && (other._tacTurn ?? -1) === this.turn ? 0.15 : 0); // R111: 극병 전법 격파 시 포박률 가산 (매뉴얼 戟兵戦法で全滅させたとき捕縛確率が高い)
         this.units = this.units.filter(x => x !== u);
         this.log(`${u.label} 부대가 전멸했습니다`, false);
       } else if (u.troops < (this.unitHasSkill(u, '완강') ? 600 : 1200)) { // 퇴각: 가장 가까운 아군 도시로 (완강 특기는 기준 절반)
@@ -1735,7 +1825,7 @@ export class Game {
       note = tac.eff === 'side' ? ' 전방 ' + n + '부대 동시 타격' : ' ' + n + '부대 관통' + (fn ? '·시설 ' + fn + ' 관통' : '');
     }
     const dead = this.units.filter(v => v.troops <= 0 && v !== d);
-    for (const v of dead) { this._rehomeOfficers(v); this.log(v.label + ' 부대가 전멸했습니다', false); }
+    for (const v of dead) { this._rehomeOfficers(v, u.force, u.type === 'pike' ? 0.15 : 0); this.log(v.label + ' 부대가 전멸했습니다', false); } // R111: 전법 격파 포박 (극병 가산 — 매뉴얼)
     this.units = this.units.filter(v => v.troops > 0 || v === d);
     return note;
   }
@@ -1767,7 +1857,7 @@ export class Game {
       this.gainTechP(u.force, Math.min(40, Math.floor(dmg / 100)));
       const note = tac.eff ? this._tacExtra(u, d, tac, dmg) : '';
       this.log(`【전법】${lead.name_ko}의 ${tac.name}! 야전에서 ${d.label}에 큰 피해 (-${dmg})${note}`, u.force === this.playerForce);
-      if (d.troops <= 0) { this._rehomeOfficers(d); this.units = this.units.filter(x => x !== d); this.log(`${d.label} 부대가 전멸했습니다`, false); }
+      if (d.troops <= 0) { this._rehomeOfficers(d, u.force, u.type === 'pike' ? 0.15 : 0); this.units = this.units.filter(x => x !== d); this.log(`${d.label} 부대가 전멸했습니다`, false); } // R111: 전법 격파 포박 (극병 가산)
       this.autosave();
       return true;
     }
@@ -1848,7 +1938,7 @@ export class Game {
         d.troops = Math.max(0, d.troops - burn);
         this.log(`【계략】${caster.name_ko}의 화계! ${d.label} 병력 -${burn} (불이 번져 3턴간 계속 탑니다)`, u.force === this.playerForce);
         d.burn = 3; this.fireSpread(u, d);
-        if (d.troops <= 0) { this._rehomeOfficers(d); this.units = this.units.filter(x => x !== d); this.log(`${d.label} 부대가 전멸했습니다`, false); }
+        if (d.troops <= 0) { this._rehomeOfficers(d, u.force); this.units = this.units.filter(x => x !== d); this.log(`${d.label} 부대가 전멸했습니다`, false); } // R111: 화계 격파 포박
         this.autosave();
         return true;
       }
@@ -1893,7 +1983,7 @@ export class Game {
       this.gainMerit(caster.idx, MERIT.stratagem);
       const hit = Math.round(d.troops * 0.07); d.troops = Math.max(0, d.troops - hit); d.qi = Math.max(0, (d.qi ?? 100) - 20);
       this.log(`【계략】${caster.name_ko}의 복병! ${d.label} 병력 -${hit}, 기력 -20`, u.force === this.playerForce);
-      if (d.troops <= 0) { this._rehomeOfficers(d); this.units = this.units.filter(x => x !== d); this.log(`${d.label} 부대가 전멸했습니다`, false); }
+      if (d.troops <= 0) { this._rehomeOfficers(d, u.force); this.units = this.units.filter(x => x !== d); this.log(`${d.label} 부대가 전멸했습니다`, false); } // R111: 화계 격파 포박
       this.autosave();
       return true;
     }
@@ -2081,7 +2171,7 @@ export class Game {
     if (!stat || lv >= 3 || (f.techP ?? 0) < AB_P[lv]) return false;
     f.techP -= AB_P[lv]; f.ab[branch] = lv + 1;
     const statNm = { war: '무력', ldr: '통솔', int: '지력', pol: '정치' }[stat];
-    for (const o of this.forceOfficers(fid)) {
+    for (const o of this.availableOfficers(fid)) { // R111: 억류 포로는 연구 가산 제외
       o[stat] = Math.min(100, (o[stat] ?? 50) + 2);
       if (o.state) { o.state.bonus = o.state.bonus ?? {}; o.state.bonus[stat] = (o.state.bonus[stat] ?? 0) + 2; } // 저장 영속용
       if (o.__restored) o.__restored.research = { ...(o.__restored.research ?? {}), [stat]: ((o.__restored.research?.[stat]) ?? 0) + 2 }; // 멱등 추적 동기화
@@ -2089,7 +2179,7 @@ export class Game {
     this.log(`【연구】${this.forceName(fid)} 능력연구 「${branch}」 ${lv + 1}단계 완료 (기교P ${AB_P[lv]} 소비, 소속 무장 전원 ${statNm} +2)`, fid === this.playerForce);
     if (lv + 1 === 3) {
       let sk = AB_SKILL[branch];
-      const free = this.forceOfficers(fid).filter(o => o && !o.skill && !o.state?.grantSkill);
+      const free = this.availableOfficers(fid).filter(o => o && !o.skill && !o.state?.grantSkill); // R111: 포로 제외
       let cand = free.slice().sort((a, b) => (b.state?.merit ?? 0) - (a.state?.merit ?? 0))[0];
       if (pick && (AB_PICK[branch] ?? []).includes(pick)) { // R110: 전 계통 선택 목록으로 일반화. 비기본 특기는 무특기 무장 중 해당 계통 능력 최고에게(자체 잠정규칙, 임계 능력 없음, 세력당 1회)
         sk = pick; if (pick !== AB_SKILL[branch]) cand = free.slice().sort((a, b) => (b[AB_PICKSTAT[branch]] ?? 0) - (a[AB_PICKSTAT[branch]] ?? 0))[0];
@@ -2215,6 +2305,10 @@ export class Game {
       l.u.troops = Math.round(l.u.troops * 0.7);
       this.gainMerit(w.offs[w.cur], 40); this.gainTechP(w.u.force, 30);
       this.log(`【일기토】${josa(this.officers[w.offs[w.cur]].name_ko, ['이','가'])} ${this.officers[l.offs[l.cur]].name_ko}를 격파! ${l.u.label} 병력 -30%`, true);
+      if (l.u.officers.length > 1) { // R111: 일기토 패자 포박 20% (매뉴얼 一騎討ち敗北 시 捕虜 경로 — 확률 자체). 잔여 무장이 있을 때만 (부대 지휘 공백 방지)
+        const lo = this.officers[l.offs[l.cur]];
+        if (lo && this._captureOfficer(lo, w.u.force, l.u.x, l.u.z, -0.05)) l.u.officers = l.u.officers.filter(j => j !== lo.idx);
+      }
     } else if (result === 'flee') {
       const f = d[d.fled];
       const home = this.forceCities(f.u.force).sort((p, q) => Math.hypot(p.lon - f.u.x, p.lat - f.u.z) - Math.hypot(q.lon - f.u.x, q.lat - f.u.z))[0];
