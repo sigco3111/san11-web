@@ -2347,4 +2347,21 @@ console.log('sample logs:'); for (const l of g.logs.slice(-8)) console.log(' ', 
   const th = g.forceOverview(28).threats;
   if (!th.some(t => t.city === home.name_ko && t.label === 'R97적')) fail('위협 집계 없음');
   console.log('R97 대시보드 게이트 PASS (월 예상 금 수지=실제 정산 일치·요약/비교 합계 정합·위협 집계)');
+}
+// === R99: 대시보드 시각 완성 게이트 — ① 섹션 라벨/순수지 표기 소스 존재 ② 섹션 데이터 필드 존재 ===
+{
+  const fail = m => { console.log('FAIL: R99 ' + m); process.exit(1); };
+  const src = readFileSync('js/main.js', 'utf8');
+  for (const t of ['순수지', '봉록 지출', '부족 경고 없음', '공격받는 도시 없음', '진행 중인 명령 없음', '건설 중인 시설 없음', '진행 중인 연구 없음', '연구 / 건설', '위협 (공격받는 도시)'])
+    if (!src.includes(t)) fail('대시보드 섹션 라벨 누락: ' + t);
+  function mulberry32(a){ return function(){ a|=0; a=a+0x6D2B79F5|0; let t=Math.imul(a^a>>>15,1|a); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
+  Math.random = mulberry32(99);
+  const g = new Game(JSON.parse(readFileSync('data/scenario-184.json')), JSON.parse(JSON.stringify(officers)), {}, 28);
+  g.econV = 2;
+  const ov = g.forceOverview(28);
+  if (ov.summary.goldIn - ov.summary.sal == null) fail('순수지 산출 불가');
+  for (const k of ['dest', 'pathLen', 'building']) if (!(k in (ov.units[0] ?? { dest: null, pathLen: 0, building: null }))) fail('부대 진행 명령 필드 누락: ' + k);
+  if (!('building' in ov.cities[0])) fail('도시 건설 진행 필드 누락');
+  if (!Array.isArray(ov.threats) || !Array.isArray(ov.fieldBuilding)) fail('위협/야전 건설 배열 누락');
+  console.log('R99 대시보드 시각 완성 게이트 PASS (섹션 라벨 9종·순수지 표기·섹션 데이터 필드)');
       }
