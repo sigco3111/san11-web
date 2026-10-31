@@ -2309,7 +2309,11 @@ export class Game {
   }
 }
 export function josaRo(name) { const code = String(name).charCodeAt(String(name).length-1); const jong = (code >= 0xAC00 && code <= 0xD7A3) ? (code-0xAC00)%28 : 0; return name + (jong && jong !== 8 ? '으로' : '로'); } // (으)로: 받침 없음·ㄹ받침은 '로'
-export function josa(name, pair) { // [을,를] 형태
-  const code = name.charCodeAt(name.length-1);
-  const jong = (code >= 0xAC00 && code <= 0xD7A3) ? (code-0xAC00)%28 : 0;
+export function josa(name, pair) { // [을,를] 형태 — '장막 5k'처럼 끝이 숫자·라틴·공백이면 마지막 한글 음절의 받침으로 판정 (R106)
+  let jong = 0;
+  for (let i = name.length - 1; i >= 0; i--) {
+    const code = name.charCodeAt(i);
+    if (code >= 0xAC00 && code <= 0xD7A3) { jong = (code - 0xAC00) % 28; break; }
+    if (!/[0-9a-zA-Z\s]/.test(name[i])) break; // 다른 기호로 끝나면 종전 동작(받침 없음) 유지
+  }
   return name + (jong ? pair[0] : pair[1]);  }
