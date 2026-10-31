@@ -1,6 +1,6 @@
 // 3D 저폴리 지도 엔진 (Three.js) - 고정 등각 아이소메트릭 + 계단식 지형 + 성곽/숲
 import * as THREE from 'three';
-import { loadGLBAssets, applyEnvironment } from './assets-3d.js?v=r91';
+import { loadGLBAssets, applyEnvironment } from './assets-3d.js?v=r92';
 
 const LON0 = 100, LON1 = 126.5, LAT0 = 21.5, LAT1 = 43;
 export function toWorld(lon, lat) {
@@ -88,7 +88,7 @@ const GX0 = -41.4, GZ0 = -41.4, GN = 47;
 const MGN = 8, GN2 = GN + 2*MGN; // 대륙 확장 링(섬처럼 보이는 문제 개선)
 const GX2 = GX0 - MGN*CELL, GZ2 = GZ0 - MGN*CELL;
 const CASTLE_SCALE = 0.075, CASTLE_CELL = 10 * CASTLE_SCALE; // Kenney 부품(10 유닛) -> 1.5 월드 유닛
-const CITY_FLAT_R = 2.3, CITY_RIVER_R = 1.5, RIVER_R = 1.35; // R91: 파내기 보호반경 2.4→1.5 — 강이 성곽 옆을 지나도록(종전엔 연안 도시마다 수로가 끊김). 도시 중심부는 계속 육지
+const CITY_FLAT_R = 2.3, CITY_RIVER_R = 1.0, RIVER_R = 1.8; // R92: 보호반경 1.5→1.0(성곽 반폭 0.75+여유)·강 폭 1.35→1.8 — 격자(셀 1.8)에서 도시가 수로를 끊지 않도록. 도시 중심부·성곽은 계속 육지
 
 // 강 폴리라인을 월드 좌표 점열로 전개
 const RIVER_PTS = [];
