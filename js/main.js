@@ -1,12 +1,12 @@
 // 진입점: 화면 전환·UI·지도 연결
-import { Map3D, toWorld } from './map3d.js?v=r83';
-import { Game, SAVE_KEY, RULES, forceColor, UNIT_TYPES, ARTS, FIELD_FACS, TRAPS, SHIP_TYPES, TAC_SHIP_OK, josa, josaRo, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL, AB_PICK } from './game.js?v=r83';
-import { aiThink } from './ai.js?v=r83';
+import { Map3D, toWorld } from './map3d.js?v=r84';
+import { Game, SAVE_KEY, RULES, forceColor, UNIT_TYPES, ARTS, OFFICES, restoreOfficer, FIELD_FACS, TRAPS, SHIP_TYPES, TAC_SHIP_OK, josa, josaRo, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL, AB_PICK } from './game.js?v=r84';
+import { aiThink } from './ai.js?v=r84';
 
 const $ = id => document.getElementById(id);
 let DATA = null, game = null, map = null, selectedUnit = null, autoTimer = null, pendingFire = null; // R15: 직접 전법·계략 대기
 
-const BUILD_ID = 'r83'; // 빌드 ID (index.html의 meta[name=build]와 같아야 함 - 오래된 캐시된 index와 새 스크립트의 혼합 감지)
+const BUILD_ID = 'r84'; // 빌드 ID (index.html의 meta[name=build]와 같아야 함 - 오래된 캐시된 index와 새 스크립트의 혼합 감지)
 function checkBuildSkew() {
   const idx = document.querySelector('meta[name="build"]')?.content;
   if (idx === BUILD_ID) { sessionStorage.removeItem('cheonha-xi-web.skew'); return; } // 일치하면 재시도 표식 해제
@@ -19,7 +19,7 @@ checkBuildSkew();
 async function loadData() {
   const [officers, skills, portraits, s184, s190, s251] = await Promise.all(
     ['data/officers670.json','data/skills.json','data/portraits.json','data/scenario-184.json','data/scenario-190.json','data/scenario-251.json']
-      .map(u => fetch(u + '?v=r83').then(r => r.json())));
+      .map(u => fetch(u + '?v=r84').then(r => r.json())));
   const byIdx = {};
   for (const o of officers) byIdx[o.idx] = o;
   DATA = { officers: byIdx, skills, portraits, scenarios: { '184': s184, '190': s190, '251': s251 } };
@@ -652,6 +652,12 @@ function showCityPanel(c) {
   if (c.officers.length) for (const i of c.officers) { // 褒賞: 주둔 무장별 포상 버튼 (매뉴얼 P.39 — 금100·AP5, 충성 100·종군·당턴 포상済 제외는 rewardOfficers가 판정)
     html += officerRow(i);
     if (mine && (game.officers[i]?.state?.loyal ?? 70) < 100) html += `<button class="cmd cmd-rwd" data-i="${i}">포상 (금100·AP5·충성+3)</button>`;
+    if (mine) { // 官職: 무장별 관직 임명·해임 (매뉴얼 P.37 — 비용·AP 없음, 공적 비례·작위 연동 상한은 appointOffice가 최종 판정). 같은 관직 중복 임명 허용(자체 판단 — 매뉴얼 제한 미기재)
+      const curOf = game.officeOf(i), maxOf = Math.min(game.officeGate(c.force), game.meritGrade(i));
+      const opts = [`<option value="0"${curOf === 0 ? ' selected' : ''}>무관직</option>`];
+      for (let r = 1; r <= 8; r++) opts.push(`<option value="${r}"${curOf === r ? ' selected' : ''}${r > maxOf ? ' disabled' : ''}>${OFFICES[r].name} (지휘+${OFFICES[r].cmd}·봉록+${OFFICES[r].sal})</option>`);
+      html += `<select class="cmd cmd-office" data-i="${i}" title="관직 (공적 ${game.officers[i]?.state?.merit ?? 0}·세력 작위 상한 ${game.officeGate(c.force)}단계)">${opts.join('')}</select>`;
+    }
   } else html += '<p>무장 없음</p>';
   const free = Object.values(DATA.officers).filter(o => o.state?.status === 'free' && o.state.city === c.id && o.state.found !== false);
   const hiddenFree = Object.values(DATA.officers).some(o => o.state?.status === 'free' && o.state.city === c.id && o.state.found === false);
@@ -685,6 +691,7 @@ function showCityPanel(c) {
     $('cmd-advisor').onclick = () => showAdvisor(c);
     $('cmd-legion').onclick = () => showLegions(c);
     p.querySelectorAll('.cmd-rwd').forEach(b => b.onclick = () => { const ok = game.rewardOfficers(c.id, [Number(b.dataset.i)]); refreshAll(); showCityPanel(c); if (!ok) game.log(game.lastRewardWhy ?? '포상할 수 없습니다', true); }); // 褒賞
+    p.querySelectorAll('.cmd-office').forEach(sel => sel.onchange = () => { const ok = game.appointOffice(c.id, Number(sel.dataset.i), Number(sel.value)); refreshAll(); showCityPanel(c); if (!ok) { game.log(game.lastOfficeWhy ?? '임명할 수 없습니다', true); refreshLog(); } }); // 官職
     p.querySelectorAll('.cmd-rec').forEach(b => b.onclick = () => { game.recruitOfficer(c.id, Number(b.dataset.i)); refreshAll(); showCityPanel(c); if (game.pendingDebate) showDebate(); }); // R11: 등용 실패 시 설전 발동
   }
   const join = $('cmd-join');
@@ -696,9 +703,12 @@ function showCityPanel(c) {
 }
 function showDispatch(c) {
   const p = $('panel');
-  const cap = Math.min(c.troops, game.unitTroopCap(c.force));
+  const capBase = game.unitTroopCap(c.force); // 기본 상한 (군제개혁 +3000 포함)
+  const leadOf = () => Number(document.querySelector('.dsp-off:checked')?.value ?? -1); // 주장 = DOM 순 첫 번째 선택 무장 (dispatch officerIdxs[0]과 동일 규칙)
+  const capTotal = () => capBase + (leadOf() >= 0 ? (OFFICES[game.officeOf(leadOf())]?.cmd ?? 0) : 0); // R84: 관직 지휘 가산 명시 합산 (자체 규칙)
+  const cap = Math.min(c.troops, capTotal());
   p.innerHTML = `<h3>${c.name_ko} 출진 편성</h3>
-    <p>병사: <input id="dsp-troops" type="number" value="${Math.min(5000, cap)}" min="500" max="${cap}" step="500" style="width:90px"></p>
+    <p>병사: <input id="dsp-troops" type="number" value="${Math.min(5000, cap)}" min="500" max="${cap}" step="500" style="width:90px"> <span id="dsp-cap" style="font-size:12px;color:#998"></span></p>
     <p>병종: <select id="dsp-type">${Object.entries(UNIT_TYPES).map(([k,v]) => {
       const need = Object.entries(v.cost)[0];
       const have = need ? (c[need[0]] ?? 0) : 1;
@@ -710,9 +720,15 @@ function showDispatch(c) {
     <p><button class="cmd" id="dsp-go">출진</button> <button class="cmd" id="dsp-back">취소</button></p>
     <p style="font-size:12px;color:#998">출진 후 부대를 선택하고 목표 도시를 클릭하면 이동합니다.</p>`;
   $('dsp-back').onclick = () => showCityPanel(c);
-  document.querySelectorAll('.dsp-off').forEach(cb => cb.onchange = () => { const lim = game.dispatchCap(c.force); if (document.querySelectorAll('.dsp-off:checked').length > lim) { cb.checked = false; alert(`한 부대에는 무장 ${lim}명까지 편성할 수 있습니다.`); } }); // 3명 제한: 체크 단계에서 거부·안내
+  const refreshCap = () => { // R84: 주장 선택 변경 시 관직 가산 포함 상한 재계산·표기
+    const t = Math.min(c.troops, capTotal()), ofc = leadOf() >= 0 ? (OFFICES[game.officeOf(leadOf())]?.cmd ?? 0) : 0;
+    const inp = $('dsp-troops'); inp.max = t; if (Number(inp.value) > t) inp.value = t;
+    $('dsp-cap').textContent = `상한 ${t.toLocaleString()} = 기본 ${capBase.toLocaleString()}(군제 포함) + 주장 관직 +${ofc.toLocaleString()}`;
+  };
+  document.querySelectorAll('.dsp-off').forEach(cb => cb.onchange = () => { const lim = game.dispatchCap(c.force); if (document.querySelectorAll('.dsp-off:checked').length > lim) { cb.checked = false; alert(`한 부대에는 무장 ${lim}명까지 편성할 수 있습니다.`); } refreshCap(); }); // 3명 제한: 체크 단계에서 거부·안내
+  refreshCap();
   $('dsp-go').onclick = () => {
-    const troops = Math.min(cap, Number($('dsp-troops').value));
+    const troops = Math.min(Math.min(c.troops, capTotal()), Number($('dsp-troops').value));
     const type = $('dsp-type').value;
     const offs = [...document.querySelectorAll('.dsp-off:checked')].map(x => Number(x.value)).slice(0, game.dispatchCap(c.force));
     if (!offs.length) { alert('부장을 선택하세요.'); return; }
@@ -755,7 +771,7 @@ function showUnitPanel(uid) {
     ${mine && (u.conf ?? 0) <= 0 && (u._stratTurn ?? -1) !== game.turn && u.officers.some(i => (DATA.officers[i]?.int ?? 0) >= 80) && (u.qi ?? 100) >= 15 ? '<button class="cmd" id="up-rumor">계략 위보 (기력 15)</button> <button class="cmd" id="up-calm">계략 진정 (기력 10)</button>' : ''}
     ${mine && (u.conf ?? 0) <= 0 && (u._stratTurn ?? -1) !== game.turn && (u.qi ?? 100) >= 50 ? ['요술', '낙뢰'].filter(sk => u.officers.some(i => game.officers[i]?.skill === sk)).map(sk => `<p><button class="cmd" id="up-${sk === '요술' ? 'sorcery' : 'thunder'}">계략 ${sk} (기력 50, 광역)</button></p>`).join('') : ''}
     ${mine && !SHIP_TYPES.has(u.type) ? `<p>${u.building ? `<span style="color:#ffd700">${u.building} 건설 중 (이동 명령을 내리면 취소)</span>` : Object.entries(FIELD_FACS).map(([k, v]) => `<button class="cmd up-ff" data-k="${k}" title="${v.desc}">${k} 건설 (금 ${v.cost}·${v.turns}턴)</button>`).join(' ')}</p>` : ''}
-    ${mine ? (() => { if (u.repairing != null) { const rf = (game.fieldFacs ?? []).find(f => f.id === u.repairing); if (rf) return `<p><span style="color:#ffd700">${rf.type} 보수 중 (내구 ${rf.hp}/${FIELD_FACS[rf.type].hp}, 이동 명령을 내리면 중단)</span></p>`; } const reps = (game.fieldFacs ?? []).filter(f => game.canRepairFac(u, f) === null); return reps.length ? `<p>${reps.map(f => `<button class="cmd up-rep" data-f="${f.id}">${f.type} 보수 (내구 ${f.hp}/${FIELD_FACS[f.type].hp}·금 불요)</button>`).join(' ')}</p>` : ''; })() : ''} // 補修: 인접 아군 시설 보수 (매뉴얼 P.41)
+    ${mine ? (() => { if (u.repairing != null) { const rf = (game.fieldFacs ?? []).find(f => f.id === u.repairing); if (rf) return `<p><span style="color:#ffd700">${rf.type} 보수 중 (내구 ${rf.hp}/${FIELD_FACS[rf.type].hp}, 이동 명령을 내리면 중단)</span></p>`; } const reps = (game.fieldFacs ?? []).filter(f => game.canRepairFac(u, f) === null); return reps.length ? `<p>${reps.map(f => `<button class="cmd up-rep" data-f="${f.id}">${f.type} 보수 (내구 ${f.hp}/${FIELD_FACS[f.type].hp}·금 불요)</button>`).join(' ')}</p>` : ''; })() : ''}
     ${mine ? (() => { const nc = game.cities.find(c => game.canBreakLevee(u, c) === null); return nc ? `<p><button class="cmd" id="up-levee" data-c="${nc.id}">제방 파괴 — ${nc.name_ko} (내구 -15%·병사 -10%·2턴 침수)</button></p>` : ''; })() : ''}
     <p><button class="cmd" id="up-close">닫기</button></p>`;
   $('up-close').onclick = () => { $('panel').classList.add('hidden'); selectedUnit = null; pendingFire = null; };
@@ -802,11 +818,7 @@ async function boot() {
       // 강제 마이그레이션 없음: 구 저장은 econV 1 규칙 그대로 진행 (향후 전환 선택 UI는 별도)
       for (const o of Object.values(g.officers)) { o.state.items = o.state.items ?? []; if (o.state.status === 'free' && o.state.found === undefined) o.state.found = true; } // 기존 세이브의 재야는 발견 상태 유지
       for (const f of Object.values(g.forces)) { f.advisor = f.advisor ?? null; f.legions = f.legions ?? []; } // 군사·군단 필드 호환 // 외교 상태 복원 (레거시 세이브는 공백)
-      for (const [i, st] of Object.entries(d.officerStates)) if (DATA.officers[i]) {
-        DATA.officers[i].state = st;
-        if (st.bonus) for (const [k, v] of Object.entries(st.bonus)) DATA.officers[i][k] = Math.min(100, (DATA.officers[i][k] ?? 50) + v); // R13 능력연구 복원
-        if (st.grantSkill) DATA.officers[i].skill = st.grantSkill; // R13 연구 특기 복원
-      }
+      for (const [i, st] of Object.entries(d.officerStates)) if (DATA.officers[i]) restoreOfficer(DATA.officers[i], st); // R84: 복원 공통화 (R13 연구 + 관직 능력 가산 재적용)
       game = g; enterGame(); refreshAll(); checkGameOver(); // R14: 저장 시점이 종료 상태면 모달 재표시
       if (game.delegated) setAuto(true);
     };
