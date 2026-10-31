@@ -393,6 +393,15 @@ export class Game {
     c.gold -= 300; c.leveeBroken = false; c.flood = 0; c.leveeCool = this.turn + 12; this.log(`【수공】${c.name_ko} 제방 보수 완료 (금 300)`, c.force === this.playerForce); return true;
   }
   floodTurn() { for (const c of this.cities) if ((c.flood ?? 0) > 0) { if (c._floodOwner !== undefined && c._floodOwner !== c.force) { c.flood = 0; continue; } /* 점령되면 침수 종료(새 소유자에게 이어지지 않음) */ c.flood--; const d = Math.round(c.troops * 0.03); c.troops = Math.max(0, c.troops - d); this.log(`【수공】${josa(c.name_ko, ['이','가'])} 침수 중 — 병사 ${d} 감소`, c.force === this.playerForce); } }
+  facBurnTurn() { // R76: 시설 화염 DoT — 점화된 야전 시설은 3턴간 턴당 유형 최대내구의 3% 감소 (자체 잠정값, 도시 화재 내구 -1.5%와 별도 자체 수치). 시설 대상 소화는 미구현
+    for (const f of [...(this.fieldFacs ?? [])]) if ((f.burn ?? 0) > 0) {
+      f.burn--; const max = FIELD_FACS[f.type]?.hp ?? f.hp;
+      const d = Math.max(1, Math.round(max * 0.03));
+      f.hp -= d;
+      this.log(`【화염】${josa(f.type, ['이','가'])} 불에 타 내구 -${d}`, f.force === this.playerForce);
+      if (f.hp <= 0) { this.fieldFacs = this.fieldFacs.filter(x => x !== f); this.log(`【야전】${josa(f.type, ['이','가'])} 불에 타 파괴되었습니다`, true); }
+    }
+  }
   cityBurnTurn() { for (const c of this.cities) if ((c.burn ?? 0) > 0) { if (c._burnOwner !== undefined && c._burnOwner !== c.force) { c.burn = 0; continue; } c.burn--; const d = Math.max(1, Math.round(c.troops * 0.03)); c.troops = Math.max(0, c.troops - d); c.hp = Math.max(0, c.hp - Math.round(c.maxhp * 0.015)); this.log(`【화계】${josa(c.name_ko, ['이','가'])} 불에 타 수비병 -${d}`, c.force === this.playerForce); } }
   fieldSlow(u) { // 토루 통행 방해 배율
     if (u.slowT > 0) { u.slowT--; return 0.5; } // R28: 낙석
@@ -962,7 +971,7 @@ export class Game {
     // 도시 공성 처리는 stepUnit 내부
     // 야전: 접촉한 적 부대끼리 교전
     this.resolveFieldBattles();
-    this.aiFieldBuild(); this.fieldTurn(); this.floodTurn(); this.cityBurnTurn(); // R26: 야전 시설
+    this.aiFieldBuild(); this.fieldTurn(); this.floodTurn(); this.cityBurnTurn(); this.facBurnTurn(); // R26: 야전 시설 // R76: 시설 화염 DoT
     // 수입: 매 3순(한 달)
     if (this.dan === 3) {
       for (const c of this.cities) {
@@ -1459,7 +1468,16 @@ export class Game {
         const cos = (rx * ux + rz * uz) / r;
         if (tac.eff === 'side' ? cos > 0.5 : (cos > 0.93 && r > dd)) { hurt(v, 0.7); n++; }
       }
-      note = tac.eff === 'side' ? ' 전방 ' + n + '부대 동시 타격' : ' ' + n + '부대 관통';
+      let fn = 0;
+      if (tac.eff === 'pierce') { // R76: 관통화살은 경로상 建物・罠도 관통 (매뉴얼 貫矢 '目標の間にある部隊・建物・罠を貫く') — 시설 피해는 주 피해의 50% (자체 비율)
+        for (const f of (this.fieldFacs ?? [])) {
+          if (f === d || f.force == null || f.force === u.force || this.isPeace(u.force, f.force)) continue;
+          const rx = f.x - u.x, rz = f.z - u.z, r = Math.hypot(rx, rz); if (r > 2.2 || r < 1e-6 || r <= dd) continue;
+          if ((rx * ux + rz * uz) / r > 0.93) { f.hp -= Math.max(1, Math.round(dmg * 0.5)); fn++; }
+        }
+        for (const f of (this.fieldFacs ?? []).filter(f => f.hp <= 0)) { this.fieldFacs = this.fieldFacs.filter(x => x !== f); this.log(`【야전】${josa(f.type, ['이','가'])} 파괴되었습니다`, true); }
+      }
+      note = tac.eff === 'side' ? ' 전방 ' + n + '부대 동시 타격' : ' ' + n + '부대 관통' + (fn ? '·시설 ' + fn + ' 관통' : '');
     }
     const dead = this.units.filter(v => v.troops <= 0 && v !== d);
     for (const v of dead) this.log(v.label + ' 부대가 전멸했습니다', false);
@@ -1478,7 +1496,7 @@ export class Game {
     if (!info) return false;
     const lead = info.lead;
     const tac = tid ? info.opts.find(o => o.id === tid) : info.opts.find(o => o.id === 'base');
-    if (!tac || (tac.id !== 'base' && target.type !== 'unit')) return false; // 추가 전법은 부대 대상만
+    if (!tac || (tac.id !== 'base' && target.type !== 'unit' && !(target.type === 'fac' && u.type === 'bow'))) return false; // 추가 전법은 부대 대상만 (R76 예외: 노병 관통화살·난사는 시설 대상 가능 — 매뉴얼 대상표 貫矢・乱射 建物 포함)
     const inRange = (x, z) => Math.hypot(x - u.x, z - u.z) < 2.2;
     if (target.type === 'unit') {
       const d = this.units.find(x => x.id === target.id);
@@ -1528,7 +1546,8 @@ export class Game {
     if (target.type === 'fac') { // R73: 시설 대상 전법 — 매뉴얼 대상표(파쇄 建物・罠 전용, 방사/정란·수군 불화살/투석 建物 포함, 격돌 船 전용으로 제외) + 설계 L38. 산식 수치는 자체 (도시 공성 산식 기반)
       const f = (this.fieldFacs ?? []).find(x => x.id === target.id);
       const base = TACTICS[u.type];
-      if (!f || !base || !base.fac || tac.id !== 'base') return false; // 이 병종 전법은 시설 대상 불가 (창·극·기병·lou), 추가 전법은 부대 전용 유지
+      if (!f || !base || !base.fac) return false; // 이 병종 전법은 시설 대상 불가 (창·극·기병·lou)
+      if (tac.id !== 'base' && u.type !== 'bow') return false; // R76: 추가 전법의 시설 조준은 노병만 (매뉴얼 대상표: 貫矢・乱射 建物 포함)
       if (f.force == null || f.force === u.force || this.isPeace(u.force, f.force)) return false; // R72 공통 평화 판정과 정합
       const reach = SHIP_TYPES.has(u.type) ? 1.6 : (u.type === 'catapult' ? 3.0 : 2.2); // 수군 연안·투석기 사거리는 R72 직접 공격과 동일
       if (Math.hypot(f.x - u.x, f.z - u.z) >= reach) return false;
@@ -1536,13 +1555,14 @@ export class Game {
       let dmg = Math.round(u.troops * 0.12 * ut.atk * (0.7 + lead.war / 150) * this.aptMult(u) * this.unitDmgMult(u, true) * this.unitItemAtk(u) * this.unitTechAtk(u) * this.unitRelMult(u)); // 도시 전법 공성 산식 기반 (자체 수치)
       dmg = Math.round(dmg * this.tacMult(u, tac.mult));
       if (ut.siege) dmg = Math.round(dmg * ut.siege);
-      // 목수 방사 burn 추가 효과는 시설 미적용: burn의 자체 효과는 병사 소손(시설에 병사 없음)이고 화염 DoT 시스템이 없어 기본 피해만 적용 (자체 결정)
       dmg = Math.min(dmg, f.hp); // 실감소 clamp — 로그가 실제 감소분을 넘지 않게
       u.qi -= tac.qi; u._tacTurn = this.turn;
       this.gainMerit(u.officers[0], MERIT.tactic);
       f.hp -= dmg;
       this.gainTechP(u.force, Math.min(50, Math.floor(dmg / 100)));
-      this.log(`【전법】${lead.name_ko}의 ${tac.name}! ${f.type}에 큰 피해 (내구 -${dmg})`, u.force === this.playerForce);
+      const note = tac.eff ? this._tacExtra(u, f, tac, dmg) : ''; // R76: 노병 관통화살의 시설 관통 부수 효과
+      this.log(`【전법】${lead.name_ko}의 ${tac.name}! ${f.type}에 큰 피해 (내구 -${dmg})${note}`, u.force === this.playerForce);
+      if (f.hp > 0 && (ut.burn || tac.burn || tac.name === '불화살') && Math.random() < 0.25) { f.burn = 3; this.log(`【화염】${f.type}에 불이 붙었습니다 (3턴간 계속 탑니다)`, u.force === this.playerForce); } // R76: 화염 전법 시설 점화 (매뉴얼 火矢 '火がつくこともある' 정성 재현, 확률 25%는 자체 잠정값)
       if (f.hp <= 0) { this.fieldFacs = this.fieldFacs.filter(x => x !== f); this.log(`【야전】${josa(f.type, ['이','가'])} 파괴되었습니다`, u.force === this.playerForce || f.force === this.playerForce); }
       this.autosave();
       return true;
@@ -1589,6 +1609,21 @@ export class Game {
         c.hp = Math.max(0, c.hp - Math.round(burn * 0.5));
         c.burn = 3; c._burnOwner = c.force; // 도시 지속불: 3턴간 턴당 수비병 -3%·내구 -1.5% (자체 잠정값, 소화로 끌 수 있음)
       this.log(`【계략】${caster.name_ko}의 화계! ${c.name_ko} 수비병 -${burn} (불이 번져 3턴간 계속 탑니다)`, u.force === this.playerForce);
+        this.autosave();
+        return true;
+      }
+      if (target.type === 'fac') { // R76: 화계 시설 대상 (매뉴얼 火計 対象 部隊・拠点・施設・地形) — 즉시 현재 내구의 6%(화공 기교 보정) + 3턴 화염 DoT, 수치는 자체 잠정값
+        const f = (this.fieldFacs ?? []).find(x => x.id === target.id);
+        if (!f || f.force == null || f.force === u.force || this.isPeace(u.force, f.force) || !inRange(f.x, f.z)) return false;
+        u._stratTurn = this.turn;
+        if (Math.random() >= p * (1 - this.mindDefense(f.force))) { this.log(`【계략】${caster.name_ko}의 화계가 ${f.type}에 실패했습니다`, u.force === this.playerForce); this.autosave(); return true; }
+        u.qi -= STRATS.fire.qi;
+        this.gainMerit(caster.idx, MERIT.stratagem);
+        const burn = Math.max(1, Math.round(f.hp * 0.06 * (1 + 0.15 * this.techLv(u.force, '화공'))));
+        f.hp -= burn;
+        f.burn = 3;
+        this.log(`【계략】${caster.name_ko}의 화계! ${f.type}에 불을 붙였습니다 (내구 -${burn}, 3턴간 계속 탑니다)`, u.force === this.playerForce);
+        if (f.hp <= 0) { this.fieldFacs = this.fieldFacs.filter(x => x !== f); this.log(`【야전】${josa(f.type, ['이','가'])} 파괴되었습니다`, u.force === this.playerForce || f.force === this.playerForce); }
         this.autosave();
         return true;
       }
