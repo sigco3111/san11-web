@@ -31,13 +31,14 @@ export const SHIP_BUILD = { junk: { name: '주가', gold: 400, store: 'junks' },
 const APT_IDX = { spear: 0, pike: 1, bow: 2, cav: 3, ram: 4, tower: 4, beast: 4, catapult: 4, junk: 5, lou: 5, dou: 5 }; // data apt 순서: 창 극 노 기 병기 수군 (검병은 적성 없음)
 const APT_LV = g => ({ S: 3, A: 2, B: 1 })[g] ?? 0;
 export const TACTICS = {
-  bow:   { name: '불화살', qi: 15, mult: 1.6 }, // 설계 노병 불화살(기력 15는 설계에서도 확인 필요 표기 - 이 게임의 잠정값). 연사(기력 20)는 설계 밖 자체 전법이어서 대체
-  ram:      { name: '파쇄',   qi: 20, mult: 2.4 },                    // 충거: 거점 대데미지
-  tower:    { name: '불화살', qi: 15, mult: 1.7 },                    // 정란: 병사 살상
-  beast:    { name: '방사',   qi: 20, mult: 1.6, burn: true },        // 목수: 화염 공격
-  catapult: { name: '투석',   qi: 25, mult: 2.4 },                    // 투석기: 대데미지
-  junk: { name: '불화살', qi: 15, mult: 1.7 },                  // 수군 공통 (B 이상)
-  dou:  { name: '투석',   qi: 25, mult: 2.5, minApt: 3 },       // 투함 (S)
+  // R73: fac:true = 시설(建物) 대상 가능 — 매뉴얼 대상표: 破砕 建物・罠 / 放射・井闌火矢・投石・水軍火矢 建物 포함 / 激突 船専용(미구현) / 창・극・기병 部隊・兵器만
+  bow:   { name: '불화살', qi: 15, mult: 1.6, fac: true }, // 설계 노병 불화살(기력 15는 설계에서도 확인 필요 표기 - 이 게임의 잠정값). 연사(기력 20)는 설계 밖 자체 전법이어서 대체
+  ram:      { name: '파쇄',   qi: 20, mult: 2.4, fac: true },                    // 충거: 거점 대데미지
+  tower:    { name: '불화살', qi: 15, mult: 1.7, fac: true },                    // 정란: 병사 살상
+  beast:    { name: '방사',   qi: 20, mult: 1.6, burn: true, fac: true },        // 목수: 화염 공격 (시설에는 burn 추가 효과 미적용 - R73 fireTactic 주석)
+  catapult: { name: '투석',   qi: 25, mult: 2.4, fac: true },                    // 투석기: 대데미지
+  junk: { name: '불화살', qi: 15, mult: 1.7, fac: true },                  // 수군 공통 (B 이상)
+  dou:  { name: '투석',   qi: 25, mult: 2.5, minApt: 3, fac: true },       // 투함 (S)
 };
 // R18: 병종별 추가 전법 (설계 68~72행 명칭·적성·기력, 효과 수치는 자체. minApt: B=1 A=2 S=3). 부대 대상에만 적용
 export const TACTICS_EX = {
@@ -1513,6 +1514,28 @@ export class Game {
         u.tx = null; u.targetCity = null;
         this.log(`【${c.name_ko}】함락! → ${this.forceName(u.force)}`, true);
       }
+      this.autosave();
+      return true;
+    }
+    if (target.type === 'fac') { // R73: 시설 대상 전법 — 매뉴얼 대상표(파쇄 建物・罠 전용, 방사/정란·수군 불화살/투석 建物 포함, 격돌 船 전용으로 제외) + 설계 L38. 산식 수치는 자체 (도시 공성 산식 기반)
+      const f = (this.fieldFacs ?? []).find(x => x.id === target.id);
+      const base = TACTICS[u.type];
+      if (!f || !base || !base.fac || tac.id !== 'base') return false; // 이 병종 전법은 시설 대상 불가 (창·극·기병·lou), 추가 전법은 부대 전용 유지
+      if (f.force == null || f.force === u.force || this.isPeace(u.force, f.force)) return false; // R72 공통 평화 판정과 정합
+      const reach = SHIP_TYPES.has(u.type) ? 1.6 : (u.type === 'catapult' ? 3.0 : 2.2); // 수군 연안·투석기 사거리는 R72 직접 공격과 동일
+      if (Math.hypot(f.x - u.x, f.z - u.z) >= reach) return false;
+      const ut = UNIT_TYPES[u.type];
+      let dmg = Math.round(u.troops * 0.12 * ut.atk * (0.7 + lead.war / 150) * this.aptMult(u) * this.unitDmgMult(u, true) * this.unitItemAtk(u) * this.unitTechAtk(u) * this.unitRelMult(u)); // 도시 전법 공성 산식 기반 (자체 수치)
+      dmg = Math.round(dmg * this.tacMult(u, tac.mult));
+      if (ut.siege) dmg = Math.round(dmg * ut.siege);
+      // 목수 방사 burn 추가 효과는 시설 미적용: burn의 자체 효과는 병사 소손(시설에 병사 없음)이고 화염 DoT 시스템이 없어 기본 피해만 적용 (자체 결정)
+      dmg = Math.min(dmg, f.hp); // 실감소 clamp — 로그가 실제 감소분을 넘지 않게
+      u.qi -= tac.qi; u._tacTurn = this.turn;
+      this.gainMerit(u.officers[0], MERIT.tactic);
+      f.hp -= dmg;
+      this.gainTechP(u.force, Math.min(50, Math.floor(dmg / 100)));
+      this.log(`【전법】${lead.name_ko}의 ${tac.name}! ${f.type}에 큰 피해 (내구 -${dmg})`, u.force === this.playerForce);
+      if (f.hp <= 0) { this.fieldFacs = this.fieldFacs.filter(x => x !== f); this.log(`【야전】${josa(f.type, ['이','가'])} 파괴되었습니다`, u.force === this.playerForce || f.force === this.playerForce); }
       this.autosave();
       return true;
     }
