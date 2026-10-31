@@ -341,7 +341,7 @@ export class Game {
         continue;
       }
       if (!TRAPS[f.type]) for (const v of this.units) { // 적 육군이 시설을 공격 (병력의 2% 상당 소모)
-        if (v.force === f.force || SHIP_TYPES.has(v.type) || Math.hypot(v.x - f.x, v.z - f.z) > 1.2) continue;
+        if (v.force === f.force || SHIP_TYPES.has(v.type) || v._facAtkTurn === this.turn || Math.hypot(v.x - f.x, v.z - f.z) > 1.2) continue; // _facAtkTurn: 직접 공격 부대는 자동 소모 중복 제외 (R71)
         f.hp -= Math.max(10, Math.round(v.troops * 0.02));
       }
       if (TRAPS[f.type]) { // R28: 함정 발동 (1회)
@@ -924,8 +924,21 @@ export class Game {
       this.log(`${josa(u.label, ['은','는'])} ${josaRo(c.name_ko)} 통하는 노선이 없어 출진할 수 없습니다`, u.force === this.playerForce);
       return false;
     }
-    u.targetCity = targetCityId; u.tx = c.lon; u.tz = c.lat;
+    u.targetCity = targetCityId; u.targetFac = null; u.tx = c.lon; u.tz = c.lat; // 시설 목표 해제
     u.path = path;
+    return true;
+  }
+
+  orderFacAttack(unitId, facId) { // R71: 야전 시설 직접 지목 공격 — 매뉴얼: 군사시설은 공격 대상이며 내구 0이면 파괴 / 설계: 병기(충거) 파쇄로 시설 대데미지
+    const u = this.units.find(u => u.id === unitId);
+    const f = (this.fieldFacs ?? []).find(f => f.id === facId);
+    if (!u || !f) return false;
+    if (f.force === u.force) return false;
+    if (f.force != null && f.force >= 0 && u.force >= 0 && this.isPeace(u.force, f.force)) { this.log(`${josa(this.forceName(f.force), ['은','는'])} 동맹·정전 중이라 공격할 수 없습니다`, u.force === this.playerForce); return false; }
+    if (SHIP_TYPES.has(u.type)) { this.log(`수군은 육상 시설을 공격할 수 없습니다`, u.force === this.playerForce); return false; }
+    const path = this.findPath(u, f.x, f.z);
+    if (!path) { this.log(`${josa(u.label, ['은','는'])} ${f.type}에 이르는 노선이 없어 공격할 수 없습니다`, u.force === this.playerForce); return false; }
+    u.targetFac = facId; u.targetCity = null; u.tx = f.x; u.tz = f.z; u.path = path;
     return true;
   }
 
@@ -1161,6 +1174,20 @@ export class Game {
     if (this.econV === 2 && u.food < foodFull) { // 아군 도시 인접(1.5) 시 보급 (매뉴얼: 거점에서 병량 공급)
       const home = this.cities.find(hc => hc.force === u.force && Math.hypot(hc.lon - u.x, hc.lat - u.z) < 1.5);
       if (home && home.food > 0) { const take = Math.min(foodFull - u.food, home.food); home.food -= take; u.food += take; }
+    }
+    if (u.targetFac != null) { // R71: 야전 시설 직접 공격 — 매뉴얼(군사시설은 공격 대상, 내구 0이면 파괴) + 설계(충거 파쇄: 시설 대데미지)
+      const f = (this.fieldFacs ?? []).find(f => f.id === u.targetFac);
+      if (!f || f.force === u.force) { u.targetFac = null; u.tx = null; }
+      else {
+        const reach = u.type === 'catapult' ? 3.0 : 1.2; // 투석기만 원거리 (설계: 3칸 투석), 나머지 인접
+        if (Math.hypot(f.x - u.x, f.z - u.z) <= reach) {
+          const dmg = Math.max(10, Math.round(u.troops * 0.02)) * (SIEGE_TYPES.has(u.type) ? 3 : 1); // 병기 ×3 (설계 충거 파쇄), 수치 자체
+          f.hp -= dmg; u._facAtkTurn = this.turn;
+          this.log(`【야전】${josa(u.label, ['이','가'])} ${josa(f.type, ['을','를'])} 공격 (내구 -${dmg})`, u.force === this.playerForce || f.force === this.playerForce);
+          if (f.hp <= 0) { this.fieldFacs = this.fieldFacs.filter(x => x !== f); this.log(`【야전】${josa(f.type, ['이','가'])} 파괴되었습니다`, u.force === this.playerForce || f.force === this.playerForce); u.targetFac = null; u.tx = null; }
+          return;
+        }
+      }
     }
     if (u.tx == null) return;
     // 요격: 인접한 적 부대가 있으면 진격 정지 (아군 도시로의 퇴각은 허용)
