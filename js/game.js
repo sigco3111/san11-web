@@ -115,7 +115,8 @@ export const TECH_P = [1000, 2000, 3000, 5000];      // 단계별 필요 기교P
 // === R13: 능력연구 4계통 (설계안 120행 PK 채택, 계통·단계·수치는 자체 설계) ===
 export const AB_BRANCHES = { '공격': 'war', '방어': 'ldr', '계략': 'int', '내정': 'pol' };
 export const AB_P = [500, 1500, 3000]; // 계통당 3단계 필요 기교P
-export const AB_PICK = { '계략': ['논객', '요술', '낙뢰'] }; // 능력연구 3단계 완료 시 고를 수 있는 특기 (자체 잠정규칙, 미지정 시 AB_SKILL 기본값)
+export const AB_PICK = { '공격': ['맹돌', '수완'], '방어': ['강직', '수성', '완강'], '계략': ['논객', '요술', '낙뢰'], '내정': ['치안', '통상', '훈련'] }; // R110: 능력연구 3단계 완료 시 고를 수 있는 특기 — 전 계통 확장 (자체 잠정규칙, 첫 항목=기본값, 미지정 시 AB_SKILL 기본값). 수성·완강·통상·훈련·수완에 습득 경로 부여
+export const AB_PICKSTAT = { '공격': 'war', '방어': 'ldr', '계략': 'int', '내정': 'pol' }; // R110: 비기본 특기 선택 시 습득자 선정 능력 (자체 잠정규칙)
 export const AB_SKILL = { '공격': '맹돌', '방어': '강직', '계략': '논객', '내정': '치안' }; // 3단계 완료 시 특기 습득 (자체 선택)
 export const TECH_GOLD = [1000, 2000, 5000, 10000];  // 단계별 연구 비용 (금)
 export const TECH_DESC = {
@@ -251,7 +252,7 @@ export const ITEMS = [
 ]; // weapon=부대 공격 +5% · seal=군주 보유 시 기교P 월+10 (즉시 효과) / horse·bow·sword·book은 일기토(R10)·설전(R11) 연결 예정
 
 // === 공적·관작 (자체 수치) ===
-const RANKS = [[2,'주자사'],[4,'주목'],[6,'우림중랑장'],[8,'오관중랑장'],[12,'대장군'],[14,'대사마'],[18,'공'],[20,'왕'],[24,'황제']]; // 설계안 97행 사다리 (황제 24+ — 후한 옹립 메커니즘은 보류, 황제 부재 조건만). 황건 세력은 작위 불가
+const RANKS = [[2,'주자사'],[4,'주목'],[6,'우림중랑장'],[8,'오관중랑장'],[12,'대장군'],[14,'대사마'],[18,'공'],[20,'왕'],[24,'황제']]; // 설계안 97행 사다리 (황제 24+ — R17: 184·190은 낙양 보유 세력이 후한 황제 옹립(기교P 월+10), 옹립 세력 또는 황제 부재 시나리오만 즉위). 황건 세력은 작위 불가
 const MERIT = { develop: 30, recruit: 80, facility: 100, tactic: 40, stratagem: 30, capture: 150 }; // 공적 부여량 (자체 수치)
 const DEBATE_CARDS = { // R11: 설전 화술 (자체 명칭·수치). int=서적 미보유 시 필요 지력, cd=재사용 대기 합
   질타: { dmg: 12 }, 강변: { dmg: 24, cd: 2, int: 80 }, 반박: { counter: 8 }, 경청: { heal: 12, cd: 2 }, 도발: { seal: true, cd: 3, int: 85 },
@@ -1365,7 +1366,7 @@ export class Game {
         if (c.force !== this.playerForce) continue;
         const foe = this.units.find(u => u.force !== this.playerForce && (u.force < 0 || !this.isAllied(u.force, this.playerForce)) && Math.hypot(u.x - c.lon, u.z - c.lat) <= 4);
         if (foe) {
-          if (this._siegeWatch[c.id] !== foe.force) { this._siegeWatch[c.id] = foe.force; this._delegateStop(`${c.name_ko}에 적군(【${this.forceName(foe.force)}】 ${josa(foe.label, ['이','가']).slice(-1)}) 접근 — 포위·함락 위기`); }
+          if (this._siegeWatch[c.id] !== foe.force) { this._siegeWatch[c.id] = foe.force; this._delegateStop(`${c.name_ko}에 적군(【${this.forceName(foe.force)}】${josa(foe.label, ['이','가']).slice(-1)}) 접근 — 포위·함락 위기`); }
         } else delete this._siegeWatch[c.id];
       }
     }
@@ -2090,8 +2091,8 @@ export class Game {
       let sk = AB_SKILL[branch];
       const free = this.forceOfficers(fid).filter(o => o && !o.skill && !o.state?.grantSkill);
       let cand = free.slice().sort((a, b) => (b.state?.merit ?? 0) - (a.state?.merit ?? 0))[0];
-      if (branch === '계략' && pick && AB_PICK['계략'].includes(pick)) { // 선택 가능한 특기 목록: 논객(기본)·요술·낙뢰. 요술/낙뢰는 무특기 무장 중 지력 최고에게(자체 잠정규칙, 임계 지력 없음, 세력당 1회)
-        sk = pick; if (pick !== '논객') cand = free.slice().sort((a, b) => b.int - a.int)[0];
+      if (pick && (AB_PICK[branch] ?? []).includes(pick)) { // R110: 전 계통 선택 목록으로 일반화. 비기본 특기는 무특기 무장 중 해당 계통 능력 최고에게(자체 잠정규칙, 임계 능력 없음, 세력당 1회)
+        sk = pick; if (pick !== AB_SKILL[branch]) cand = free.slice().sort((a, b) => (b[AB_PICKSTAT[branch]] ?? 0) - (a[AB_PICKSTAT[branch]] ?? 0))[0];
       }
       if (cand) {
         cand.skill = sk; if (cand.state) cand.state.grantSkill = sk; // 저장 영속용
