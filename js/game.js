@@ -814,6 +814,8 @@ export class Game {
       const need = ut.perUnit ? per : per * troops;
       if ((c[k] ?? 0) < need) return false;
     }
+    let sx = c.lon, sz = c.lat; // R64: 수군은 인접 수로에서 출진 — 수로가 닿는 도시만 수군 운용 (자체 규칙)
+    if (SHIP_TYPES.has(type)) { const w = this.nearestWater(c.lon, c.lat); if (!w) { this.log(`${c.name_ko}는 인접 수로가 없어 선박을 띄울 수 없습니다`, c.force === this.playerForce); return false; } [sx, sz] = w; }
     for (const [k, per] of Object.entries(ut.cost)) c[k] -= ut.perUnit ? per : per * troops;
     c.troops -= troops; f.ap -= apc;
     const foodTake = this.econV === 2 ? Math.min(Math.round(troops * RULES.garrisonFood * RULES.unitFoodMonths), c.food) : 0; // 출진 부대 휴대 병량 (econV 2, 매뉴얼: 출진 시에도 병량 지급)
@@ -821,11 +823,23 @@ export class Game {
     c.officers = c.officers.filter(i => !officerIdxs.includes(i));
     for (const i of officerIdxs) this.officers[i].state.city = null;
     const unit = { id: this.nextUnitId++, force: c.force, officers: officerIdxs, troops, type, ...(this.econV === 2 ? { food: foodTake } : {}),
-      x: c.lon, z: c.lat, path: [], tx: null, tz: null, targetCity: null, label: '', qi: 100, conf: 0 };
+      x: sx, z: sz, path: [], tx: null, tz: null, targetCity: null, label: '', qi: 100, conf: 0 };
     unit.label = `${this.officers[officerIdxs[0]].name_ko} ${Math.round(troops/1000)}k`;
     this.units.push(unit);
     this.log(`${c.name_ko}에서 ${this.officers[officerIdxs[0]].name_ko}의 ${ut.name} ${troops} 출진`, c.force === this.playerForce);
     return unit;
+  }
+  nearestWater(x, z) { // R64: 가장 가까운 수로 셀 (반경 8셀=1.2°, 자체 규칙) — 수군 출진 위치·연안 판정 공용
+    const st = 0.15, lon0 = 100, lat0 = 20, W = 226, H = 146;
+    const ci = Math.round((x - lon0) / st), cj = Math.round((z - lat0) / st);
+    for (let r = 0; r <= 8; r++) for (let di = -r; di <= r; di++) for (let dj = -r; dj <= r; dj++) {
+      if (Math.max(Math.abs(di), Math.abs(dj)) !== r) continue;
+      const ni = ci + di, nj = cj + dj;
+      if (ni < 0 || ni > W || nj < 0 || nj > H) continue;
+      const wx = lon0 + ni * st, wz = lat0 + nj * st;
+      if (isWaterAt(wx, wz)) return [wx, wz];
+    }
+    return null;
   }
   findPath(u, tx, tz) { // R17: A* 경로 탐색 (자체 구현) — 육군: 바다 불가·강은 비용 3배 도하(여울 특정 타일·난소행군 기교 미구현에 따른 자체 단순화), 수군: 수로만. 0.15° 그리드
     const ship = SHIP_TYPES.has(u.type);
@@ -876,7 +890,8 @@ export class Game {
     cells.reverse();
     const pts = [];
     for (let k = 4; k < cells.length; k += 5) pts.push([lon0 + cells[k][0] * st, lat0 + cells[k][1] * st]);
-    pts.push([tx, tz]);
+    if (ship) pts.push([lon0 + tc[0] * st, lat0 + tc[1] * st]); // R64: 수군 목표는 연안 수로 셀 — 도시 좌표(육지)로 직행하면 좌초
+    else pts.push([tx, tz]);
     return pts;
   }
 
@@ -1148,16 +1163,21 @@ export class Game {
       if (!SHIP_TYPES.has(u.type) && isRiverAt(u.x, u.z)) speed *= this.riverMult(u); // R17/R23: 육군 강 도하 감속 - 깊은 강 0.35·여울 0.6·난소행군 0.8 (자체 수치)
       const nx = u.x + dx/d*speed, nz = u.z + dz/d*speed;
       if (SHIP_TYPES.has(u.type) && !isWaterAt(nx, nz)) { // 수군: 강·바다에서만 기동
-        if (!u._landWarn) { u._landWarn = true; this.log(`${josa(u.label, ['이','가'])} 수로를 벗어나 더 이상 나아갈 수 없습니다`, u.force === this.playerForce); }
-        u.path = []; return;
+        u.path = [];
+        const tc2 = u.targetCity != null ? this.cityById[u.targetCity] : null;
+        if (!(tc2 && Math.hypot(tc2.lon - u.x, tc2.lat - u.z) <= 1.6)) { // R64: 수상 공성 사거리(자체 수치) 내 연안 도시면 제자리에서 공성으로 진행
+          if (!u._landWarn) { u._landWarn = true; this.log(`${josa(u.label, ['이','가'])} 수로를 벗어나 더 이상 나아갈 수 없습니다`, u.force === this.playerForce); }
+          return;
+        }
+      } else {
+        if (!SHIP_TYPES.has(u.type) && isSeaAt(nx, nz)) { // R17: 육군은 바다 진입 불가 (강은 도하 가능, 설계안 64행)
+          if (!u._waterWarn) { u._waterWarn = true; this.log(`${josa(u.label, ['은','는'])} 바다를 건널 수 없어 진격을 멈췄습니다`, u.force === this.playerForce); }
+          u.path = []; return;
+        }
+        u._waterWarn = false;
+        u._landWarn = false;
+        u.x = nx; u.z = nz; return;
       }
-      if (!SHIP_TYPES.has(u.type) && isSeaAt(nx, nz)) { // R17: 육군은 바다 진입 불가 (강은 도하 가능, 설계안 64행)
-        if (!u._waterWarn) { u._waterWarn = true; this.log(`${josa(u.label, ['은','는'])} 바다를 건널 수 없어 진격을 멈췄습니다`, u.force === this.playerForce); }
-        u.path = []; return;
-      }
-      u._waterWarn = false;
-      u._landWarn = false;
-      u.x = nx; u.z = nz; return;
     }
     // 도착: 도시 처리
     const c = this.cityById[u.targetCity];
@@ -1170,6 +1190,7 @@ export class Game {
       const cap = c.metropolis ? 150000 : 100000;
       c.troops = Math.min(cap, c.troops + u.troops);
       c.food += (u.food ?? 0); // 잔여 휴대 병량 회수
+      const sb = SHIP_BUILD[u.type]; if (sb) c[sb.store] = (c[sb.store] ?? 0) + 1; // R64: 귀환 선박은 도시 재고로 회수 (자체 규칙)
       for (const i of u.officers) { if (!c.officers.includes(i)) c.officers.push(i); this.officers[i].state.city = c.id; }
       this.units = this.units.filter(x => x !== u);
       return;
