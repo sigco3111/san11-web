@@ -1,12 +1,12 @@
 // 진입점: 화면 전환·UI·지도 연결
-import { Map3D, toWorld } from './map3d.js?v=r70';
-import { Game, SAVE_KEY, RULES, forceColor, UNIT_TYPES, ARTS, FIELD_FACS, TRAPS, SHIP_TYPES, josa, josaRo, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL, AB_PICK } from './game.js?v=r70';
-import { aiThink } from './ai.js?v=r70';
+import { Map3D, toWorld } from './map3d.js?v=r71';
+import { Game, SAVE_KEY, RULES, forceColor, UNIT_TYPES, ARTS, FIELD_FACS, TRAPS, SHIP_TYPES, josa, josaRo, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL, AB_PICK } from './game.js?v=r71';
+import { aiThink } from './ai.js?v=r71';
 
 const $ = id => document.getElementById(id);
 let DATA = null, game = null, map = null, selectedUnit = null, autoTimer = null, pendingFire = null; // R15: 직접 전법·계략 대기
 
-const BUILD_ID = 'r70'; // 빌드 ID (index.html의 meta[name=build]와 같아야 함 - 오래된 캐시된 index와 새 스크립트의 혼합 감지)
+const BUILD_ID = 'r71'; // 빌드 ID (index.html의 meta[name=build]와 같아야 함 - 오래된 캐시된 index와 새 스크립트의 혼합 감지)
 function checkBuildSkew() {
   const idx = document.querySelector('meta[name="build"]')?.content;
   if (idx === BUILD_ID) { sessionStorage.removeItem('cheonha-xi-web.skew'); return; } // 일치하면 재시도 표식 해제
@@ -19,7 +19,7 @@ checkBuildSkew();
 async function loadData() {
   const [officers, skills, portraits, s184, s190, s251] = await Promise.all(
     ['data/officers670.json','data/skills.json','data/portraits.json','data/scenario-184.json','data/scenario-190.json','data/scenario-251.json']
-      .map(u => fetch(u + '?v=r70').then(r => r.json())));
+      .map(u => fetch(u + '?v=r71').then(r => r.json())));
   const byIdx = {};
   for (const o of officers) byIdx[o.idx] = o;
   DATA = { officers: byIdx, skills, portraits, scenarios: { '184': s184, '190': s190, '251': s251 } };
@@ -351,6 +351,14 @@ function onPick(nx, ny) {
     const u = game.units.find(x => x.id === hit.id);
     if (u && !game.delegated && u.force !== game.playerForce && !game.inVision(u.x, u.z)) return; // R14: 시야 밖 부대는 선택 불가
     selectedUnit = hit.id; showUnitPanel(hit.id); return;
+  }
+  if (hit.type === 'fac') { // R71: 야전 시설 직접 지목 공격 — 부대 선택 상태에서 적 시설 클릭
+    const f = (game.fieldFacs ?? []).find(f => f.id === hit.id);
+    if (f && selectedUnit != null && game.units.find(u => u.id === selectedUnit && u.force === game.playerForce) && !game.delegated && f.force !== game.playerForce) {
+      if (game.orderFacAttack(selectedUnit, hit.id)) game.log(`${game.units.find(u=>u.id===selectedUnit).label} → ${f.type} 공격 명령`, true);
+    }
+    selectedUnit = null; $('panel').classList.add('hidden'); refreshLog();
+    return;
   }
   const c = game.cityById[hit.id];
   if (selectedUnit != null && game.units.find(u => u.id === selectedUnit && u.force === game.playerForce) && !game.delegated) {
