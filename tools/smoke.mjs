@@ -2613,3 +2613,30 @@ console.log('sample logs:'); for (const l of g.logs.slice(-8)) console.log(' ', 
   if (!g10.pendingStop) fail('외교 제안 자동 정지 미발동');
   console.log('R109 위임 자동 중단 게이트 PASS (포위 에피소드·외교 제안·멸망)');
       }
+
+// === R110: 능력연구 특기 선택 전 계통 확장 게이트 — AB_PICK 4계통, 비기본 특기는 계통 능력 최고 무장, 기본값·grantSkill 영속 ===
+{
+  const fail = m => { console.log('FAIL: R110 ' + m); process.exit(1); };
+  const src = readFileSync('js/game.js', 'utf8');
+  if (!src.includes("AB_PICKSTAT")) fail('AB_PICKSTAT 없음');
+  for (const t of ["'방어': ['강직', '수성', '완강']", "'내정': ['치안', '통상', '훈련']", "'공격': ['맹돌', '수완']"]) if (!src.includes(t)) fail('AB_PICK 확장 누락: ' + t);
+  if (!src.includes('후한 황제 옹립(기교P 월+10)')) fail('RANKS 주석 정정 누락');
+  const msrc = readFileSync('js/main.js', 'utf8');
+  if (!msrc.includes('AB_PICK[b].slice(1)')) fail('기교 패널 선택 문구 일반화 누락');
+  const sk = JSON.parse(readFileSync('data/skills.json', 'utf8'));
+  if (!sk['지도']) fail('skills.json 지도 설명 누락');
+  // 기능: 방어 3단계에 '수성' 선택 → 통솔 최고 무특기 무장이 습득 + grantSkill 영속
+  const g15 = new Game(JSON.parse(JSON.stringify(scen)), officers, {}, 0);
+  const f15 = g15.forces[g15.playerForce];
+  f15.ab = { '공격': 2, '방어': 2, '계략': 2, '내정': 2 }; f15.techP = 99999;
+  const free15 = () => g15.forceOfficers(g15.playerForce).filter(o => o && !o.skill && !o.state?.grantSkill);
+  const top = (st) => free15().slice().sort((a, b) => (b[st] ?? 0) - (a[st] ?? 0))[0];
+  const tLdr = top('ldr');
+  if (!g15.researchAbility(g15.playerForce, '방어', '수성')) fail('방어 3단계 실행 실패');
+  if (!tLdr || tLdr.skill !== '수성' || tLdr.state?.grantSkill !== '수성') fail('수성 습득자 선정/영속 오류: ' + (tLdr && tLdr.name_ko + '/' + tLdr.skill));
+  // 기능: 내정에 목록 밖 특기 지정 → 기본값(치안), 기본 경로는 공적 최고 무장
+  const tMerit = free15().slice().sort((a, b) => (b.state?.merit ?? 0) - (a.state?.merit ?? 0))[0];
+  if (!g15.researchAbility(g15.playerForce, '내정', '논객')) fail('내정 3단계 실행 실패');
+  if (!tMerit || tMerit.skill !== '치안') fail('목록 밖 선택 시 기본값 오류: ' + (tMerit && tMerit.name_ko + '/' + tMerit.skill));
+  console.log('R110 능력연구 특기 선택 확장 게이트 PASS (AB_PICK 4계통·계통 능력 선정·기본값·지도 설명)');
+      }
