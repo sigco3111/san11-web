@@ -35,9 +35,9 @@ export function aiThink(game, fid, legion = null) { // legion 지정 시 그 군
   // 1.6) 상인: 같은 환율·비용(AP10) — 병량 부족 시 매입, 금 부족 시 매각
   {
     const rate = game.tradeRate();
-    const needFood = cities.filter(c => c.food < 3000 && c.gold >= 3000).sort((x, y) => x.food - y.food)[0];
+    const needFood = cities.filter(c => (game.econV === 2 ? c.food < Math.max(3000, Math.round(c.troops * 0.8)) : c.food < 3000) && c.gold >= 3000).sort((x, y) => x.food - y.food)[0]; // econV 2: 2개월분 미만이면 매입 / 1: 구 문턱
     if (needFood && f.ap >= 10) game.trade(needFood.id, 'buy', 2);
-    const richFood = cities.filter(c => c.food > 50000 && c.gold < 500 && c.food >= rate).sort((x, y) => y.food - x.food)[0];
+    const richFood = cities.filter(c => (game.econV === 2 ? c.food > Math.max(50000, Math.round(c.troops * 2.4)) : c.food > 50000) && c.gold < 500 && c.food >= rate).sort((x, y) => y.food - x.food)[0]; // econV 2: 6개월분 초과 시에만 매각 / 1: 구 문턱
     if (richFood && f.ap >= 10) game.trade(richFood.id, 'sell', 2);
   }
   // 2) 징병: 병력이 적은 도시
