@@ -1,12 +1,12 @@
 // 진입점: 화면 전환·UI·지도 연결
-import { Map3D, toWorld } from './map3d.js?v=r60';
-import { Game, SAVE_KEY, RULES, forceColor, UNIT_TYPES, ARTS, FIELD_FACS, TRAPS, SHIP_TYPES, josa, josaRo, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL, AB_PICK } from './game.js?v=r60';
-import { aiThink } from './ai.js?v=r60';
+import { Map3D, toWorld } from './map3d.js?v=r61';
+import { Game, SAVE_KEY, RULES, forceColor, UNIT_TYPES, ARTS, FIELD_FACS, TRAPS, SHIP_TYPES, josa, josaRo, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL, AB_PICK } from './game.js?v=r61';
+import { aiThink } from './ai.js?v=r61';
 
 const $ = id => document.getElementById(id);
 let DATA = null, game = null, map = null, selectedUnit = null, autoTimer = null, pendingFire = null; // R15: 직접 전법·계략 대기
 
-const BUILD_ID = 'r60'; // 빌드 ID (index.html의 meta[name=build]와 같아야 함 - 오래된 캐시된 index와 새 스크립트의 혼합 감지)
+const BUILD_ID = 'r61'; // 빌드 ID (index.html의 meta[name=build]와 같아야 함 - 오래된 캐시된 index와 새 스크립트의 혼합 감지)
 function checkBuildSkew() {
   const idx = document.querySelector('meta[name="build"]')?.content;
   if (idx === BUILD_ID) { sessionStorage.removeItem('cheonha-xi-web.skew'); return; } // 일치하면 재시도 표식 해제
@@ -19,7 +19,7 @@ checkBuildSkew();
 async function loadData() {
   const [officers, skills, portraits, s184, s190, s251] = await Promise.all(
     ['data/officers670.json','data/skills.json','data/portraits.json','data/scenario-184.json','data/scenario-190.json','data/scenario-251.json']
-      .map(u => fetch(u + '?v=r60').then(r => r.json())));
+      .map(u => fetch(u + '?v=r61').then(r => r.json())));
   const byIdx = {};
   for (const o of officers) byIdx[o.idx] = o;
   DATA = { officers: byIdx, skills, portraits, scenarios: { '184': s184, '190': s190, '251': s251 } };
@@ -518,11 +518,11 @@ function showFacilities(c) {
 function showTech() {
   const f = game.forces[game.playerForce];
   const p = $('panel'); p.classList.remove('hidden');
-  let html = `<h3>기교 연구 <small>(기교P ${f?.techP ?? 0})</small></h3>`;
+  let html = `<h3>기교 연구 <small>(기교P ${f?.techP ?? 0}${game.forceHasSkill(game.playerForce, '지도') ? ' · 특기 「지도」: 연구 금 반액' : ''})</small></h3>`;
   for (const b of TECH_BRANCHES) {
     const lv = game.techLv(game.playerForce, b);
     const done = lv >= 4;
-    html += `<div class="officer"><div><div class="nm">${b} ${'●'.repeat(lv)}${'○'.repeat(4 - lv)}</div><div class="st">${TECH_DESC[b]}</div></div>${done ? '<span class="st">최고 단계</span>' : `<button class="cmd cmd-techr" data-b="${b}">연구 (P${TECH_P[lv]}·금${TECH_GOLD[lv]})</button>`}</div>`;
+    html += `<div class="officer"><div><div class="nm">${b} ${'●'.repeat(lv)}${'○'.repeat(4 - lv)}</div><div class="st">${TECH_DESC[b]}</div></div>${done ? '<span class="st">최고 단계</span>' : `<button class="cmd cmd-techr" data-b="${b}">연구 (P${TECH_P[lv]}·금${game.researchGold(game.playerForce, TECH_GOLD[lv])})</button>`}</div>`;
   }
   html += `<h3 style="margin-top:10px">능력연구 <small>(PK — 소속 무장 전원 능력 +2/단계, 3단계 완료 시 특기 습득)</small></h3>`; // R13
   const AB_NM = { '공격': '무력', '방어': '통솔', '계략': '지력', '내정': '정치' };
@@ -533,7 +533,7 @@ function showTech() {
   html += `<h3 style="margin-top:10px">개별 기교 <small>(이 게임 자체 규칙: 비용과 효과는 직접 정한 값)</small></h3>`; // R23
   for (const [nm, a] of Object.entries(ARTS)) {
     const has = !!f?.arts?.[nm];
-    html += `<div class="officer"><div><div class="nm">${nm} ${has ? '●' : '○'}</div><div class="st">${a.desc}${has ? '' : ` · 기교P ${a.p} · 금 ${a.gold}`}</div></div>${has ? '<span class="st">연구 완료</span>' : `<button class="cmd cmd-artr" data-a="${nm}">연구</button>`}</div>`;
+    html += `<div class="officer"><div><div class="nm">${nm} ${has ? '●' : '○'}</div><div class="st">${a.desc}${has ? '' : ` · 기교P ${a.p} · 금 ${game.researchGold(game.playerForce, a.gold)}`}</div></div>${has ? '<span class="st">연구 완료</span>' : `<button class="cmd cmd-artr" data-a="${nm}">연구</button>`}</div>`;
   }
   html += `<button class="cmd" id="cmd-tech-back">← 도시 패널로</button>`;
   p.innerHTML = html;
