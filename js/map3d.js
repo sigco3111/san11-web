@@ -1,6 +1,6 @@
 // 3D 저폴리 지도 엔진 (Three.js) - 고정 등각 아이소메트릭 + 계단식 지형 + 성곽/숲
 import * as THREE from 'three';
-import { loadGLBAssets, applyEnvironment } from './assets-3d.js?v=r66';
+import { loadGLBAssets, applyEnvironment } from './assets-3d.js?v=r67';
 
 const LON0 = 100, LON1 = 126.5, LAT0 = 21.5, LAT1 = 43;
 export function toWorld(lon, lat) {
@@ -576,11 +576,17 @@ export class Map3D {
       }
     }
     if (bestU != null) return { type: 'unit', id: bestU };
-    const hits = this.raycaster.intersectObjects([this.cityGroup], true);
-    for (const h of hits) {
-      const o = h.object;
-      if (o.userData.cityId !== undefined) return { type: 'city', id: o.userData.cityId };
+    // 도시: 광선-메쉬 교차 대신 화면공간 근접 — 성채 메쉬가 겹치는 각도에서 앞 도시가 뒤 도시를 가리는 오선택 방지 (자체 수치)
+    let bestC = null, bestCd = 0.06; // NDC 거리 임계 (~40px)
+    const pv = new THREE.Vector3();
+    for (const id of Object.keys(this.cityMeshes)) {
+      const g = this.cityMeshes[id].group;
+      pv.set(g.position.x, g.position.y + 1.2, g.position.z).project(this.camera);
+      if (pv.z > 1) continue;
+      const d = Math.hypot(pv.x - nx, pv.y - ny);
+      if (d < bestCd) { bestCd = d; bestC = Number(id); }
     }
+    if (bestC != null) return { type: 'city', id: bestC };
     return null;
   }
 
