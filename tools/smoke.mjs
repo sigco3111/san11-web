@@ -569,8 +569,9 @@ if (g.units.find(u => u.id === 9999) && g.units.find(u => u.id === 9999).qi === 
     ac.gold = 20000; aiF.ap = 255;
     ac.facilities = [{ type: '공방', done: true, progress: 3, builders: [] }, { type: '조선소', done: true, progress: 3, builders: [] }];
     aiThink(gA, aiF.id);
-    if (((ac.rams ?? 0) + (ac.catapults ?? 0)) < 1 || ((ac.lous ?? 0) + (ac.dous ?? 0)) < 1) { console.error('FAIL: AI 병기·선박 생산', ac.rams, ac.catapults, ac.lous, ac.dous); process.exit(1); }
-    console.log('AI 병기·선박 생산 확인: 충거', ac.rams ?? 0, '투석', ac.catapults ?? 0, '누선', ac.lous ?? 0, '투함', ac.dous ?? 0);
+    const shipBuiltLog = gA.logs.some(l => l.msg.includes(ac.name_ko + '에서') && (l.msg.includes('누선 건조') || l.msg.includes('투함 건조'))); // R64: 건조 직후 출진하면 재고 0이 될 수 있어 생산은 로그로 확인
+    if (((ac.rams ?? 0) + (ac.catapults ?? 0)) < 1 || !shipBuiltLog) { console.error('FAIL: AI 병기·선박 생산', ac.rams, ac.catapults, ac.lous, ac.dous, shipBuiltLog); process.exit(1); }
+    console.log('AI 병기·선박 생산 확인: 충거', ac.rams ?? 0, '투석', ac.catapults ?? 0, '누선', ac.lous ?? 0, '투함', ac.dous ?? 0, '건조 로그', shipBuiltLog);
   }
   // 수상 판정 기본값
   if (!isWaterAt(114.3, 30.5) || !isWaterAt(126, 38) || isWaterAt(114, 34) || isWaterAt(100, 30)) { console.error('FAIL: 수상 판정'); process.exit(1); }
@@ -2193,4 +2194,58 @@ console.log('sample logs:'); for (const l of g.logs.slice(-8)) console.log(' ', 
   aiThink(g3, ai);
   if ((g3.fieldFacs ?? []).some(x => x.force === ai)) fail('위협 없는데 건설');
   console.log('R-facai AI 야전시설 게이트 PASS (근접 함정·원거리 진/채·무위협 미건설·R63 건설지속/완공/함정발동)');
+}
+
+// === R64: 수군 출진·수상 공성·연안 교전·귀환 게이트 (자체 규칙: 인접 수로 출진, 수상 공성 사거리 1.6, 귀환 시 선박 재고 회수 — 설계 31·39행 수군/수전 범위) ===
+{
+  const fail = m => { console.log('FAIL: R64 ' + m); process.exit(1); };
+  const g = new Game(JSON.parse(JSON.stringify(scen)), JSON.parse(JSON.stringify(officers)), {}, 0);
+  g.units = [];
+  const coastal = g.cities.filter(c => g.nearestWater(c.lon, c.lat));
+  const inland = g.cities.filter(c => !g.nearestWater(c.lon, c.lat));
+  if (!coastal.length) fail('연안 도시 없음');
+  if (coastal.length < 2) fail('연안 도시 2개 미만');
+  // 1) 출진: 재고 차감·수상 스폰
+  const A = coastal[0];
+  A.force = 0; A.troops = 20000; A.dous = 1; g.forces[0].ap = 200;
+  if (!A.officers.length) A.officers = [g.forces[0].ruler];
+  const u = g.dispatch(A.id, A.officers.slice(0, 1), 5000, 'dou');
+  if (!u) fail('연안 도시 수군 출진 실패');
+  if (A.dous !== 0) fail('선박 재고 미차감 ' + A.dous);
+  if (!isWaterAt(u.x, u.z)) fail('수군 스폰이 수상이 아님');
+  // 2) 내륙 도시: 수군 출진 불가 (인접 수로 없음)
+  if (inland.length) {
+    const I = inland[0]; I.force = 0; I.troops = 20000; I.dous = 1;
+    if (!I.officers.length) I.officers = [g.forces[0].ruler];
+    g.forces[0].ap = 200;
+    if (g.dispatch(I.id, I.officers.slice(0, 1), 5000, 'dou')) fail('내륙 도시 수군 출진 성공(수로 없음)');
+  }
+  // 3) 수상 공성: 연안 적 도시에 수로에서 공격 (시험 배치)
+  const E = coastal.find(c => c !== A);
+  E.force = 1; E.troops = 20000; E.hp = E.maxhp;
+  const w = g.nearestWater(E.lon, E.lat);
+  u.x = w[0]; u.z = w[1]; u.path = []; u.tx = E.lon; u.tz = E.lat; u.targetCity = E.id;
+  const t0 = E.troops, h0 = E.hp;
+  for (let k = 0; k < 5 && E.troops === t0; k++) g.stepUnit(u);
+  if (E.troops >= t0) fail('수상 공성 병력 피해 없음');
+  if (E.hp >= h0) fail('수상 공성 내구 피해 없음');
+  // 4) 연안 교전: 육군↔수군 쌍방 타격 (육군의 수군 공격을 막는 제약 없음)
+  const landU = { id: 9101, force: 1, officers: [g.forces[1]?.ruler ?? 0], troops: 9000, type: 'spear', x: E.lon, z: E.lat, path: [], tx: null, tz: null, targetCity: null, label: '육군 9k', qi: 100, conf: 0 };
+  u.x = w[0]; u.z = w[1];
+  if (Math.hypot(landU.x - u.x, landU.z - u.z) >= 2.2) fail('연안 거리 부족');
+  const ls0 = landU.troops, ss0 = u.troops;
+  g.units = [u, landU];
+  g.resolveFieldBattles();
+  if (landU.troops >= ls0) fail('수군→육군 타격 없음');
+  if (u.troops >= ss0) fail('육군→수군 타격 없음');
+  // 5) 귀환: 아군 도시 인접 수상에서 합류 시 선박 재고 회수 + 병력 합류
+  const wa = g.nearestWater(A.lon, A.lat);
+  g.units = [u];
+  const tr0 = A.troops;
+  u.x = wa[0]; u.z = wa[1]; u.path = []; u.tx = A.lon; u.tz = A.lat; u.targetCity = A.id; u.conf = 0; u.burn = 0; // 직전 연안 교전에서 걸린 혼란·화재 해제 (귀환 경로만 검증)
+  g.stepUnit(u);
+  if (g.units.includes(u)) fail('귀환 합류 안 됨');
+  if (A.dous !== 1) fail('귀환 선박 재고 회수 안 됨 ' + A.dous);
+  if (A.troops <= tr0) fail('귀환 병력 합류 안 됨');
+  console.log('R64 수군 게이트 PASS (연안 출진 수상 스폰·재고 차감, 내륙 출진 불가, 수상 공성 병력+내구 피해, 연안 육↔수 쌍방 타격, 귀환 재고 회수·병력 합류)');
       }
