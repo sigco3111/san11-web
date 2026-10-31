@@ -1,12 +1,12 @@
 // 진입점: 화면 전환·UI·지도 연결
-import { Map3D, toWorld } from './map3d.js?v=r81';
-import { Game, SAVE_KEY, RULES, forceColor, UNIT_TYPES, ARTS, FIELD_FACS, TRAPS, SHIP_TYPES, TAC_SHIP_OK, josa, josaRo, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL, AB_PICK } from './game.js?v=r81';
-import { aiThink } from './ai.js?v=r81';
+import { Map3D, toWorld } from './map3d.js?v=r82';
+import { Game, SAVE_KEY, RULES, forceColor, UNIT_TYPES, ARTS, FIELD_FACS, TRAPS, SHIP_TYPES, TAC_SHIP_OK, josa, josaRo, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL, AB_PICK } from './game.js?v=r82';
+import { aiThink } from './ai.js?v=r82';
 
 const $ = id => document.getElementById(id);
 let DATA = null, game = null, map = null, selectedUnit = null, autoTimer = null, pendingFire = null; // R15: 직접 전법·계략 대기
 
-const BUILD_ID = 'r81'; // 빌드 ID (index.html의 meta[name=build]와 같아야 함 - 오래된 캐시된 index와 새 스크립트의 혼합 감지)
+const BUILD_ID = 'r82'; // 빌드 ID (index.html의 meta[name=build]와 같아야 함 - 오래된 캐시된 index와 새 스크립트의 혼합 감지)
 function checkBuildSkew() {
   const idx = document.querySelector('meta[name="build"]')?.content;
   if (idx === BUILD_ID) { sessionStorage.removeItem('cheonha-xi-web.skew'); return; } // 일치하면 재시도 표식 해제
@@ -19,7 +19,7 @@ checkBuildSkew();
 async function loadData() {
   const [officers, skills, portraits, s184, s190, s251] = await Promise.all(
     ['data/officers670.json','data/skills.json','data/portraits.json','data/scenario-184.json','data/scenario-190.json','data/scenario-251.json']
-      .map(u => fetch(u + '?v=r81').then(r => r.json())));
+      .map(u => fetch(u + '?v=r82').then(r => r.json())));
   const byIdx = {};
   for (const o of officers) byIdx[o.idx] = o;
   DATA = { officers: byIdx, skills, portraits, scenarios: { '184': s184, '190': s190, '251': s251 } };
@@ -751,6 +751,7 @@ function showUnitPanel(uid) {
     ${mine && (u.conf ?? 0) <= 0 && (u._stratTurn ?? -1) !== game.turn && u.officers.some(i => (DATA.officers[i]?.int ?? 0) >= 80) && (u.qi ?? 100) >= 15 ? '<button class="cmd" id="up-rumor">계략 위보 (기력 15)</button> <button class="cmd" id="up-calm">계략 진정 (기력 10)</button>' : ''}
     ${mine && (u.conf ?? 0) <= 0 && (u._stratTurn ?? -1) !== game.turn && (u.qi ?? 100) >= 50 ? ['요술', '낙뢰'].filter(sk => u.officers.some(i => game.officers[i]?.skill === sk)).map(sk => `<p><button class="cmd" id="up-${sk === '요술' ? 'sorcery' : 'thunder'}">계략 ${sk} (기력 50, 광역)</button></p>`).join('') : ''}
     ${mine && !SHIP_TYPES.has(u.type) ? `<p>${u.building ? `<span style="color:#ffd700">${u.building} 건설 중 (이동 명령을 내리면 취소)</span>` : Object.entries(FIELD_FACS).map(([k, v]) => `<button class="cmd up-ff" data-k="${k}" title="${v.desc}">${k} 건설 (금 ${v.cost}·${v.turns}턴)</button>`).join(' ')}</p>` : ''}
+    ${mine ? (() => { if (u.repairing != null) { const rf = (game.fieldFacs ?? []).find(f => f.id === u.repairing); if (rf) return `<p><span style="color:#ffd700">${rf.type} 보수 중 (내구 ${rf.hp}/${FIELD_FACS[rf.type].hp}, 이동 명령을 내리면 중단)</span></p>`; } const reps = (game.fieldFacs ?? []).filter(f => game.canRepairFac(u, f) === null); return reps.length ? `<p>${reps.map(f => `<button class="cmd up-rep" data-f="${f.id}">${f.type} 보수 (내구 ${f.hp}/${FIELD_FACS[f.type].hp}·금 불요)</button>`).join(' ')}</p>` : ''; })() : ''} // 補修: 인접 아군 시설 보수 (매뉴얼 P.41)
     ${mine ? (() => { const nc = game.cities.find(c => game.canBreakLevee(u, c) === null); return nc ? `<p><button class="cmd" id="up-levee" data-c="${nc.id}">제방 파괴 — ${nc.name_ko} (내구 -15%·병사 -10%·2턴 침수)</button></p>` : ''; })() : ''}
     <p><button class="cmd" id="up-close">닫기</button></p>`;
   $('up-close').onclick = () => { $('panel').classList.add('hidden'); selectedUnit = null; pendingFire = null; };
@@ -765,6 +766,7 @@ function showUnitPanel(uid) {
     refreshAll(); showUnitPanel(u.id);
     if (!ok) { const w = document.createElement('p'); w.style.color = '#e66'; w.textContent = game.lastFieldWhy ?? '건설할 수 없습니다'; $('panel').insertBefore(w, $('up-close').parentElement); }
   }; });
+  document.querySelectorAll('#panel .up-rep').forEach(b => { b.onclick = () => { const ok = game.repairFac(u.id, Number(b.dataset.f)); refreshAll(); showUnitPanel(u.id); if (!ok) { const w = document.createElement('p'); w.style.color = '#e66'; w.textContent = game.lastRepairWhy ?? '보수할 수 없습니다'; $('panel').insertBefore(w, $('up-close').parentElement); } }; });
   if ($('up-levee')) $('up-levee').onclick = () => { game.breakLevee(u.id, Number($('up-levee').dataset.c)); refreshAll(); showUnitPanel(u.id); }; // R28
   if ($('up-ambush')) $('up-ambush').onclick = () => { game.fireStrat(u.id, 'ambush', {}); refreshAll(); showUnitPanel(u.id); };
   if ($('up-douse')) $('up-douse').onclick = () => { game.fireStrat(u.id, 'douse', { type: 'unit', id: u.id }); refreshAll(); showUnitPanel(u.id); };
