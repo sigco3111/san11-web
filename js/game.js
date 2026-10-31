@@ -951,12 +951,12 @@ export class Game {
     return unit;
   }
   _rw(x, z) { return this.renderedWaterFn ? this.renderedWaterFn(x, z) : this._renderedWater(x, z); } // R64: 라이브는 main.js가 주입하는 렌더러 지형(levels) 기준, 헤드리스는 격자 근사
-  _renderedWater(x, z) { // R64: 3D 렌더러가 실제로 물로 그리는 셀의 격자 근사(헤드리스용) — 강은 파내기 반경(세계 1.35) 안쪽, 도시 보호 반경(세계 1.5) 밖 (map3d.js의 CELL/RIVER_R/CITY_RIVER_R와 동일 기준, R91)
+  _renderedWater(x, z) { // R64: 3D 렌더러가 실제로 물로 그리는 셀의 격자 근사(헤드리스용) — 강은 파내기 반경(세계 1.8) 안쪽, 도시 보호 반경(세계 1.0) 밖 (map3d.js의 CELL/RIVER_R/CITY_RIVER_R와 동일 기준, R92)
     if (!isWaterAt(x, z)) return false;
-    if (this.cities.some(c => Math.hypot((x - c.lon) * 3.1, (z - c.lat) * 3.7) < 1.5)) return false;
+    if (this.cities.some(c => Math.hypot((x - c.lon) * 3.1, (z - c.lat) * 3.7) < 1.0)) return false;
     if (isSeaAt(x, z)) return true;
     for (const line of W_RIVERS) for (let i = 0; i < line.length - 1; i++)
-      if (wDistToSeg(x * 3.1, z * 3.7, line[i][0] * 3.1, line[i][1] * 3.7, line[i+1][0] * 3.1, line[i+1][1] * 3.7) < 1.35) return true;
+      if (wDistToSeg(x * 3.1, z * 3.7, line[i][0] * 3.1, line[i][1] * 3.7, line[i+1][0] * 3.1, line[i+1][1] * 3.7) < 1.8) return true;
     return false;
   }
   nearestWater(x, z) { // R64: 가장 가까운 '렌더링된' 수로 셀 (반경 8셀=1.2°, 자체 규칙) — 수군 출진 위치·연안 판정 공용. 게임 격자상 강이어도 화면상 육지(도시 보호 반경·강 가장자리)면 제외
