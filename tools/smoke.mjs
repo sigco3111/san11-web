@@ -662,7 +662,7 @@ if (g.units.find(u => u.id === 9999) && g.units.find(u => u.id === 9999).qi === 
   const mkU = (id, force, war, items) => {
     const oi = 93000 + id;
     g10.officers[oi] = { idx: oi, name_ko: '결투' + id, ldr: 50, war, int: 30, pol: 30, chr: 50, skill: null, apt: {}, state: { status: 'serving', force, city: null, items: items ?? [], merit: 0 } };
-    return { id, force, officers: [oi], troops: 8000, type: 'cav', x: 108.9, z: 34.3, path: [], tx: null, tz: null, targetCity: null, label: 'U' + id, qi: 100, conf: 0 };
+    return { id, force, officers: [oi], troops: 8000, type: 'cav', x: 108.9, z: 34.9, path: [], tx: null, tz: null, targetCity: null, label: 'U' + id, qi: 100, conf: 0 };
   };
   const uA = mkU(1, 0, 90), uB = mkU(2, 1, 70);
   const homeB = g10.cities.find(c => c.force === 1);
@@ -1659,7 +1659,7 @@ if (g.units.find(u => u.id === 9999) && g.units.find(u => u.id === 9999).qi === 
   const g = mkg(); g.units = []; g.fieldFacs = []; const f0 = g.playerForce; const e0 = g.cities.find(c => c.force != null && c.force !== f0).force;
   const mk = (id, force, x, z, troops = 3000) => { const u = { id, force, officers: [], troops, type: 'spear', x, z, path: [], tx: null, tz: null, targetCity: null, label: 'T' + id, qi: 100, conf: 0 }; g.units.push(u); return u; };
   const cap = g.forceCities(f0).sort((a, b) => b.gold - a.gold)[0]; cap.gold = 5000;
-  const u = mk(7001, f0, 107.0, 33.0);
+  const u = mk(7001, f0, 106.5, 32.5);
   // 1) 비용 차감·건설 시작·중복 차단
   if (!g.buildField(u.id, '진') || cap.gold !== 5000 - FIELD_FACS['진'].cost) fail('건설 시작·비용');
   if (g.buildField(u.id, '채')) fail('건설 중 중복 차단');
@@ -1670,7 +1670,7 @@ if (g.units.find(u => u.id === 9999) && g.units.find(u => u.id === 9999).qi === 
   if (g.fieldDefMult(u) !== 0.92) fail('진 방어 배율 ' + g.fieldDefMult(u));
   const far = mk(7002, f0, 100.0, 36.0); if (g.fieldDefMult(far) !== 1) fail('범위 밖 부대에 효과');
   // 3) 금 부족·근접 시설 차단
-  cap.gold = 10; const u2 = mk(7003, f0, 107.0, 33.5); if (g.buildField(u2.id, '진')) fail('금 부족 차단'); cap.gold = 5000;
+  cap.gold = 10; const u2 = mk(7003, f0, 106.5, 32.0); if (g.buildField(u2.id, '진')) fail('금 부족 차단'); cap.gold = 5000;
   if (g.buildField(u2.id, '진')) fail('근접 시설 차단');
   // 4) 토루: 적에게만 감속
   const u3 = mk(7004, f0, 104.0, 34.0); if (!g.buildField(u3.id, '토루')) fail('토루 건설'); g.fieldTurn();
@@ -1681,7 +1681,7 @@ if (g.units.find(u => u.id === 9999) && g.units.find(u => u.id === 9999).qi === 
   const en2 = mk(7008, e0, 107.5, 31.0, 3000), al2 = mk(7009, f0, 107.5, 31.0, 3000); g.fieldTurn();
   if (en2.troops !== 3000 - 120 || al2.troops !== 3000) fail(`투석대 피해 ${en2.troops}/${al2.troops}`);
   // 6) 이동 명령 시 건설 취소
-  const u5 = mk(7010, f0, 105.0, 31.0); g.buildField(u5.id, '채'); u5.tx = 103; u5.tz = 31; g.fieldTurn();
+  const u5 = mk(7010, f0, 103.5, 31.5); g.buildField(u5.id, '채'); u5.tx = 103; u5.tz = 31; g.fieldTurn();
   if (u5.building || g.fieldFacs.some(f => f.uid === u5.id)) fail('이동 시 건설 취소');
   // 7) 적 공격으로 파괴
   const f3 = g.fieldFacs.find(f => f.uid === u3.id); en.x = 104.0; en.z = 34.0; en.troops = 30000; g.fieldTurn();
@@ -1691,8 +1691,8 @@ if (g.units.find(u => u.id === 9999) && g.units.find(u => u.id === 9999).qi === 
   // 9) AI: 같은 buildField 경로로 4턴마다 건설
   const g2 = mkg(); g2.units = []; g2.fieldFacs = []; const ef = g2.cities.find(c => c.force != null && c.force !== g2.playerForce).force; const pf = g2.playerForce;
   g2.forceCities(ef).forEach(c => c.gold = 5000);
-  const au = { id: 8001, force: ef, officers: [], troops: 3000, type: 'spear', x: 107.0, z: 33.0, path: [], tx: null, tz: null, targetCity: null, label: 'AI', qi: 100, conf: 0 };
-  const pu = { ...au, id: 8002, force: pf, x: 108.5, z: 33.0, label: 'P' };
+  const au = { id: 8001, force: ef, officers: [], troops: 3000, type: 'spear', x: 102.5, z: 32.5, path: [], tx: null, tz: null, targetCity: null, label: 'AI', qi: 100, conf: 0 };
+  const pu = { ...au, id: 8002, force: pf, x: 105.0, z: 32.5, label: 'P' };
   g2.units.push(au, pu); g2.turn = 4; g2.aiFieldBuild();
   if (!g2.fieldFacs.some(f => f.force === ef)) fail('AI 건설');
   if (g2.fieldFacs.some(f => f.force === pf)) fail('비위임 플레이어 부대 자동 건설');
@@ -1707,14 +1707,14 @@ if (g.units.find(u => u.id === 9999) && g.units.find(u => u.id === 9999).qi === 
   const mk = (id, force, x, z, troops = 3000) => { const u = { id, force, officers: [], troops, type: 'spear', x, z, path: [], tx: null, tz: null, targetCity: null, label: 'T' + id, qi: 100, conf: 0 }; g.units.push(u); return u; };
   g.forceCities(f0).forEach(c => c.gold = 9000);
   // 1) 불화살 함정: 적 접근 시 -8%+혼란, 아군 무반응, 1회 소멸
-  const b1 = mk(9001, f0, 107.0, 33.0); if (!g.buildField(b1.id, '불화살함정')) fail('불화살함정 건설: ' + g.lastFieldWhy); g.fieldTurn();
-  const al = mk(9002, f0, 107.2, 33.0); g.fieldTurn(); if (al.troops !== 3000 || !g.fieldFacs.some(f => f.type === '불화살함정')) fail('아군에게 발동');
-  const en = mk(9003, e0, 107.3, 33.0); g.fieldTurn();
+  const b1 = mk(9001, f0, 106.5, 32.5); if (!g.buildField(b1.id, '불화살함정')) fail('불화살함정 건설: ' + g.lastFieldWhy); g.fieldTurn();
+  const al = mk(9002, f0, 106.7, 32.5); g.fieldTurn(); if (al.troops !== 3000 || !g.fieldFacs.some(f => f.type === '불화살함정')) fail('아군에게 발동');
+  const en = mk(9003, e0, 106.8, 32.5); g.fieldTurn();
   if (en.troops !== 3000 - 240 || en.conf < 1) fail(`불화살 피해 ${en.troops}/${en.conf}`);
   if (g.fieldFacs.some(f => f.type === '불화살함정')) fail('함정 1회 소멸');
   // 2) 낙석: -6% + 감속 1턴
-  const b2 = mk(9004, f0, 105.0, 31.0); g.buildField(b2.id, '낙석'); g.fieldTurn();
-  const en2 = mk(9005, e0, 105.4, 31.0); g.fieldTurn();
+  const b2 = mk(9004, f0, 103.5, 31.5); g.buildField(b2.id, '낙석'); g.fieldTurn();
+  const en2 = mk(9005, e0, 103.9, 31.5); g.fieldTurn();
   if (en2.troops !== 3000 - 180) fail('낙석 피해 ' + en2.troops);
   if (g.fieldSlow(en2) !== 0.5 || g.fieldSlow(en2) !== 1) fail('낙석 감속 1회성');
   // 3) 함정은 적이 공격(파괴)하지 못함 - 적 접근 전 hp 유지, 시설 공격 루프 제외
@@ -1753,9 +1753,9 @@ if (g.units.find(u => u.id === 9999) && g.units.find(u => u.id === 9999).qi === 
   g.forceCities(f0).forEach(c => c.gold = 20000); g.forces[f0].techP = 99999; g.forces[f0].arts = {};
   const mk = (id, force, x, z, type = 'spear') => { const u = { id, force, officers: [], troops: 3000, type, x, z, path: [], tx: null, tz: null, targetCity: null, label: 'T' + id, qi: 100, conf: 0 }; g.units.push(u); return u; };
   // 1) 석벽은 석벽술 없이 건설 불가
-  const w = mk(9301, f0, 107.0, 33.0); if (g.buildField(w.id, '석벽')) fail('석벽술 없이 건설'); if (!String(g.lastFieldWhy).includes('석벽술')) fail('사유 표기 ' + g.lastFieldWhy);
+  const w = mk(9301, f0, 106.5, 32.5); if (g.buildField(w.id, '석벽')) fail('석벽술 없이 건설'); if (!String(g.lastFieldWhy).includes('석벽술')) fail('사유 표기 ' + g.lastFieldWhy);
   if (!g.researchArt(f0, '석벽술')) fail('석벽술 연구'); if (!g.buildField(w.id, '석벽')) fail('석벽 건설: ' + g.lastFieldWhy); g.fieldTurn(); g.fieldTurn();
-  const en = mk(9302, e0, 107.5, 33.0), al = mk(9303, f0, 107.5, 33.0);
+  const en = mk(9302, e0, 107.0, 32.5), al = mk(9303, f0, 107.0, 32.5);
   if (g.fieldSlow(en) !== 0.15 || g.fieldSlow(al) !== 1) fail('석벽 감속');
   // 2) 정예창병: 창·극 +8%, 노·기병 무영향
   const sp = mk(9304, f0, 100, 36, 'spear'), bw = mk(9305, f0, 100.5, 36, 'bow'); const s0 = g.unitTechAtk(sp), b0 = g.unitTechAtk(bw);
@@ -2253,4 +2253,4 @@ console.log('sample logs:'); for (const l of g.logs.slice(-8)) console.log(' ', 
   if (A.dous !== 1) fail('귀환 선박 재고 회수 안 됨 ' + A.dous);
   if (A.troops <= tr0) fail('귀환 병력 합류 안 됨');
   console.log('R64 수군 게이트 PASS (연안 출진 수상 스폰·재고 차감, 내륙 출진 불가, 수상 공성 병력+내구 피해, 연안 육↔수 쌍방 타격, 귀환 재고 회수·병력 합류)');
-      }
+            }
