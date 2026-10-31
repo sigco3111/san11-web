@@ -1,4 +1,4 @@
-import { SHIP_TYPES } from './game.js?v=r63';
+import { SHIP_TYPES } from './game.js?v=r64';
 // 세력 AI — 위임 시 플레이어 세력도 이 AI가 운영 (위임·샌드박스의 실질 주체)
 export function aiThink(game, fid, legion = null) { // legion 지정 시 그 군단 소속 도시만 운영 (도독 위임)
   const f = game.forces[fid];
@@ -17,6 +17,12 @@ export function aiThink(game, fid, legion = null) { // legion 지정 시 그 군
       for (const e of game.cities) {
         if (e.force === fid || (e.force != null && (game.isAllied(fid, e.force) || game.isPeace(fid, e.force)))) continue;
         if (Math.hypot(e.lon - c.lon, e.lat - c.lat) < 12 && c.troops > Math.max(e.troops * 1.5, 6000)) { apReserve = 40; break; }
+      }
+      if (!apReserve && ((c.dous ?? 0) + (c.lous ?? 0) + (c.junks ?? 0)) > 0 && game.cityFac(c, '조선소').length && c.troops >= 9000) {
+        for (const e of game.cities) { // R64: 수군 출진 기회(선박 재고 + 연안 적 도시 12 이내 + 병력 여유)도 AP 40 예약
+          if (e.force === fid || (e.force != null && (game.isAllied(fid, e.force) || game.isPeace(fid, e.force)))) continue;
+          if (Math.hypot(e.lon - c.lon, e.lat - c.lat) < 12 && game.nearestWater(e.lon, e.lat)) { apReserve = 40; break; }
+        }
       }
       if (apReserve) break;
     }
@@ -167,12 +173,27 @@ export function aiThink(game, fid, legion = null) { // legion 지정 시 그 군
         }
       }
     }
+    // R64: 수군 출진 — 육군 공세와 독립: 선박 재고·조선소·출진지 수로 인접·연안 적 도시 12 이내·병력 여유(9000) 시 (최소 완결 흐름, 자체 규칙)
+    const shipType = (c.dous ?? 0) > 0 ? 'dou' : (c.lous ?? 0) > 0 ? 'lou' : (c.junks ?? 0) > 0 ? 'junk' : null;
+    if (shipType && f.ap >= 40 && game.cityFac(c, '조선소').length && game.nearestWater(c.lon, c.lat) && c.troops >= 9000) {
+      let bn = null, bnd = 12;
+      for (const e of enemyCities) { const d = Math.hypot(e.lon - c.lon, e.lat - c.lat); if (d < bnd && game.nearestWater(e.lon, e.lat)) { bnd = d; bn = e; } }
+      const n2 = Math.min(c.troops - 3000, 5000);
+      if (bn && n2 >= 3000) {
+        const offs2 = [...c.officers].sort((a, b) => game.officers[b].war - game.officers[a].war);
+        const pick2 = offs2.slice(0, Math.min(2, offs2.length - 1 || 1));
+        if (pick2.length > 0) {
+          const u2 = game.dispatch(c.id, pick2, n2, shipType);
+          if (u2 && !game.orderUnit(u2.id, bn.id)) game.orderUnit(u2.id, c.id);
+        }
+      }
+    }
   }
   // R38 시험: 장기 공성 교착 완화 - 같은 도시를 10턴 이상 포위하고도 병력 우세가 없으면 가까운 아군 도시로 철수 (RULES.aiSiegeRelief)
   if (globalThis.__AI_SIEGE_RELIEF !== false) for (const u of game.units) {
     if (u.force !== fid || u.targetCity == null) continue;
     const tc = game.cityById[u.targetCity];
-    if (!tc || tc.force === u.force || Math.hypot(tc.lon - u.x, tc.lat - u.z) > 1.2) { u._siegeAge = 0; continue; }
+    if (!tc || tc.force === u.force || Math.hypot(tc.lon - u.x, tc.lat - u.z) > (SHIP_TYPES.has(u.type) ? 1.7 : 1.2)) { u._siegeAge = 0; continue; } // R64: 수군은 수상 공성 사거리(1.6)에서 포위
     u._siegeAge = (u._siegeAge ?? 0) + 1;
     if (u._siegeAge >= 10 && u.troops < tc.troops * 1.0) {
       const home = cities.slice().sort((a, b) => Math.hypot(a.lon - u.x, a.lat - u.z) - Math.hypot(b.lon - u.x, b.lat - u.z))[0];
