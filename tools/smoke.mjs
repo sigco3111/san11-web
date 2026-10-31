@@ -2480,6 +2480,23 @@ console.log('sample logs:'); for (const l of g.logs.slice(-8)) console.log(' ', 
   for (const t of ['R103: 모바일', 'bottom:0; left:0; right:0; width:100%', 'max-height:46vh']) if (!css.includes(t)) fail('하단 시트 CSS 누락: ' + t);
   console.log('R103 모바일 하단 시트 게이트 PASS');
 }
+// === R-ver2: 빌드 버전 일치 게이트 — index meta·main.js BUILD_ID·모든 ?v= 접미어 동일 (r105 배포 시 versioned 파일 누락으로 가드 배너가 뜬 사고 재발 방지)
+{
+  const fail = m => { console.log('FAIL: R-ver2 ' + m); process.exit(1); };
+  const idx = readFileSync('index.html', 'utf8');
+  const meta = idx.match(/meta name="build" content="([^"]+)"/)?.[1];
+  if (!meta) fail('index.html meta[name=build] 없음');
+  const mainSrc = readFileSync('js/main.js', 'utf8');
+  const bid = mainSrc.match(/BUILD_ID = '([^']+)'/)?.[1];
+  if (bid !== meta) fail('BUILD_ID(' + bid + ') != meta(' + meta + ')');
+  for (const f of ['index.html', 'js/main.js', 'js/map3d.js']) {
+    const src2 = readFileSync(f, 'utf8');
+    const vs = [...src2.matchAll(/\?v=([a-z0-9]+)/g)].map(m => m[1]);
+    for (const v of vs) if (v !== meta) fail(f + ' 의 ?v=' + v + ' != meta ' + meta);
+  }
+  console.log('R-ver2 빌드 버전 일치 게이트 PASS (' + meta + ')');
+}
+
 // === R105: 로스터·위치 정합 정리 게이트 — 부대 배치(city=null)/정상 주둔/재야/타도시 중복 잔류 4상태 구분 + 기록 도시 우선 복귀 + 멱등 회귀 ===
 {
   const fail = m => { console.log('FAIL: R105 ' + m); process.exit(1); };
