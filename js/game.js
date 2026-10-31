@@ -64,8 +64,8 @@ export const TACTICS_EX = {
   dou: [{ id: 'ram', name: '격돌', qi: 20, minApt: 2, eff: 'push', n: 1, mult: 2.0 }],
 };
 export const STRATS = {
-  fire:    { name: '화계', qi: 30, minInt: 75 },            // 공격측: 수비 병력 추가 소각
-  confuse: { name: '혼란', cooldown: 3, minInt: 80, turns: 2 }, // 수비측: 공격 부대 행동 정지
+  fire:    { name: '화계', qi: 10, minInt: 75 },            // 공격측: 수비 병력 추가 소각 (설계 74행 기력 10, r58 정정)
+  confuse: { name: '교란', qi: 15, cooldown: 3, minInt: 80, turns: 2 }, // 설계 75행 교란: 기력 15, 적 부대 혼란(행동 불가) (r58 정정, 이전 25·명칭 혼란) // 수비측: 공격 부대 행동 정지
   rumor:   { name: '위보', qi: 15, minInt: 80 },            // R18: 적 부대를 가까운 자기 도시로 퇴각 (설계 15, 확률 자체)
   calm:    { name: '진정', qi: 10, minInt: 70 },
   ambush:  { name: '복병', qi: 10, minInt: 60 },          // R33: 숲에서 인접 적 기습, 기병·병기 불가 (자체 수치)
@@ -1171,7 +1171,7 @@ export class Game {
       const p = Math.max(0.05, Math.min(0.45, 0.15 + (def.int - lead.int)/250));
       if (def.int >= STRATS.confuse.minInt && !this.unitHasSkill(u, '위장') && Math.random() < p * (1 - this.mindDefense(u.force))) {
         c.lastStrat = this.turn; u.conf = STRATS.confuse.turns;
-        this.log(`【계략】${def.name_ko}의 혼란! ${josa(u.label, ['이','가'])} ${STRATS.confuse.turns}턴간 움직이지 못합니다`, c.force === this.playerForce);
+        this.log(`【계략】${def.name_ko}의 교란! ${josa(u.label, ['이','가'])} ${STRATS.confuse.turns}턴간 움직이지 못합니다`, c.force === this.playerForce);
       }
     }
     if (ut.siege) dmg = Math.round(dmg * ut.siege); // 병기: 대도시 피해 배율 (자체 수치)
@@ -1231,9 +1231,9 @@ export class Game {
       }
       // 계략: 혼란
       const caster = att.officers.map(i => this.officers[i]).sort((x, y) => y.int - x.int)[0];
-      if (caster && (att._stratTurn ?? -1) !== this.turn && caster.int >= STRATS.confuse.minInt && !this.unitHasSkill(def, '위장') && (att.qi ?? 100) >= 25 && Math.random() < Math.min(0.35, 0.08 + caster.int/400) * (1 - this.mindDefense(def.force))) {
-        att.qi -= 25; att._stratTurn = this.turn; def.conf = Math.max(def.conf ?? 0, STRATS.confuse.turns);
-        this.log(`【계략】${caster.name_ko}의 혼란! ${josa(def.label, ['이','가'])} ${STRATS.confuse.turns}턴간 움직이지 못합니다`, att.force === this.playerForce);
+      if (caster && (att._stratTurn ?? -1) !== this.turn && caster.int >= STRATS.confuse.minInt && !this.unitHasSkill(def, '위장') && (att.qi ?? 100) >= STRATS.confuse.qi && Math.random() < Math.min(0.35, 0.08 + caster.int/400) * (1 - this.mindDefense(def.force))) {
+        att.qi -= STRATS.confuse.qi; att._stratTurn = this.turn; def.conf = Math.max(def.conf ?? 0, STRATS.confuse.turns);
+        this.log(`【계략】${caster.name_ko}의 교란! ${josa(def.label, ['이','가'])} ${STRATS.confuse.turns}턴간 움직이지 못합니다`, att.force === this.playerForce);
       }
       // 계략: 화계
       if (caster && (att._stratTurn ?? -1) !== this.turn && caster.int >= STRATS.fire.minInt && !this.unitHasSkill(def, '위장') && (att.qi ?? 100) >= STRATS.fire.qi && Math.random() < Math.min(0.5, 0.1 + caster.int/300 + (this.unitHasSkill(att, '풍계') ? 0.15 : 0)) * (1 - this.mindDefense(def.force))) {
@@ -1478,15 +1478,15 @@ export class Game {
       return true;
     }
     if (kind === 'confuse') {
-      if (caster.int < STRATS.confuse.minInt || (u.qi ?? 100) < 25 || target.type !== 'unit') return false;
+      if (caster.int < STRATS.confuse.minInt || (u.qi ?? 100) < STRATS.confuse.qi || target.type !== 'unit') return false;
       const d = enemyUnit();
       if (!d) return false;
       u._stratTurn = this.turn;
-      if (Math.random() >= Math.min(0.35, 0.08 + caster.int/400) * (1 - this.mindDefense(d.force))) { this.log(`【계략】${caster.name_ko}의 혼란이 ${d.label}에 실패했습니다`, u.force === this.playerForce); this.autosave(); return true; }
-      u.qi -= 25;
+      if (Math.random() >= Math.min(0.35, 0.08 + caster.int/400) * (1 - this.mindDefense(d.force))) { this.log(`【계략】${caster.name_ko}의 교란이 ${d.label}에 실패했습니다`, u.force === this.playerForce); this.autosave(); return true; }
+      u.qi -= STRATS.confuse.qi;
       this.gainMerit(caster.idx, MERIT.stratagem);
       d.conf = Math.max(d.conf ?? 0, STRATS.confuse.turns);
-      this.log(`【계략】${caster.name_ko}의 혼란! ${josa(d.label, ['이','가'])} ${STRATS.confuse.turns}턴간 움직이지 못합니다`, u.force === this.playerForce);
+      this.log(`【계략】${caster.name_ko}의 교란! ${josa(d.label, ['이','가'])} ${STRATS.confuse.turns}턴간 움직이지 못합니다`, u.force === this.playerForce);
       this.autosave();
       return true;
     }
