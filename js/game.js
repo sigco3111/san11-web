@@ -829,7 +829,15 @@ export class Game {
     this.log(`${c.name_ko}에서 ${this.officers[officerIdxs[0]].name_ko}의 ${ut.name} ${troops} 출진`, c.force === this.playerForce);
     return unit;
   }
-  nearestWater(x, z) { // R64: 가장 가까운 수로 셀 (반경 8셀=1.2°, 자체 규칙) — 수군 출진 위치·연안 판정 공용
+  _renderedWater(x, z) { // R64: 3D 렌더러가 실제로 물로 그리는 셀 — 강은 파내기 반경(세계 1.35) 안쪽, 도시 보호 반경(세계 2.4) 밖 (map3d.js의 CELL/RIVER_R/CITY_RIVER_R와 동일 기준)
+    if (!isWaterAt(x, z)) return false;
+    if (this.cities.some(c => Math.hypot((x - c.lon) * 3.1, (z - c.lat) * 3.7) < 2.4)) return false;
+    if (isSeaAt(x, z)) return true;
+    for (const line of W_RIVERS) for (let i = 0; i < line.length - 1; i++)
+      if (wDistToSeg(x * 3.1, z * 3.7, line[i][0] * 3.1, line[i][1] * 3.7, line[i+1][0] * 3.1, line[i+1][1] * 3.7) < 1.35) return true;
+    return false;
+  }
+  nearestWater(x, z) { // R64: 가장 가까운 '렌더링된' 수로 셀 (반경 8셀=1.2°, 자체 규칙) — 수군 출진 위치·연안 판정 공용. 게임 격자상 강이어도 화면상 육지(도시 보호 반경·강 가장자리)면 제외
     const st = 0.15, lon0 = 100, lat0 = 20, W = 226, H = 146;
     const ci = Math.round((x - lon0) / st), cj = Math.round((z - lat0) / st);
     for (let r = 0; r <= 8; r++) for (let di = -r; di <= r; di++) for (let dj = -r; dj <= r; dj++) {
@@ -837,7 +845,7 @@ export class Game {
       const ni = ci + di, nj = cj + dj;
       if (ni < 0 || ni > W || nj < 0 || nj > H) continue;
       const wx = lon0 + ni * st, wz = lat0 + nj * st;
-      if (isWaterAt(wx, wz)) return [wx, wz];
+      if (this._renderedWater(wx, wz)) return [wx, wz];
     }
     return null;
   }
@@ -857,7 +865,17 @@ export class Game {
       }
       return null;
     };
-    const sc = snap(ci(u.x), cj(u.z)), tc = snap(ci(tx), cj(tz));
+    const snapStrict = (i, j) => { // R64: 수군 기점·종점은 렌더링된 수로 셀 우선 — 출진·공성 진지가 화면상 육지에 서지 않게
+      if (i >= 0 && i <= W && j >= 0 && j <= H && this._renderedWater(lon0 + i * st, lat0 + j * st)) return [i, j];
+      for (let r = 1; r <= 8; r++) for (let di = -r; di <= r; di++) for (let dj = -r; dj <= r; dj++) {
+        if (Math.max(Math.abs(di), Math.abs(dj)) !== r) continue;
+        const ni = i + di, nj = j + dj;
+        if (ni >= 0 && ni <= W && nj >= 0 && nj <= H && this._renderedWater(lon0 + ni * st, lat0 + nj * st)) return [ni, nj];
+      }
+      return null;
+    };
+    const sc = ship ? (snapStrict(ci(u.x), cj(u.z)) ?? snap(ci(u.x), cj(u.z))) : snap(ci(u.x), cj(u.z));
+    const tc = ship ? (snapStrict(ci(tx), cj(tz)) ?? snap(ci(tx), cj(tz))) : snap(ci(tx), cj(tz));
     if (!sc || !tc) return null;
     const Hcap = 90000;
     const g = new Map(), came = new Map();
