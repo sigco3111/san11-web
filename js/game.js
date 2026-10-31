@@ -1466,8 +1466,9 @@ export class Game {
     this.units = this.units.filter(v => v.troops > 0 || v === d);
     return note;
   }
-  _tacTargetOk(u, d, tac) { // R74: 전법별 대상 제약 (매뉴얼 대상표) — 격돌은 선박 전용, 창·극·기병·목수의 전법은 선박을 대상할 수 없음 (노병·정란·투석기·수군 전법은 船 포함). 일반 공격의 육↔수 상호 허용(R64)과는 별개 규칙
+  _tacTargetOk(u, d, tac) { // R74/R75: 전법별 대상 제약 (매뉴얼 대상표) — 격돌은 선박 전용, 창·극·기병·목수의 전법은 선박을 대상할 수 없음 (노병·정란·투석기·수군 전법은 船 포함), 충거 파쇄는 부대 대상 불가(建物・罠만). 일반 공격의 육↔수 상호 허용(R64)과는 별개 규칙
   if (tac.id === 'ram') return SHIP_TYPES.has(d.type); // 격돌: 対象 船
+  if (u.type === 'ram') return false; // R75: 파쇄(충거) 対象 建物・罠 — 부대 대상 불가 (도시·시설 대상은 fireTactic city/fac 분기가 별도 판정)
   if (SHIP_TYPES.has(d.type) && !TAC_SHIP_OK.has(u.type)) return false; // 창·극·기병 部隊・兵器 / 목수 部隊・兵器・建物・罠 — 船 불포함
   return true;
 }
