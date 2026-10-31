@@ -1534,18 +1534,20 @@ export class Game {
       o.state.city = home.id;
     }
   }
-  _reconcileOfficerRosters() { // R96: 기존 저장 복구 — ① 타 세력 도시 로스터의 소속 무장 ② 로스터·부대 어디에도 없는 소속 무장을 원 세력 도시로 복귀. 멱등 (복귀 후엔 두 조건 모두 비일치)
-    for (const c of this.cities) for (const i of [...c.officers]) {
-      const o = this.officers[i]; const f = o?.state?.force;
-      if (f == null || f === c.force) continue;
+  _reconcileOfficerRosters() { // R96: 기존 저장 복구 — ① 로스터·상태 불일치 정리 ② 로스터·부대 어디에도 없는 소속 무장을 소속 도시로 복귀. 멱등 (복귀 후엔 두 조건 모두 비일치)
+    const svc = s => ['ruler', 'taesu', 'serving'].includes(s);
+    for (const c of this.cities) for (const i of [...c.officers]) { // R105: ① 세력 불일치뿐 아니라 재야/무소속·위치 불일치(타 도시 중복 잔류 포함)도 정리 — 정상 주둔(소속 무장·세력 일치·state.city 일치)만 유지. 부대 탑승 무장(city=null)은 로스터에 없음이 정상이며 잘못 들어간 잔류분만 제거 (부대 소속은 ②에서 제외돼 영향 없음)
+      const st = this.officers[i]?.state;
+      if (st && svc(st.status) && st.force === c.force && st.city === c.id) continue;
       c.officers = c.officers.filter(j => j !== i);
     }
     const inUnit = new Set(); for (const u of this.units) for (const i of u.officers) inUnit.add(i);
     for (const o of Object.values(this.officers)) {
       const st = o?.state; if (!st || st.force == null) continue;
-      if (!['serving', 'ruler', 'taesu'].includes(st.status)) continue;
+      if (!svc(st.status)) continue;
       if (inUnit.has(o.idx) || this.cities.some(c => c.officers.includes(o.idx))) continue;
-      const home = this.cities.filter(c => c.force === st.force).sort((p, q) => p.id - q.id)[0];
+      const recorded = st.city != null && this.cityById[st.city]?.force === st.force ? this.cityById[st.city] : null; // R105: 기록된 소재 도시가 같은 세력이면 그대로 복귀 (무관한 첫 도시 이동 방지)
+      const home = recorded ?? this.cities.filter(c => c.force === st.force).sort((p, q) => p.id - q.id)[0];
       if (home) { home.officers.push(o.idx); st.city = home.id; }
     }
   }
