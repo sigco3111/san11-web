@@ -1,4 +1,4 @@
-import { SHIP_TYPES, TRAPS } from './game.js?v=r87';
+import { SHIP_TYPES, TRAPS, FIELD_FACS, SIEGE_TYPES } from './game.js?v=r88';
 // 세력 AI — 위임 시 플레이어 세력도 이 AI가 운영 (위임·샌드박스의 실질 주체)
 export function aiThink(game, fid, legion = null) { // legion 지정 시 그 군단 소속 도시만 운영 (도독 위임)
   const f = game.forces[fid];
@@ -212,6 +212,12 @@ export function aiThink(game, fid, legion = null) { // legion 지정 시 그 군
     if (u.force !== fid || u.targetCity != null || u.building) continue; // R63: 건설 중 부대는 재지정 금지 — 재지정(tx 설정) 시 fieldTurn이 건설을 중단시킴
     if (u.targetFac != null) continue; // R77: 시설 공격 명령 진행 중이면 유지 (매 턴 재지정으로 명령이 흔들리지 않게)
     if (u.repairing != null) continue; // 보수 진행 중이면 유지 (완료·중단까지 재지정 금지)
+    if (u.targetRepair != null) { // R88: 보수 이동 중 — 도착(인접)하면 보수 시작, 대상 소실·완치·조건 변화면 해제
+      const tf = (game.fieldFacs ?? []).find(f => f.id === u.targetRepair);
+      if (!tf) u.targetRepair = null;
+      else { const why = game.canRepairFac(u, tf); if (why == null) game.repairFac(u.id, tf.id); else if (why !== '시설에 인접해 있지 않습니다') u.targetRepair = null; }
+      continue;
+    }
     if (u.troops >= 1500) { // R77: AI 명령형 시설 공격 (매뉴얼: 군사시설은 공격 대상) — 목표 없는 부대가 6칸 안 적 완공 시설(함정 제외)을 명령형으로 공격. 기존에는 자동 소모(2%)만으로 시설을 깎아 플레이어 시설선을 전략적으로 무시하는 갭
       let bf = null, bfd = 6;
       for (const f2 of (game.fieldFacs ?? [])) {
@@ -225,9 +231,20 @@ export function aiThink(game, fid, legion = null) { // legion 지정 시 그 군
     for (const e of foes) { const d = Math.hypot(e.lon - u.x, e.lat - u.z); if (d < bd) { bd = d; best = e; } }
     const homes = cities.slice().sort((a,b) => Math.hypot(a.lon-u.x,a.lat-u.z) - Math.hypot(b.lon-u.x,b.lat-u.z));
     if (best && bd < 10 && u.troops > Math.max(best.troops * 1.2, 4000)) { if (!game.orderUnit(u.id, best.id) && homes.length) game.orderUnit(u.id, homes[0].id); } // R17b: 노선 없음 시 귀환 회복
-    else { // 귀환 전에 인접 아군 손상 시설이 있으면 보수 (補修, 매뉴얼 P.41: 금 불요·인접 시설만)
+    else { // 귀환 전 손상 아군 시설 보수 (補修, 매뉴얼 P.41: 금 불요·보수는 인접 시설만) — R88: 인접 시설은 즉시 보수, 떨어진 시설은 가장 가까운 유휴 부대를 이동시켜 보수 (기존에는 인접 우연이 없어 자연 발생 0건)
       const rf = (game.fieldFacs ?? []).find(f => game.canRepairFac(u, f) === null);
-      if (!(rf && game.repairFac(u.id, rf.id)) && homes.length) game.orderUnit(u.id, homes[0].id); // 보수 대상 없으면 귀환·합류
+      if (rf && game.repairFac(u.id, rf.id)) continue;
+      let dispatched = false;
+      if (!SIEGE_TYPES.has(u.type) && (u.troops ?? 0) >= 500) { // 병기 보수 불가(매뉴얼) · 미세 부대는 보수 효율 낮아 제외 (자체 수치)
+        let nf = null, nd = 8;
+        for (const f of (game.fieldFacs ?? [])) {
+          if (f.force !== fid || f.left > 0 || TRAPS[f.type]) continue;
+          const sp = FIELD_FACS[f.type]; if (!sp || f.hp >= sp.hp) continue;
+          const d = Math.hypot(f.x - u.x, f.z - u.z); if (d < nd) { nd = d; nf = f; }
+        }
+        if (nf) dispatched = game.orderFacRepair(u.id, nf.id);
+      }
+      if (!dispatched && homes.length) game.orderUnit(u.id, homes[0].id); // 보수 대상 없으면 귀환·합류
     }
   }
   // 5) R15: AI도 같은 규칙으로 전법·계략 직접 발동 — 인접 적 부대·도시에 턴 1회, 비용·자격은 fireTactic/fireStrat과 동일
