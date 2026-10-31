@@ -20,7 +20,7 @@ export const UNIT_TYPES = {
   dou:  { name: '투함', atk: 1.1, def: 1.0, move: 1.0, cost: { dous: 1 }, perUnit: true,  ship: true },
 };
 // R34: 기본 공격과 전법 분리 - 도시는 기본 공격이 원칙, 도시 대상 전법은 병기(공성) 부대만 (설계 64~72행: 전법은 부대 대상, 병기는 거점 대상)
-export const RULES = { cityTacticSiegeOnly: true };
+export const RULES = { cityTacticSiegeOnly: true, garrisonFood: 0.4, unitFoodMonths: 6 }; // garrisonFood: 병사 1명당 월 병량 소비 (자체 수치), unitFoodMonths: 출진 시 휴대 병량(개월) — 매뉴얼 「도시의 병량(매턴 소비)」·「병량 마커」 메커니즘 반영
 export const SIEGE_TYPES = new Set(['ram', 'tower', 'beast', 'catapult']);
 export const SHIP_TYPES = new Set(['junk', 'lou', 'dou']);
 // 병기 생산·선박 건조 (자체 비용). 특색 도시는 25% 할인 (설계안: 특색 병장 생산 비용 감소, 병기·배는 자동 생산 제외)
@@ -232,6 +232,8 @@ export class Game {
     this.year = scen.year; this.month = scen.month; this.dan = 1; // 1~3 (旬)
     this.turn = 1;
     this.pendingDuel = null; // R10: 진행 중 일기토 (저장 대상 아님)
+    this.econGraceUntil = null; // 구 병량 경제 저장 마이그레이션 유예 종료 턴 (null=유예 없음, 신규 게임은 즉시 적용)
+    this.econV = 2; // 병량 경제 규칙 버전: 1=구(월 수입·주둔 소비 없음·구 봉록), 2=신(계절 수입·주둔/휴대 소비·신 봉록). 신규 게임은 2, 구 저장은 로드 시 1 복원
     this.pendingDebate = null; // R11: 진행 중 설전 (저장 대상 아님)
     this.cities = scen.cities.map(c => ({ ...c, commerce: Math.round(c.revenue/10), farm: Math.round(c.harvest/100), hp: c.maxhp, officers: [], troops: c.troops, facilities: [] }));
     this.cityById = {}; this.cities.forEach(c => this.cityById[c.id] = c);
@@ -441,7 +443,7 @@ export class Game {
 // === 공적·충성·관작 ===
   gainMerit(i, n) { const st = this.officers[i]?.state; if (st) st.merit = (st.merit ?? 0) + n; }
   meritGrade(i) { return Math.min(8, Math.floor((this.officers[i]?.state?.merit ?? 0) / 500)); } // 공적 500당 1등급 (자체 수치)
-  salaryOf(i) { return 10 + this.meritGrade(i) * 5; } // 월 봉록: 기본 10금 + 등급당 5금 (자체 수치)
+  salaryOf(i) { if (this.econV !== 2) return 10 + this.meritGrade(i) * 5; const o = this.officers[i]; const abl = o ? Math.round((o.war + o.int + o.pol + o.chr) / 40) : 0; return 30 + this.meritGrade(i) * 10 + abl; } // 월 봉록 (자체 수치 — 매뉴얼: 봉록은 매월, 못 주면 충성 하락). econV 1은 구값 10+등급5 유지
   emperorHolder() { return this.emperor ? (this.cityById[this.emperor.city]?.force ?? null) : null; } // R17: 현재 옹립 세력 = 황제 소재 도시 보유자
   forceRank(fid) { // 소유 도시 수 기준 관작 (황건 제외, 황제는 24도시 + 옹립 또는 황제 부재 — 설계안 102행)
     const f = this.forces[fid];
@@ -810,9 +812,11 @@ export class Game {
     }
     for (const [k, per] of Object.entries(ut.cost)) c[k] -= ut.perUnit ? per : per * troops;
     c.troops -= troops; f.ap -= apc;
+    const foodTake = this.econV === 2 ? Math.min(Math.round(troops * RULES.garrisonFood * RULES.unitFoodMonths), c.food) : 0; // 출진 부대 휴대 병량 (econV 2, 매뉴얼: 출진 시에도 병량 지급)
+    c.food -= foodTake;
     c.officers = c.officers.filter(i => !officerIdxs.includes(i));
     for (const i of officerIdxs) this.officers[i].state.city = null;
-    const unit = { id: this.nextUnitId++, force: c.force, officers: officerIdxs, troops, type,
+    const unit = { id: this.nextUnitId++, force: c.force, officers: officerIdxs, troops, type, ...(this.econV === 2 ? { food: foodTake } : {}),
       x: c.lon, z: c.lat, path: [], tx: null, tz: null, targetCity: null, label: '', qi: 100, conf: 0 };
     unit.label = `${this.officers[officerIdxs[0]].name_ko} ${Math.round(troops/1000)}k`;
     this.units.push(unit);
@@ -909,8 +913,20 @@ export class Game {
         const mk = this.cityFacLv(c, '시장') * (this.cityFac(c, '조폐').length ? 1.5 : 1); // R13: 레벨 합산
         const fm = this.cityFacLv(c, '농장') * (this.cityFac(c, '곡창').length ? 1.5 : 1);
         c.gold += Math.round((50 + c.commerce * 8 * (c.metropolis ? 1.5 : 1)) * (this.cityHasSkill(c, '통상') ? 1.3 : 1) * (1 + 0.25 * mk) * (this.cityFac(c, '회계청').length ? 1.1 : 1)); // R13 회계청
-        c.food += Math.round((300 + c.farm * 80) * (this.cityHasSkill(c, '부농') ? 1.3 : 1) * (1 + 0.25 * fm) * (this.cityFac(c, '곡물창고').length ? 1.1 : 1)); // R13 곡물창고
+        if (this.econV === 2 ? [1, 4, 7, 10].includes(this.month) : true) c.food += Math.round((300 + c.farm * 80) * (this.cityHasSkill(c, '부농') ? 1.3 : 1) * (1 + 0.25 * fm) * (this.cityFac(c, '곡물창고').length ? 1.1 : 1)); // R13 곡물창고 / econV 2: 병량 수입 계절제 (매뉴얼: 1·4·7·10월 兵糧収入), econV 1: 구 월제 유지
         c.hp = Math.min(c.maxhp, c.hp + 200);
+        // 주둔군 병량 소비 (매뉴얼: 도시의 병량은 매 턴 소비 — 이 게임은 월 정산으로 통합). 부족분은 탈영(50% 완화, 자체 수치)
+        if (this.econGraceUntil != null && this.turn < this.econGraceUntil && this.econGraceUntil - this.turn <= 4 && !this._graceWarned) { this._graceWarned = true; this.log('【안내】병량 소비 유예 종료가 1개월 이내로 다가왔습니다. 병량이 부족한 도시는 농장 개발·상인 매입으로 준비하세요', true); }
+        if (this.econGraceUntil != null && this.turn >= this.econGraceUntil) { this.econGraceUntil = null; this.log('【안내】병량 소비 유예가 끝났습니다. 도시 주둔군이 병량을 소비하기 시작합니다', true); }
+        if (this.econV === 2 && this.econGraceUntil == null) {
+          const need = Math.round(c.troops * RULES.garrisonFood);
+          if (c.food >= need) c.food -= need;
+          else {
+            const lack = need - c.food; c.food = 0;
+            const des = Math.min(c.troops, Math.round(lack / RULES.garrisonFood * 0.5));
+            if (des > 0) { c.troops -= des; this.log(`${c.name_ko}의 병량이 바닥나 병사 ${des}명이 흩어졌습니다`, c.force === this.playerForce); }
+          }
+        }
         // 병장 자동 생산: 대장간·마구간 (특색 도시는 대량)
         if (this.cityFac(c, '대장간').length) {
           const sp = c.specialty ?? [];
@@ -1091,6 +1107,23 @@ export class Game {
       this.log(`${josa(u.label, ['이','가'])} 혼란에 빠져 움직이지 못합니다`, u.force === this.playerForce);
       return;
     }
+    if (u.food == null && this.econV === 2) u.food = Math.round(u.troops * RULES.garrisonFood * RULES.unitFoodMonths); // 휴대 병량 지연 초기화 (econV 2 전용)
+    const eat = this.econV === 2 ? Math.round(u.troops * RULES.garrisonFood / 3) : 0; // 턴(10일)당 소비 = 월 소비의 1/3
+    if (this.econV === 2) { // 구 경제(econV 1)는 부대 병량 소비·탈영 없음
+      if (u.food >= eat) u.food -= eat;
+      else {
+        u.food = 0;
+        const des = Math.max(1, Math.round(u.troops * 0.03)); // 병량 0: 턴당 3% 탈영 (자체 수치)
+        u.troops -= des;
+        if (!u._starveWarn || this.turn - u._starveWarn >= 6) { u._starveWarn = this.turn; this.log(`${josa(u.label, ['이','가'])} 병량이 바닥나 병사가 흩어집니다 (-${des})`, u.force === this.playerForce); }
+        if (u.troops <= 0) { this.units = this.units.filter(x => x !== u); this.log(`${u.label} 부대가 전멸했습니다`, false); return; }
+      }
+    }
+    const foodFull = Math.round(u.troops * RULES.garrisonFood * RULES.unitFoodMonths);
+    if (this.econV === 2 && u.food < foodFull) { // 아군 도시 인접(1.5) 시 보급 (매뉴얼: 거점에서 병량 공급)
+      const home = this.cities.find(hc => hc.force === u.force && Math.hypot(hc.lon - u.x, hc.lat - u.z) < 1.5);
+      if (home && home.food > 0) { const take = Math.min(foodFull - u.food, home.food); home.food -= take; u.food += take; }
+    }
     if (u.tx == null) return;
     // 요격: 인접한 적 부대가 있으면 진격 정지 (아군 도시로의 퇴각은 허용)
     const engaged = this.units.some(v => v !== u && v.force !== u.force && Math.hypot(v.x-u.x, v.z-u.z) < 2.2);
@@ -1132,6 +1165,7 @@ export class Game {
     if (c.force === u.force) { // 아군 도시 합류
       const cap = c.metropolis ? 150000 : 100000;
       c.troops = Math.min(cap, c.troops + u.troops);
+      c.food += (u.food ?? 0); // 잔여 휴대 병량 회수
       for (const i of u.officers) { if (!c.officers.includes(i)) c.officers.push(i); this.officers[i].state.city = c.id; }
       this.units = this.units.filter(x => x !== u);
       return;
@@ -1875,10 +1909,17 @@ export class Game {
     else this.pendingDebate = d;
     return true;
   }
+  econMigrate(d) { // 구 병량 경제 저장(v1)이면 6개월(18턴) 도시 소비 유예 부여. saveV 2 저장·신규 게임은 미적용 (재로드 멱등)
+    if (d.saveV === 2) return false;
+    this.econGraceUntil = this.turn + 18;
+    this.log('【안내】병량 체계가 새 규칙으로 적용됩니다. 지금부터 6개월간 도시 주둔 병량 소비를 유예하니, 그동안 농장 개발·상인 매입으로 병량을 확보하세요 (유예 종료 후 부족 도시는 병사가 흩어집니다)', true);
+    return true;
+  }
+
   autosave() {
     try {
       const data = {
-        scenId: this.scenId, year: this.year, month: this.month, dan: this.dan, turn: this.turn, emperor: this.emperor, // R17: 옹립 상태 영속 (구 세이브는 생성자 기본값으로 복원)
+        saveV: 2, econV: this.econV, scenId: this.scenId, year: this.year, month: this.month, dan: this.dan, turn: this.turn, emperor: this.emperor, econGraceUntil: this.econGraceUntil, // saveV 2: 병량 경제 마이그레이션 판별 / R17: 옹립 상태 영속 (구 세이브는 생성자 기본값으로 복원)
         cities: this.cities, forces: this.forces, units: this.units, nextUnitId: this.nextUnitId, fieldFacs: this.fieldFacs, nextFacId: this.nextFacId,
         playerForce: this.playerForce, delegated: this.delegated, deadAck: this.deadAck, logs: this.logs.slice(-60), diplo: this.diplo, itemPool: this.itemPool, chronicle: this.chronicle, over: this.over, unified: this.unified, // R14
         officerStates: Object.fromEntries(Object.entries(this.officers).filter(([,o]) => o.state).map(([i,o]) => [i, o.state])),
