@@ -1,12 +1,12 @@
 // 진입점: 화면 전환·UI·지도 연결
-import { Map3D, toWorld } from './map3d.js?v=r72';
-import { Game, SAVE_KEY, RULES, forceColor, UNIT_TYPES, ARTS, FIELD_FACS, TRAPS, SHIP_TYPES, josa, josaRo, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL, AB_PICK } from './game.js?v=r72';
-import { aiThink } from './ai.js?v=r72';
+import { Map3D, toWorld } from './map3d.js?v=r72b';
+import { Game, SAVE_KEY, RULES, forceColor, UNIT_TYPES, ARTS, FIELD_FACS, TRAPS, SHIP_TYPES, josa, josaRo, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL, AB_PICK } from './game.js?v=r72b';
+import { aiThink } from './ai.js?v=r72b';
 
 const $ = id => document.getElementById(id);
 let DATA = null, game = null, map = null, selectedUnit = null, autoTimer = null, pendingFire = null; // R15: 직접 전법·계략 대기
 
-const BUILD_ID = 'r72'; // 빌드 ID (index.html의 meta[name=build]와 같아야 함 - 오래된 캐시된 index와 새 스크립트의 혼합 감지)
+const BUILD_ID = 'r72b'; // 빌드 ID (index.html의 meta[name=build]와 같아야 함 - 오래된 캐시된 index와 새 스크립트의 혼합 감지)
 function checkBuildSkew() {
   const idx = document.querySelector('meta[name="build"]')?.content;
   if (idx === BUILD_ID) { sessionStorage.removeItem('cheonha-xi-web.skew'); return; } // 일치하면 재시도 표식 해제
@@ -19,7 +19,7 @@ checkBuildSkew();
 async function loadData() {
   const [officers, skills, portraits, s184, s190, s251] = await Promise.all(
     ['data/officers670.json','data/skills.json','data/portraits.json','data/scenario-184.json','data/scenario-190.json','data/scenario-251.json']
-      .map(u => fetch(u + '?v=r72').then(r => r.json())));
+      .map(u => fetch(u + '?v=r72b').then(r => r.json())));
   const byIdx = {};
   for (const o of officers) byIdx[o.idx] = o;
   DATA = { officers: byIdx, skills, portraits, scenarios: { '184': s184, '190': s190, '251': s251 } };
@@ -335,7 +335,7 @@ function targetHint(pf) { // 발동 실패 안내: 전법·계략별 실제 대�
 }
 function onPick(nx, ny) {
   if (!game || game.over) return;
-  const hit = map.pick(nx, ny);
+  const hit = map.pick(nx, ny, pendingFire == null && selectedUnit != null); // R72b: 부대 선택 중에는 도시·시설 목표를 부대 재선택보다 우선 (전법·계략 조준 중에는 부대 우선 유지)
   if (pendingFire) { // R15: 직접 전법·계략 대상 선택
     const pf = pendingFire; pendingFire = null;
     let ok = false;
