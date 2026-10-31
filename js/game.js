@@ -19,6 +19,7 @@ export function restoreOfficer(o, st) { // 저장 복원 공통: 상태 대입 +
   const r = o.__restored ?? {};
   for (const part of ['research', 'office']) for (const [k, v] of Object.entries(r[part] ?? {})) o[k] = Math.max(1, (o[k] ?? 50) - v); // 직전 추적 가산 제거
   o.state = st;
+  if (st.office > 0 && st.force == null) { st.office = 0; st._officeBonus = null; } // R86: 소속 없는 임명 상태 정리 — r84 AI 재야 임명 결함·세력 멸망으로만 발생 가능한 불법 상태이므로 복원 시 해임으로 정규화 (정상 저장에는 존재 불가)
   const research = {}, office = {};
   const add = (src, dst) => { for (const [k, v] of Object.entries(src ?? {})) { o[k] = Math.min(100, (o[k] ?? 50) + v); dst[k] = (dst[k] ?? 0) + v; } };
   add(st.bonus, research); // R13 능력연구 복원
@@ -1219,7 +1220,10 @@ export class Game {
       if (!hasCity && !hasUnit) {
         f.alive = false;
         this.log(`【${this.forceName(f.id)}】${josa(this.forceName(f.id), ['이','가']).slice(-1)} 멸망했습니다!`, true);
-        for (const o of this.forceOfficers(f.id)) { o.state.force = null; o.state.status = 'free'; o.state.found = false; }
+        for (const o of this.forceOfficers(f.id)) { // R86: 멸망 시 관직 해임 + 능력 가산 회수 (자체 처리: 관직은 세력 작위에 종속 — 재야가 관직을 유지할 수 없음)
+          const st = o.state; st.force = null; st.status = 'free'; st.found = false;
+          if (st.office > 0) { for (const [k, v] of Object.entries(st._officeBonus ?? {})) o[k] = Math.max(1, (o[k] ?? 50) - v); st.office = 0; st._officeBonus = null; if (o.__restored) o.__restored.office = {}; }
+        }
       }
     }
     // R14: 천하 통일 판정 — 모든 도시를 한 세력이 제압 (설계안 102행 매뉴얼 문구)
