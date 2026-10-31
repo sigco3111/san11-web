@@ -1,6 +1,6 @@
 // 3D 저폴리 지도 엔진 (Three.js) - 고정 등각 아이소메트릭 + 계단식 지형 + 성곽/숲
 import * as THREE from 'three';
-import { loadGLBAssets, applyEnvironment } from './assets-3d.js?v=r116';
+import { loadGLBAssets, applyEnvironment } from './assets-3d.js?v=r117';
 
 const LON0 = 100, LON1 = 126.5, LAT0 = 21.5, LAT1 = 43;
 export function toWorld(lon, lat) {
@@ -336,7 +336,7 @@ export class Map3D {
       pushEave(x, ky + 0.5, z, 0.7, 0.12); roofs.push(sc(x, ky + 0.53, z, 0.5, 0.62, 0.5, Math.PI/4));
       gates.push(sc(x, ky + 1.1, z, 0.05, 0.22, 0.05, 0)); // 용마루 끝 장식(붉은 첨탑)
       for (const [tx, tz] of [[-1,-1],[1,-1],[-1,1],[1,1]]) { pushEave(x + tx*C, y + 12.2*S, z + tz*C, 0.42, 0.07); roofs.push(sc(x + tx*C, y + 12.25*S, z + tz*C, 0.27, 0.4, 0.27, Math.PI/4)); }
-      gates.push(sc(x - 0.2, y, z + C, 0.07, 0.62, 0.07, 0), sc(x + 0.2, y, z + C, 0.07, 0.62, 0.07, 0), sc(x, y + 0.6, z + C, 0.62, 0.07, 0.12, 0), sc(x, y + 0.7, z + C, 0.8, 0.05, 0.2, 0));
+      gates.push(sc(x - 0.2, y, z + C, 0.07, 0.62, 0.07, 0), sc(x + 0.2, y, z + C, 0.07, 0.62, 0.07, 0), sc(x, y + 0.6, z + C, 0.52, 0.07, 0.12, 0), sc(x, y + 0.68, z + C, 0.62, 0.05, 0.18, 0)); // R117: 문루 보 돌출 비례 축소
       const fy = y + 13.1 * S;
       const fcol = (this.cityColorOf && c.force != null) ? this.cityColorOf(c.force) : null; // R116: 세력색 기치
       (flags[fcol ?? 'asset'] ??= []).push(placement(x, y + 10.7*S, z, S*1.5, 0), placement(x - C, fy, z + C, S*1.1, 0), placement(x + C, fy, z + C, S*1.1, 0));
@@ -505,13 +505,15 @@ export class Map3D {
       case 'spear': soldier('spear'); break;
       case 'pike': soldier('pike'); break;
       case 'bow': soldier('bow'); break;
-      case 'cav': // 말 + 기수
-        add(new THREE.BoxGeometry(0.5, 0.45, 1.0), 0x6a4a30, 0, 0.55, 0);
-        add(new THREE.BoxGeometry(0.2, 0.3, 0.35), 0x6a4a30, 0, 0.75, 0.55);
-        add(new THREE.ConeGeometry(0.3, 0.8, 5), 0x5a4a3a, 0, 1.25, 0); break;
-      case 'ram': // 충거: 수레 + 충각
-        add(new THREE.BoxGeometry(0.9, 0.6, 1.1), 0x5a4a3a, 0, 0.6, 0);
-        add(new THREE.CylinderGeometry(0.12, 0.12, 1.6, 6), 0x7a6a4a, 0, 0.5, 0.2, Math.PI/2, 0, 0); break;
+      case 'cav': // 말 + 기수 (R117: 다리 4개 추가)
+        add(new THREE.BoxGeometry(0.5, 0.45, 1.0), 0x6a4a30, 0, 0.62, 0);
+        for (const [lx, lz] of [[-0.16, 0.32], [0.16, 0.32], [-0.16, -0.32], [0.16, -0.32]]) add(new THREE.CylinderGeometry(0.06, 0.06, 0.45, 4), 0x54381f, lx, 0.22, lz);
+        add(new THREE.BoxGeometry(0.2, 0.3, 0.35), 0x6a4a30, 0, 0.82, 0.55);
+        add(new THREE.ConeGeometry(0.3, 0.8, 5), 0x5a4a3a, 0, 1.32, 0); break;
+      case 'ram': // 충거: 수레 + 충각 (R117: 바퀴 추가)
+        add(new THREE.BoxGeometry(0.9, 0.6, 1.1), 0x5a4a3a, 0, 0.68, 0);
+        for (const [wx, wz] of [[-0.48, 0.35], [0.48, 0.35], [-0.48, -0.35], [0.48, -0.35]]) add(new THREE.CylinderGeometry(0.16, 0.16, 0.08, 8), 0x3e2f1e, wx, 0.16, wz, 0, 0, Math.PI/2);
+        add(new THREE.CylinderGeometry(0.12, 0.12, 1.6, 6), 0x7a6a4a, 0, 0.58, 0.2, Math.PI/2, 0, 0); break;
       case 'tower': // 정란: 높은 탑
         add(new THREE.BoxGeometry(0.8, 1.8, 0.8), 0x6a5a45, 0, 0.9, 0);
         add(new THREE.BoxGeometry(0.95, 0.25, 0.95), 0x5a4a3a, 0, 1.85, 0); break;
@@ -535,9 +537,9 @@ export class Map3D {
     const g = new THREE.Group();
     const body = this.unitBody(unit.type ?? 'sword'); // R16: 병종별 모델
     g.add(body);
-    const banner = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.45, 0.05),
+    const banner = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.34, 0.05),
       new THREE.MeshBasicMaterial({ color: new THREE.Color(colorHex) }));
-    banner.position.set(0.35, 1.45, 0); g.add(banner);
+    banner.position.set(0.3, 1.52, -0.3); g.add(banner); // R117: 병사 실루엣을 가리지 않도록 등 뒤로 축소·후방 이동
     const label = this.makeLabel(unit.label, 0.6); label.position.y = 2.1; g.add(label);
     const y = this.levelAtWorld(unit.x, unit.z) * STEP;
     g.position.set(unit.x, Math.max(y, WATER_Y + 0.2), unit.z);
