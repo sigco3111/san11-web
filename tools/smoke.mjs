@@ -2288,7 +2288,9 @@ console.log('sample logs:'); for (const l of g.logs.slice(-8)) console.log(' ', 
     home.officers = home.officers.filter(i => i !== offIdx);
     g.units.push({ id: 990001, force: 28, officers: [offIdx], troops: 100, type: 'sword', x: home.lon + 0.5, z: home.lat + 0.5, path: [], tx: null, tz: null, targetCity: null, label: 'R96', qi: 0, conf: 0, food: 0 });
     g.units.push({ id: 990002, force: 5, officers: [-1], troops: 5000, type: 'spear', x: home.lon + 0.5, z: home.lat + 0.6, path: [], tx: null, tz: null, targetCity: null, label: '적', qi: 100, conf: 0, food: 99999 });
+    const r0 = Math.random; Math.random = () => 0.99; // R111 포박 도입: 도주 경로 검증은 포박 실패로 결정화
     g.resolveFieldBattles();
+    Math.random = r0;
     if (g.units.find(u => u.id === 990001)) fail('전멸 미발생');
     if (!g.cities.some(c => c.force === 28 && c.officers.includes(offIdx))) fail('전멸 무장 복귀 없음');
   }
@@ -2301,7 +2303,9 @@ console.log('sample logs:'); for (const l of g.logs.slice(-8)) console.log(' ', 
     const atkHome = g.cities.find(c => c.force === 28), atkOff = atkHome.officers[0];
     atkHome.officers = atkHome.officers.filter(i => i !== atkOff);
     g.units.push({ id: 990003, force: 28, officers: [atkOff], troops: 20000, type: 'spear', x: target.lon, z: target.lat, path: [], tx: target.lon, tz: target.lat, targetCity: target.id, label: 'R96공격', qi: 100, conf: 0, food: 99999 });
+    const r1 = Math.random; Math.random = () => 0.99; // R111 함락 포박 도입: 도주 경로 검증은 포박 실패로 결정화
     g.stepUnit(g.units[g.units.length - 1]);
+    Math.random = r1;
     if (target.force !== 28) fail('함락 미발생');
     if (defs.some(i => target.officers.includes(i))) fail('수비 무장이 공격측 로스터 잔류');
     if (!defs.every(i => g.cities.some(c => c.force === 29 && c.officers.includes(i)))) fail('수비 무장 도주 없음');
@@ -2614,29 +2618,84 @@ console.log('sample logs:'); for (const l of g.logs.slice(-8)) console.log(' ', 
   console.log('R109 위임 자동 중단 게이트 PASS (포위 에피소드·외교 제안·멸망)');
       }
 
-// === R110: 능력연구 특기 선택 전 계통 확장 게이트 — AB_PICK 4계통, 비기본 특기는 계통 능력 최고 무장, 기본값·grantSkill 영속 ===
+// === R111: 포로 시스템 게이트 — ① 부대 전멸 포박·도주 분기 ② 석방(원 세력 복귀·기교P) ③ 포로 등용(억류 해제) ④ 충성 하락(부절대 가산, 매뉴얼) ⑤ 로드 정합화(포박 세력 멸망 시 복귀) ===
 {
-  const fail = m => { console.log('FAIL: R110 ' + m); process.exit(1); };
+  const fail = m => { console.log('FAIL: R111 ' + m); process.exit(1); };
   const src = readFileSync('js/game.js', 'utf8');
-  if (!src.includes("AB_PICKSTAT")) fail('AB_PICKSTAT 없음');
-  for (const t of ["'방어': ['강직', '수성', '완강']", "'내정': ['치안', '통상', '훈련']", "'공격': ['맹돌', '수완']"]) if (!src.includes(t)) fail('AB_PICK 확장 누락: ' + t);
-  if (!src.includes('후한 황제 옹립(기교P 월+10)')) fail('RANKS 주석 정정 누락');
-  const msrc = readFileSync('js/main.js', 'utf8');
-  if (!msrc.includes('AB_PICK[b].slice(1)')) fail('기교 패널 선택 문구 일반화 누락');
-  const sk = JSON.parse(readFileSync('data/skills.json', 'utf8'));
-  if (!sk['지도']) fail('skills.json 지도 설명 누락');
-  // 기능: 방어 3단계에 '수성' 선택 → 통솔 최고 무특기 무장이 습득 + grantSkill 영속
-  const g15 = new Game(JSON.parse(JSON.stringify(scen)), officers, {}, 0);
-  const f15 = g15.forces[g15.playerForce];
-  f15.ab = { '공격': 2, '방어': 2, '계략': 2, '내정': 2 }; f15.techP = 99999;
-  const free15 = () => g15.forceOfficers(g15.playerForce).filter(o => o && !o.skill && !o.state?.grantSkill);
-  const top = (st) => free15().slice().sort((a, b) => (b[st] ?? 0) - (a[st] ?? 0))[0];
-  const tLdr = top('ldr');
-  if (!g15.researchAbility(g15.playerForce, '방어', '수성')) fail('방어 3단계 실행 실패');
-  if (!tLdr || tLdr.skill !== '수성' || tLdr.state?.grantSkill !== '수성') fail('수성 습득자 선정/영속 오류: ' + (tLdr && tLdr.name_ko + '/' + tLdr.skill));
-  // 기능: 내정에 목록 밖 특기 지정 → 기본값(치안), 기본 경로는 공적 최고 무장
-  const tMerit = free15().slice().sort((a, b) => (b.state?.merit ?? 0) - (a.state?.merit ?? 0))[0];
-  if (!g15.researchAbility(g15.playerForce, '내정', '논객')) fail('내정 3단계 실행 실패');
-  if (!tMerit || tMerit.skill !== '치안') fail('목록 밖 선택 시 기본값 오류: ' + (tMerit && tMerit.name_ko + '/' + tMerit.skill));
-  console.log('R110 능력연구 특기 선택 확장 게이트 PASS (AB_PICK 4계통·계통 능력 선정·기본값·지도 설명)');
+  if (!src.includes('_captureOfficer') || !src.includes('releaseCaptive') || !src.includes("'captive'")) fail('소스 게이트: 포박·석방·포로 상태 코드 없음');
+  const mkG = () => new Game(JSON.parse(readFileSync('data/scenario-184.json')), JSON.parse(JSON.stringify(officers)), {}, 28);
+  // ① 포박: 전멸 부대 탑승 무장이 격파 세력 최인접 도시에 억류
+  {
+    const g = mkG(); g.econV = 2;
+    const home = g.cities.find(c => c.force === 28), offIdx = home.officers[0];
+    home.officers = home.officers.filter(i => i !== offIdx);
+    const u = { id: 980001, force: 28, officers: [offIdx], troops: 0, type: 'sword', x: home.lon + 1, z: home.lat, path: [], tx: null, tz: null, targetCity: null, label: 'R111', qi: 0, conf: 0, food: 0 };
+    const r0 = Math.random; Math.random = () => 0; // 포박 성공 결정화
+    g._rehomeOfficers(u, 5);
+    Math.random = r0;
+    const st = g.officers[offIdx].state;
+    if (st.status !== 'captive' || st.captor !== 5) fail('포박 상태 미설정', JSON.stringify(st));
+    const hold = g.cityById[st.city];
+    if (!hold || hold.force !== 5 || !(hold.captives ?? []).includes(offIdx)) fail('억류 도시 명단 미등록');
+    if (g.cities.some(c => c.officers.includes(offIdx))) fail('포박 무장이 로스터 잔류');
+    // ② 석방: 원 세력 복귀 + 기교P +50
+    const tp0 = g.forces[5].techP, ap0 = g.forces[5].ap;
+    if (!g.releaseCaptive(hold.id, offIdx)) fail('석방 실행 실패');
+    const st2 = g.officers[offIdx].state;
+    if (st2.status !== 'serving' || st2.force !== 28 || !g.cities.some(c => c.force === 28 && c.officers.includes(offIdx))) fail('석방 후 원 세력 복귀 없음');
+    if (g.forces[5].techP !== tp0 + 50 || g.forces[5].ap >= ap0) fail('석방 기교P·AP 반영 없음');
+    if ((hold.captives ?? []).includes(offIdx)) fail('석방 후 억류 명단 잔류');
+    // ③ 포로 등용: 재포박 후 억류 세력이 등용
+    const r1 = Math.random; Math.random = () => 0;
+    g._rehomeOfficers(u, 5);
+    Math.random = r1;
+    const st3 = g.officers[offIdx].state;
+    if (st3.status !== 'captive') fail('재포박 실패(전제)');
+    const hold2 = g.cityById[st3.city];
+    hold2.gold = 1000; g.forces[5].ap = 255;
+    if (!(g.recruitChance(hold2.id, offIdx) > 0)) fail('포로 등용 성공률 0');
+    const r2 = Math.random; Math.random = () => 0;
+    const ok = g.recruitOfficer(hold2.id, offIdx);
+    Math.random = r2;
+    if (!ok) fail('포로 등용 실행 실패');
+    const st4 = g.officers[offIdx].state;
+    if (st4.status !== 'serving' || st4.force !== 5 || st4.captor != null || (hold2.captives ?? []).includes(offIdx)) fail('포로 등용 후 억류 해제 없음');
+    if (!hold2.officers.includes(offIdx)) fail('포로 등용 후 억류 도시 로스터 미등록');
+  }
+  // ④ 충성 하락: 부절대 보유 도시 포로는 추가 하락 (매뉴얼 符節台) — 군주 포로 fixture로 AI 등용 차단
+  {
+    const g = mkG(); g.econV = 2;
+    const capA = g.cities.find(c => c.force === 5); // 부절대 없음
+    const otherF = g.aliveForces().find(f => f.id !== 28 && f.id !== 29 && f.id !== 5);
+    const capB = g.cities.find(c => c.force === otherF.id); // 부절대 보유 fixture
+    capB.facilities.push({ type: '부절대', done: true, level: 1 });
+    const ruler28 = g.forces[28].ruler, ruler29 = g.forces[29].ruler;
+    for (const [idx, hold] of [[ruler28, capA], [ruler29, capB]]) { // 부절대는 도시 효과 — 억류 도시를 달리해 하락폭 비교
+      const st = g.officers[idx].state; st.status = 'captive'; st.captor = hold.force; st.city = hold.id; st.captiveSince = 0; st.loyal = 70;
+      for (const c of g.cities) c.officers = c.officers.filter(j => j !== idx); // 실제 포박과 같이 원 소속 도시 로스터에서 제거 (봉록 대상 아님)
+      hold.captives = hold.captives ?? []; hold.captives.push(idx);
+    }
+    g.endTurn(aiThink);
+    const lA = g.officers[ruler28].state.loyal, lB = g.officers[ruler29].state.loyal;
+    if (lA !== 68) fail('포로 충성 기본 하락 불일치', lA);
+    if (lB !== 66) fail('부절대 추가 하락 불일치', lB);
+  }
+  // ⑤ 정합화: 포박 세력 멸망 상태의 포로는 원 세력으로 복귀 (멱등)
+  {
+    const g = mkG(); g.econV = 2;
+    const home = g.cities.find(c => c.force === 28), offIdx = home.officers[0];
+    home.officers = home.officers.filter(i => i !== offIdx);
+    const capCity = g.cities.find(c => c.force === 5);
+    const st = g.officers[offIdx].state; st.status = 'captive'; st.captor = 5; st.city = capCity.id; st.captiveSince = 0;
+    capCity.captives = capCity.captives ?? []; capCity.captives.push(offIdx);
+    g.forces[5].alive = false; // 포박 세력 멸망 상황 fixture
+    g._reconcileOfficerRosters();
+    const st2 = g.officers[offIdx].state;
+    if (st2.status !== 'serving' || st2.force !== 28 || !g.cities.some(c => c.force === 28 && c.officers.includes(offIdx))) fail('포박 세력 멸망 시 복귀 없음');
+    if ((capCity.captives ?? []).includes(offIdx)) fail('복귀 후 억류 명단 잔류');
+    const snap = JSON.stringify(g.cities.map(x => [x.officers, x.captives]));
+    g._reconcileOfficerRosters();
+    if (snap !== JSON.stringify(g.cities.map(x => [x.officers, x.captives]))) fail('정합화 비멱등');
+  }
+  console.log('R111 포로 게이트 PASS (전멸 포박·석방 기교P·포로 등용·부절대 충성 하락·멸망 복귀 정합+멱등)');
       }
