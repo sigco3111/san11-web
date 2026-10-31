@@ -324,6 +324,27 @@ export class Game {
     if (!cap || cap.gold < sp.cost) return `금이 부족합니다 (${sp.cost})`;
     return null;
   }
+  canRepairFac(u, f) { // 시설 보수(補修) 가능 여부 — 매뉴얼 P.41: 인접 아군 군사시설만·금 불요·병기 불가(L2408). 불가 사유 반환, 가능하면 null
+    if (!u || !f) return '대상이 없습니다';
+    if (SIEGE_TYPES.has(u.type)) return '병기 부대는 보수할 수 없습니다'; // 매뉴얼: 병기는 設置・補修 불가
+    if (f.force !== u.force) return '아군 시설만 보수할 수 있습니다';
+    if (f.left > 0) return '완공된 시설만 보수할 수 있습니다';
+    if (TRAPS[f.type]) return '함정은 보수할 수 없습니다'; // 1회 발동 소멸 구조
+    const sp = FIELD_FACS[f.type];
+    if (f.hp >= sp.hp) return '내구가 이미 최대입니다';
+    if ((u.conf ?? 0) > 0) return '혼란 중에는 보수할 수 없습니다';
+    if (u.building) return '건설 중에는 보수할 수 없습니다';
+    if (u.repairing != null) return '이미 보수 중입니다';
+    if (Math.hypot(f.x - u.x, f.z - u.z) > 1.2) return '시설에 인접해 있지 않습니다'; // 인접 = 1.2 (자체 해석, 타격 거리와 동일)
+    return null;
+  }
+  repairFac(uid, facId) { // 부대가 인접 시설 보수 시작 (이동하면 중단). 성공 시 true. 금 불요 (매뉴얼)
+    const u = this.units.find(x => x.id === uid), f = (this.fieldFacs ?? []).find(f => f.id === facId);
+    const why = this.canRepairFac(u, f); if (why) { this.lastRepairWhy = why; return false; }
+    u.repairing = facId; u.path = []; u.tx = null; u.tz = null; u.targetCity = null; u.targetFac = null;
+    this.log(`【야전】${josa(u.label, ['이','가'])} ${f.type} 보수를 시작했습니다`, u.force === this.playerForce);
+    return true;
+  }
   buildField(uid, type) { // 부대가 제자리에서 건설 (이동하면 취소). 성공 시 true
     const u = this.units.find(x => x.id === uid); const why = this.canBuildField(u, type); if (why) { this.lastFieldWhy = why; return false; }
     const sp = FIELD_FACS[type]; const cap = this.forceCities(u.force).sort((a, b) => b.gold - a.gold)[0];
@@ -334,6 +355,15 @@ export class Game {
     return true;
   }
   fieldTurn() { // endTurn 말미: 건설 진행, 투석대 사격, 적 공성 소모, 지원 효과
+    for (const u of this.units) { // 시설 보수 진행 (補修): 회복량 = max(50, 최대내구/4), 정치 합산 250+이면 2배 (자체 수치 — 매뉴얼: 건설력이 높을수록 빠름)
+      if (u.repairing == null) continue;
+      const f = (this.fieldFacs ?? []).find(f => f.id === u.repairing);
+      if (!f || u.tx != null || u.path?.length || (u.conf ?? 0) > 0) { u.repairing = null; if (f) this.log(`【야전】${f.type} 보수가 중단되었습니다`, u.force === this.playerForce); continue; }
+      const sp = FIELD_FACS[f.type];
+      const polSum = u.officers.reduce((sm, i) => sm + (this.officers[i]?.pol ?? 0), 0);
+      f.hp = Math.min(sp.hp, f.hp + Math.max(50, Math.round(sp.hp / 4)) * (polSum >= 250 ? 2 : 1));
+      if (f.hp >= sp.hp) { u.repairing = null; this.log(`【야전】${f.type} 보수 완료 (내구 ${sp.hp})`, u.force === this.playerForce); }
+    }
     const list = this.fieldFacs ?? [];
     for (const f of [...list]) {
       const sp = FIELD_FACS[f.type]; const u = this.units.find(x => x.id === f.uid);
