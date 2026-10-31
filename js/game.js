@@ -953,7 +953,8 @@ export class Game {
     const c = this.cityById[cityId], f = this.forces[c.force];
     if (this._blocked(c)) return false; // 군단 소속
     const apc = Math.ceil(20 * this.apMult(c, 'personnel')); // R13 인재부
-    if (c.gold < 100 || f.ap < apc) return false;
+    if (c.gold < 100) { this.lastRecruitWhy = '금이 부족합니다 (100)'; return false; } // R111: 실패 사유 안내 (플레이어 무응답 방지)
+    if (f.ap < apc) { this.lastRecruitWhy = `행동력이 부족합니다 (${apc})`; return false; }
     const p = this.recruitChance(cityId, officerIdx);
     if (p <= 0) return false;
     const t = this.officers[officerIdx];
@@ -976,10 +977,10 @@ export class Game {
     const c = this.cityById[cityId], t = this.officers[officerIdx];
     if (!c || c.force == null || !this.forces[c.force]?.alive) return false;
     if (!t?.state || t.state.status !== 'captive' || t.state.city !== cityId || t.state.captor !== c.force) return false;
-    if (this._blocked(c)) return false; // 군단 소속
+    if (this._blocked(c)) { this.lastReleaseWhy = '군단 소속 도시입니다'; return false; }
     const f = this.forces[c.force];
     const apc = Math.ceil(20 * this.apMult(c, 'personnel')); // R13 인재부
-    if (f.ap < apc) return false;
+    if (f.ap < apc) { this.lastReleaseWhy = `행동력이 부족합니다 (${apc})`; return false; } // R111: 실패 사유 안내
     f.ap -= apc;
     c.captives = (c.captives ?? []).filter(j => j !== officerIdx);
     delete t.state.captor; delete t.state.captiveSince;
