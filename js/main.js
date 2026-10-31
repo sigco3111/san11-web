@@ -760,8 +760,8 @@ function showCityPanel(c) {
     $('cmd-legion').onclick = () => showLegions(c);
     p.querySelectorAll('.cmd-rwd').forEach(b => b.onclick = () => { const ok = game.rewardOfficers(c.id, [Number(b.dataset.i)]); refreshAll(); showCityPanel(c); if (!ok) game.log(game.lastRewardWhy ?? '포상할 수 없습니다', true); }); // 褒賞
     p.querySelectorAll('.cmd-office').forEach(sel => sel.onchange = () => { const ok = game.appointOffice(c.id, Number(sel.dataset.i), Number(sel.value)); refreshAll(); showCityPanel(c); if (!ok) { game.log(game.lastOfficeWhy ?? '임명할 수 없습니다', true); refreshLog(); } }); // 官職
-    p.querySelectorAll('.cmd-rec').forEach(b => b.onclick = () => { game.recruitOfficer(c.id, Number(b.dataset.i)); refreshAll(); showCityPanel(c); if (game.pendingDebate) showDebate(); }); // R11: 등용 실패 시 설전 발동
-    p.querySelectorAll('.cmd-rel').forEach(b => b.onclick = () => { game.releaseCaptive(c.id, Number(b.dataset.i)); refreshAll(); showCityPanel(c); }); // R111: 포로 석방
+    p.querySelectorAll('.cmd-rec').forEach(b => b.onclick = () => { const ok = game.recruitOfficer(c.id, Number(b.dataset.i)); refreshAll(); showCityPanel(c); if (!ok && game.lastRecruitWhy) { game.log(game.lastRecruitWhy, true); game.lastRecruitWhy = null; refreshLog(); } if (game.pendingDebate) showDebate(); }); // R11: 등용 실패 시 설전 발동 / R111: 비용 부족 사유 안내
+    p.querySelectorAll('.cmd-rel').forEach(b => b.onclick = () => { const ok = game.releaseCaptive(c.id, Number(b.dataset.i)); refreshAll(); showCityPanel(c); if (!ok && game.lastReleaseWhy) { game.log(game.lastReleaseWhy, true); game.lastReleaseWhy = null; refreshLog(); } }); // R111: 포로 석방 + 비용 부족 사유 안내
   }
   const join = $('cmd-join');
   if (join) join.onclick = () => {
