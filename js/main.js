@@ -1,12 +1,12 @@
 // 진입점: 화면 전환·UI·지도 연결
-import { Map3D, toWorld } from './map3d.js?v=r120';
-import { Game, SAVE_KEY, RULES, forceColor, UNIT_TYPES, ARTS, OFFICES, restoreOfficer, FIELD_FACS, TRAPS, SHIP_TYPES, TAC_SHIP_OK, josa, josaRo, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL, AB_PICK } from './game.js?v=r120';
-import { aiThink } from './ai.js?v=r120';
+import { Map3D, toWorld } from './map3d.js?v=r121';
+import { Game, SAVE_KEY, RULES, forceColor, UNIT_TYPES, ARTS, OFFICES, restoreOfficer, FIELD_FACS, TRAPS, SHIP_TYPES, TAC_SHIP_OK, josa, josaRo, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL, AB_PICK } from './game.js?v=r121';
+import { aiThink } from './ai.js?v=r121';
 
 const $ = id => document.getElementById(id);
 let DATA = null, game = null, map = null, selectedUnit = null, autoTimer = null, pendingFire = null; // R15: 직접 전법·계략 대기
 
-const BUILD_ID = 'r120'; // 빌드 ID (index.html의 meta[name=build]와 같아야 함 - 오래된 캐시된 index와 새 스크립트의 혼합 감지)
+const BUILD_ID = 'r121'; // 빌드 ID (index.html의 meta[name=build]와 같아야 함 - 오래된 캐시된 index와 새 스크립트의 혼합 감지)
 function checkBuildSkew() {
   const idx = document.querySelector('meta[name="build"]')?.content;
   if (idx === BUILD_ID) { sessionStorage.removeItem('cheonha-xi-web.skew'); return; } // 일치하면 재시도 표식 해제
@@ -19,7 +19,7 @@ checkBuildSkew();
 async function loadData() {
   const [officers, skills, portraits, s184, s190, s251] = await Promise.all(
     ['data/officers670.json','data/skills.json','data/portraits.json','data/scenario-184.json','data/scenario-190.json','data/scenario-251.json']
-      .map(u => fetch(u + '?v=r120').then(r => r.json())));
+      .map(u => fetch(u + '?v=r121').then(r => r.json())));
   const byIdx = {};
   for (const o of officers) byIdx[o.idx] = o;
   DATA = { officers: byIdx, skills, portraits, scenarios: { '184': s184, '190': s190, '251': s251 } };
@@ -308,7 +308,7 @@ function showDashboard() { // R97→R99: 세력 현황 대시보드 — 카드�
       const card = (label, val) => `<div style="flex:1;min-width:84px;background:#2a251d;border:1px solid #4a4132;border-radius:6px;padding:6px 4px;text-align:center"><div style="font-size:11px;color:#aa9">${label}</div><div style="font-size:16px;color:#e8dfc8;font-weight:bold">${val}</div></div>`;
       body += `<div style="display:flex;gap:6px;flex-wrap:wrap;margin:4px 0">` +
         card('도시', s.cities) + card('무장', s.officers) + card('주둔 병력', fmt(s.garrison)) + card('포로', s.captives ?? 0) + // R111: 억류 포로 수 (매뉴얼 捕虜)
-        card('출진', `${s.fieldUnits}부대·병력 ${fmt(s.fieldTroops)}명`) // R120: 뒤 숫자 단위 모호 지적 반영 + card('금', fmt(s.gold)) + card('군량', fmt(s.food)) + `</div>`;
+        card('출진', `${s.fieldUnits}부대·병력 ${fmt(s.fieldTroops)}명`) + card('금', fmt(s.gold)) + card('군량', fmt(s.food)) + `</div>`; // R120/R121: 출진 카드 단위 명확화 (R120은 행말 주석이 금·군량 카드까지 삼키는 결함 — R121에서 복구)
       body += `<p style="margin:2px 0;color:#aa9;font-size:12px">기교P ${fmt(s.techP)} · 습득 기교 ${s.arts}종</p>`;
       const net = s.goldIn - s.sal; // R99: 수입·지출·순수지를 분리 표기 — +금/봉록 나열이 순수지인지 모호하다는 지적 반영
       body += sec('월 예상 수지 (정산 산식 기준 예상치)',
