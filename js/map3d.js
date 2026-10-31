@@ -557,7 +557,10 @@ export class Map3D {
       else if (f.type === '낙석') { box(0.5, 0.4, 0.5, 0, 0.2, 0); box(0.35, 0.3, 0.35, 0.4, 0.15, 0.2); box(0.3, 0.25, 0.3, -0.35, 0.12, -0.2); }
       else { box(1.0, 0.5, 1.0, 0, 0.25, 0); box(0.9, 0.12, 0.2, 0, 0.7, 0).rotation.z = 0.5; box(0.35, 0.35, 0.35, 0.3, 0.95, 0, flag); }
       g.position.set(f.x, Math.max(this.levelAtWorld(f.x, f.z) * STEP, WATER_Y + 0.2), f.z);
-      this.unitGroup.add(g); this.fieldMeshes[f.id] = { g, type: f.type, done: f.done };
+      this.unitGroup.add(g);
+      // R89: 시각 크기 비례 피킹을 위한 유형별 풋프린트 반경(월드 단위) — 기존 고정 0.06 NDC는 시각 모델(폭 ~0.027)보다 2~4배 넓어 빈 공간 오선택 유발
+      const FAC_R = { '토루': 0.9, '진': 0.8, '채': 1.0, '성채': 1.2, '태고대': 0.7, '군악대': 0.7, '석병팔진': 1.0, '석벽': 1.1, '불화살함정': 0.6, '낙석': 0.5 };
+      this.fieldMeshes[f.id] = { g, type: f.type, done: f.done, fr: FAC_R[f.type] ?? 0.7 };
     }
   }
   removeUnit(id) { const m = this.unitMeshes[id]; if (m) { this.unitGroup.remove(m.group); delete this.unitMeshes[id]; } }
@@ -586,13 +589,17 @@ export class Map3D {
       const d = Math.hypot(pv.x - nx, pv.y - ny);
       if (d < bestCd) { bestCd = d; bestC = Number(id); }
     }
-    let bestF = null, bestFd = 0.06; // R71: 야전 시설도 화면공간 근접 피킹
+    let bestF = null, bestFd = Infinity; // R71: 야전 시설도 화면공간 근접 피킹
+    const pv2 = new THREE.Vector3();
     for (const id of Object.keys(this.fieldMeshes ?? {})) {
       const g2 = this.fieldMeshes[id].g;
       pv.set(g2.position.x, g2.position.y + 0.8, g2.position.z).project(this.camera);
       if (pv.z > 1) continue;
+      // R89: 풋프린트 반경을 투영해 픽 영역을 시각 크기에 비례시킴 (최소 0.022·최대 0.05 NDC) — 기존 고정 0.06은 빈 공간 오선택 유발
+      pv2.set(g2.position.x + (this.fieldMeshes[id].fr ?? 0.7), g2.position.y + 0.8, g2.position.z).project(this.camera);
+      const frad = Math.max(0.022, Math.min(0.05, Math.abs(pv2.x - pv.x)));
       const d = Math.hypot(pv.x - nx, pv.y - ny);
-      if (d < bestFd) { bestFd = d; bestF = Number(id); }
+      if (d < frad && d < bestFd) { bestFd = d; bestF = Number(id); }
     }
     const tgt = bestF != null && (bestC == null || bestFd <= bestCd) ? { type: 'fac', id: bestF } : bestC != null ? { type: 'city', id: bestC } : null;
     if (tgt) return tgt;
