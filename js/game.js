@@ -358,7 +358,7 @@ export class Game {
     for (const u of this.units) { // 시설 보수 진행 (補修): 회복량 = max(50, 최대내구/4), 정치 합산 250+이면 2배 (자체 수치 — 매뉴얼: 건설력이 높을수록 빠름)
       if (u.repairing == null) continue;
       const f = (this.fieldFacs ?? []).find(f => f.id === u.repairing);
-      if (!f || u.tx != null || u.path?.length || (u.conf ?? 0) > 0) { u.repairing = null; if (f) this.log(`【야전】${f.type} 보수가 중단되었습니다`, u.force === this.playerForce); continue; }
+      if (!f || f.force !== u.force || u.tx != null || u.path?.length || (u.conf ?? 0) > 0) { u.repairing = null; if (f) this.log(`【야전】${f.type} 보수가 중단되었습니다`, u.force === this.playerForce); continue; } // 매턴 재검사: 파괴·적 소유 변경·이동·혼란 시 중단
       const sp = FIELD_FACS[f.type];
       const polSum = u.officers.reduce((sm, i) => sm + (this.officers[i]?.pol ?? 0), 0);
       f.hp = Math.min(sp.hp, f.hp + Math.max(50, Math.round(sp.hp / 4)) * (polSum >= 250 ? 2 : 1));
@@ -489,6 +489,26 @@ export class Game {
 // === 공적·충성·관작 ===
   gainMerit(i, n) { const st = this.officers[i]?.state; if (st) st.merit = (st.merit ?? 0) + n; }
   meritGrade(i) { return Math.min(8, Math.floor((this.officers[i]?.state?.merit ?? 0) / 500)); } // 공적 500당 1등급 (자체 수치)
+  rewardOfficers(cityId, idxs) { // 포상(褒賞, 매뉴얼 P.39): 금 100·AP 5/인, 충성 +3 (상승 폭은 매뉴얼 미기재 — 자체 수치). 충성 100 불가·1턴 1인 1회·종군 무장 불가·도시별·복수 동시 가능
+    const c = this.cityById[cityId], f = this.forces[c?.force];
+    if (!c || !f) return false;
+    const ok = [];
+    for (const i of idxs) {
+      const o = this.officers[i], st = o?.state;
+      if (!o || !st || !c.officers.includes(i)) continue;
+      if ((st.loyal ?? 70) >= 100) continue; // 매뉴얼: 충성 100에는 실행 불가
+      if (st._rewardTurn === this.turn) continue; // 매뉴얼: 1턴 1인 1회
+      if (this.units.some(v => v.officers.includes(i))) continue; // 매뉴얼: 종군 무장 불가
+      ok.push(i);
+    }
+    if (!ok.length) { this.lastRewardWhy = '포상할 수 있는 무장이 없습니다 (충성 100·종군·이번 턴 포상済 제외)'; return false; }
+    if (c.gold < 100 * ok.length) { this.lastRewardWhy = `금이 부족합니다 (${100 * ok.length})`; return false; }
+    if (f.ap < 5 * ok.length) { this.lastRewardWhy = `행동력이 부족합니다 (${5 * ok.length})`; return false; }
+    c.gold -= 100 * ok.length; f.ap -= 5 * ok.length;
+    for (const i of ok) { const st = this.officers[i].state; st.loyal = Math.min(100, (st.loyal ?? 70) + 3); st._rewardTurn = this.turn; }
+    this.log(`【포상】${c.name_ko}에서 ${ok.map(i => this.officers[i].name_ko).join('·')}에게 포상을 내렸습니다 (충성 +3, 금 -${100 * ok.length})`, c.force === this.playerForce);
+    return true;
+  }
   salaryOf(i) { if (this.econV !== 2) return 10 + this.meritGrade(i) * 5; const o = this.officers[i]; const abl = o ? Math.round((o.war + o.int + o.pol + o.chr) / 40) : 0; return 30 + this.meritGrade(i) * 10 + abl; } // 월 봉록 (자체 수치 — 매뉴얼: 봉록은 매월, 못 주면 충성 하락). econV 1은 구값 10+등급5 유지
   emperorHolder() { return this.emperor ? (this.cityById[this.emperor.city]?.force ?? null) : null; } // R17: 현재 옹립 세력 = 황제 소재 도시 보유자
   forceRank(fid) { // 소유 도시 수 기준 관작 (황건 제외, 황제는 24도시 + 옹립 또는 황제 부재 — 설계안 102행)
