@@ -1,4 +1,4 @@
-import { SHIP_TYPES } from './game.js?v=r62';
+import { SHIP_TYPES } from './game.js?v=r63';
 // 세력 AI — 위임 시 플레이어 세력도 이 AI가 운영 (위임·샌드박스의 실질 주체)
 export function aiThink(game, fid, legion = null) { // legion 지정 시 그 군단 소속 도시만 운영 (도독 위임)
   const f = game.forces[fid];
@@ -181,7 +181,7 @@ export function aiThink(game, fid, legion = null) { // legion 지정 시 그 군
   }
   // 4) 목표 없는 야전 부대 재지정: 인접 적 도시가 약하면 공격, 아니면 귀환
   for (const u of game.units) {
-    if (u.force !== fid || u.targetCity != null) continue;
+    if (u.force !== fid || u.targetCity != null || u.building) continue; // R63: 건설 중 부대는 재지정 금지 — 재지정(tx 설정) 시 fieldTurn이 건설을 중단시킴
     const foes = game.cities.filter(c => c.force !== fid && (c.force == null || (game.forces[c.force]?.alive && !game.isAllied(fid, c.force))));
     let best = null, bd = 1e9;
     for (const e of foes) { const d = Math.hypot(e.lon - u.x, e.lat - u.z); if (d < bd) { bd = d; best = e; } }
