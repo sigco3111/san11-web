@@ -1341,6 +1341,16 @@ export class Game {
     const ut = UNIT_TYPES[u.type];
     const spdMult = this.unitHasSkill(u, '질풍') ? 1.25 : (this.unitHasSkill(u, '신행') ? 1.15 : 1); // R17: 신행 = 이동 +15% (자체 재정의 — 야간·날씨 시스템 부재, 질풍 우선)
     let speed = 0.55 * ut.move * spdMult * (this.fieldNear(u, '군악대') ? 1.15 : 1) * (this.elitePike(u) ? 1.08 : 1);
+    if (SHIP_TYPES.has(u.type) && u.path?.length) { // R92fix: 수군은 폴리라인 walk — 턴당 speed 거리만큼만 경로를 따라 진행 (R68 매 셀 경유 경로는 0.15° 간격이라 구 0.35 연쇄 소비가 전 경로를 1턴에 소비해 순간이동·즉시 합류가 발생했음)
+      let rem = speed;
+      while (u.path.length && rem > 1e-9) {
+        const d0 = Math.hypot(u.path[0][0] - u.x, u.path[0][1] - u.z);
+        if (d0 <= rem) { u.x = u.path[0][0]; u.z = u.path[0][1]; u.path.shift(); rem -= d0; }
+        else { u.x += (u.path[0][0] - u.x) / d0 * rem; u.z += (u.path[0][1] - u.z) / d0 * rem; rem = 0; }
+      }
+      if (u.path.length) return; // 항해 계속
+      // 경로 소진: 아래 도착 처리로 진행
+    }
     while (u.path?.length && Math.hypot(u.path[0][0] - u.x, u.path[0][1] - u.z) < 0.35) { if (u.path.length > 1) { u.x = u.path[0][0]; u.z = u.path[0][1]; } u.path.shift(); } // R17: 경유지 통과 (연속 근접 경유지 모두 소비, 마지막 경유지=목표는 위치 스냅 없이 제거 → d=0 NaN 방지)
     const aimX = u.path?.length ? u.path[0][0] : u.tx, aimZ = u.path?.length ? u.path[0][1] : u.tz;
     const dx = aimX - u.x, dz = aimZ - u.z;
