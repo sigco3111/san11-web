@@ -1,4 +1,4 @@
-import { SHIP_TYPES, TRAPS } from './game.js?v=r77';
+import { SHIP_TYPES, TRAPS } from './game.js?v=r78';
 // 세력 AI — 위임 시 플레이어 세력도 이 AI가 운영 (위임·샌드박스의 실질 주체)
 export function aiThink(game, fid, legion = null) { // legion 지정 시 그 군단 소속 도시만 운영 (도독 위임)
   const f = game.forces[fid];
@@ -232,7 +232,8 @@ export function aiThink(game, fid, legion = null) { // legion 지정 시 그 군
       }
       else if (ec) { game.fireTactic(u.id, { type: 'city', id: ec.id }); }
       else { // R77: 인접 적 부대·도시가 없으면 시설 전법 (가능 병종 게이트는 fireTactic과 동일 — 투석·정란·수군·노병 등)
-        const ef = (game.fieldFacs ?? []).find(f => f.left <= 0 && !TRAPS.hasOwnProperty(f.type) && f.force != null && f.force !== u.force && !game.isPeace(u.force, f.force) && inR(f.x, f.z));
+        const facReach = SHIP_TYPES.has(u.type) ? 1.6 : (u.type === 'catapult' ? 3.0 : 2.2); // R78: 탐색 거리를 병종 유효거리와 일치 (fireTactic 시설 분기와 동일 규칙 — 투석기 3칸 목표 누락·수군 2.2 무효 조준 방지)
+        const ef = (game.fieldFacs ?? []).find(f => f.left <= 0 && !TRAPS.hasOwnProperty(f.type) && f.force != null && f.force !== u.force && !game.isPeace(u.force, f.force) && Math.hypot(f.x - u.x, f.z - u.z) < facReach);
         if (ef) game.fireTactic(u.id, { type: 'fac', id: ef.id });
       }
     }
@@ -264,4 +265,4 @@ function legacyPick(game, u, eu, info) {
   const ex = info.opts.filter(o => o.id !== 'base'); if (!ex.length) return null;
   const near = game.units.filter(x => x !== eu && x.force !== u.force && !game.isPeace(u.force, x.force) && Math.hypot(x.x - eu.x, x.z - eu.z) < 1.6).length;
   return ex.find(o => o.eff === 'conf' && (eu.conf ?? 0) <= 0) || (near >= 1 ? ex.find(o => ['whirl', 'volley', 'side', 'pierce'].includes(o.eff)) : null) || ex.slice().sort((x, y) => y.qi - x.qi)[0];
-}
+                                               }
