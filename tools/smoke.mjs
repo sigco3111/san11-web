@@ -2253,4 +2253,26 @@ console.log('sample logs:'); for (const l of g.logs.slice(-8)) console.log(' ', 
   if (A.dous !== 1) fail('귀환 선박 재고 회수 안 됨 ' + A.dous);
   if (A.troops <= tr0) fail('귀환 병력 합류 안 됨');
   console.log('R64 수군 게이트 PASS (연안 출진 수상 스폰·재고 차감, 내륙 출진 불가, 수상 공성 병력+내구 피해, 연안 육↔수 쌍방 타격, 귀환 재고 회수·병력 합류)');
+}
+
+// === R92fix: 수군 항해 다턴 진행 게이트 — 폴리라인 walk, 턴당 속도(주가 0.66°)만큼만 진행 (R68 매 셀 경유 경로가 0.35 연쇄 소비로 1턴 순간이동·즉시 합류되던 버그 회귀 방지) ===
+{
+  const fail = m => { console.log('FAIL: R92fix ' + m); process.exit(1); };
+  const scen184 = JSON.parse(readFileSync('data/scenario-184.json'));
+  const g2 = new Game(scen184, JSON.parse(JSON.stringify(officers)), {}, 0);
+  const fid2 = Object.values(g2.forces)[0].id, ruler2 = Object.values(g2.forces)[0].ruler;
+  const si2 = g2.cities.find(c => c.name_ko === '시상'), ho2 = g2.cities.find(c => c.name_ko === '회계');
+  si2.force = fid2; ho2.force = fid2;
+  const sh2 = { id: 88001, force: fid2, officers: [ruler2], troops: 3000, type: 'junk', x: 116.2, z: 29.6, path: [], tx: null, tz: null, targetCity: null, label: 'T', qi: 100, conf: 0 };
+  g2.units.push(sh2); g2.orderUnit(88001, ho2.id);
+  let maxStep = 0, turns = 0;
+  while (g2.units.find(u => u.id === 88001) && turns < 25) {
+    const px = sh2.x, pz = sh2.z; g2.stepUnit(sh2); turns++;
+    if (g2.units.find(u => u.id === 88001)) maxStep = Math.max(maxStep, Math.hypot(sh2.x - px, sh2.z - pz));
+  }
+  if (g2.units.find(u => u.id === 88001)) fail('25턴 내 합류 미완료');
+  if (maxStep > 0.7) fail('턴당 이동 초과 (순간이동) ' + maxStep.toFixed(2));
+  if (turns < 3) fail('항해 턴 과소 (1턴 합류 회귀) ' + turns);
+  if (ho2.troops !== 3000 || ho2.junks !== 1) fail('합류 후 병력/선박 이상 troops=' + ho2.troops + ' junks=' + ho2.junks);
+  console.log('R92fix 수군 항해 게이트 PASS (턴당 최대 ' + maxStep.toFixed(2) + '°, ' + turns + '턴 항해 후 회계 병력+3000·주가+1 합류)');
       }
