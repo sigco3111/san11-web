@@ -1,4 +1,4 @@
-import { SHIP_TYPES, TRAPS } from './game.js?v=r83';
+import { SHIP_TYPES, TRAPS } from './game.js?v=r84';
 // 세력 AI — 위임 시 플레이어 세력도 이 AI가 운영 (위임·샌드박스의 실질 주체)
 export function aiThink(game, fid, legion = null) { // legion 지정 시 그 군단 소속 도시만 운영 (도독 위임)
   const f = game.forces[fid];
@@ -8,6 +8,13 @@ export function aiThink(game, fid, legion = null) { // legion 지정 시 그 군
   // R9: 치안 순찰 — 치안 80 미만 도시, 플레이어와 동일 비용 (금100·AP20)
   for (const c of cities) if ((c.security ?? 80) < 80) game.patrol(c.id);
   if (cities.length === 0) return;
+  // 0.5) 관직 임명 (매뉴얼 P.37 — 비용·AP 없음): 무관직·승진 가능 무장에 공적·작위 게이트 안 최고 등급 부여. 판정은 appointOffice에 위임 (플레이어와 동일 규칙, 금·AP 소모 없음)
+  for (const c of cities) for (const i of c.officers) {
+    const cur = game.officeOf(i);
+    const maxR = Math.min(game.officeGate(fid), game.meritGrade(i));
+    if (maxR > cur) game.appointOffice(c.id, i, maxR);
+  }
+
   // 1) 내정: 여유 금이 있으면 개발 (군사 행동력 40 예약: 전선 도시가 있을 때 내정이 AP를 다 쓰지 않도록)
   // 예약은 '실제 출진 기회'가 있을 때만: 적(비동맹·비휴전) 도시가 12 이내이고 병력이 출진 임계(1.5배/6000)를 넘는 도시가 있어야 함. 없으면 0 → 내정 영구 정지 없음.
   let apReserve = 0;
