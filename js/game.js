@@ -14,12 +14,17 @@ export const OFFICES = {
   7: { name: '거기장군', cmd: 8000,  sal: 80,  bonus: { ldr: 2, war: 1 } },
   8: { name: '대장군',   cmd: 10000, sal: 100, bonus: { ldr: 2, war: 2 } }, // 관직명 — 세력 작위 '대장군'과는 별개 축
 };
-export function restoreOfficer(o, st) { // 저장 복원 공통: 상태 대입 + 능력 가산 재적용. 신규 게임의 기본 스탯 위에 더한다 (저장은 state만 하고 스탯은 기본값에서 재계산)
+export function restoreOfficer(o, st) { // 저장 복원 공통: 상태 대입 + 능력 가산 재적용. 멱등 — 추적된 가산(연구·관직)을 제거하고 state 기준으로 재적용하므로 같은 입력 반복·재진입에도 같은 능력. 저장은 state만 하고 스탯은 기본값+가산으로 재계산
   if (!o || !st) return;
+  const r = o.__restored ?? {};
+  for (const part of ['research', 'office']) for (const [k, v] of Object.entries(r[part] ?? {})) o[k] = Math.max(1, (o[k] ?? 50) - v); // 직전 추적 가산 제거
   o.state = st;
-  if (st.bonus) for (const [k, v] of Object.entries(st.bonus)) o[k] = Math.min(100, (o[k] ?? 50) + v); // R13 능력연구 복원
+  const research = {}, office = {};
+  const add = (src, dst) => { for (const [k, v] of Object.entries(src ?? {})) { o[k] = Math.min(100, (o[k] ?? 50) + v); dst[k] = (dst[k] ?? 0) + v; } };
+  add(st.bonus, research); // R13 능력연구 복원
+  add(st._officeBonus, office); // R84 관직 능력 가산 복원 — 없으면 reload 후 관직 능력 상승이 소실되는 결함
   if (st.grantSkill) o.skill = st.grantSkill; // R13 연구 특기 복원
-  if (st._officeBonus) for (const [k, v] of Object.entries(st._officeBonus)) o[k] = Math.min(100, (o[k] ?? 50) + v); // R84 관직 능력 가산 복원 — 없으면 reload 후 관직 능력 상승이 소실되는 결함
+  o.__restored = { research, office }; // o.state가 아니라 o에 둠 — officerStates 저장에는 포함되지 않음. 인게임 가산 경로(appointOffice·researchAbility)도 이 추적을 갱신해야 재복원 멱등 유지
 }
 export const UNIT_TYPES = {
   sword: { name: '검병', atk: 0.7, def: 0.8, move: 1.0, cost: {} },
@@ -514,6 +519,7 @@ export class Game {
   appointOffice(cityId, i, rank) { // 관직 임명 (매뉴얼 P.37 — 비용·행동력 없음). 능력 상승은 임명 시 부여·변경/해임 시 원복 (자체 처리)
     const c = this.cityById[cityId], o = this.officers[i], st = o?.state;
     if (!c || !o || !st || !c.officers.includes(i)) { this.lastOfficeWhy = '대상 무장이 이 도시에 없습니다'; return false; }
+    if (st.force !== c.force) { this.lastOfficeWhy = '소속(등용된) 무장만 임명할 수 있습니다'; return false; } // R85: 재야·미소속 무장 임명 차단 — 실UI에서 AI가 도시 거주 재야(유비 등)에 관직을 주는 결함 관측
     if (rank !== 0 && !OFFICES[rank]) { this.lastOfficeWhy = '알 수 없는 관직입니다'; return false; }
     if (rank === this.officeOf(i)) { this.lastOfficeWhy = '이미 같은 관직입니다'; return false; }
     if (rank > this.meritGrade(i)) { this.lastOfficeWhy = `공적이 부족합니다 (공적 등급 ${this.meritGrade(i)})`; return false; } // 매뉴얼: 부여 가능 관직은 공적에 비례
@@ -523,6 +529,7 @@ export class Game {
     const nb = OFFICES[rank]?.bonus ?? {};
     for (const [k, v] of Object.entries(nb)) o[k] = Math.min(100, o[k] + v);
     st._officeBonus = { ...nb }; st.office = rank;
+    if (o.__restored) o.__restored.office = { ...nb }; // 멱등 추적 동기화 — 임명·해임 후 재복원 시 이중 가산·오제거 방지
     if (rank === 0) this.log(`【관직】${josa(o.name_ko, ['이','가'])} 해임되었습니다`, c.force === this.playerForce);
     else this.log(`【관직】${josa(o.name_ko, ['이','가'])} ${josa(OFFICES[rank].name, ['으로','로'])} 임명되었습니다 (지휘 +${OFFICES[rank].cmd}·봉록 +${OFFICES[rank].sal})`, c.force === this.playerForce);
     return true;
@@ -1918,6 +1925,7 @@ export class Game {
     for (const o of this.forceOfficers(fid)) {
       o[stat] = Math.min(100, (o[stat] ?? 50) + 2);
       if (o.state) { o.state.bonus = o.state.bonus ?? {}; o.state.bonus[stat] = (o.state.bonus[stat] ?? 0) + 2; } // 저장 영속용
+      if (o.__restored) o.__restored.research = { ...(o.__restored.research ?? {}), [stat]: ((o.__restored.research?.[stat]) ?? 0) + 2 }; // 멱등 추적 동기화
     }
     this.log(`【연구】${this.forceName(fid)} 능력연구 「${branch}」 ${lv + 1}단계 완료 (기교P ${AB_P[lv]} 소비, 소속 무장 전원 ${statNm} +2)`, fid === this.playerForce);
     if (lv + 1 === 3) {
