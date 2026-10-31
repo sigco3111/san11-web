@@ -1,12 +1,12 @@
 // 진입점: 화면 전환·UI·지도 연결
-import { Map3D, toWorld } from './map3d.js?v=r59';
-import { Game, SAVE_KEY, forceColor, UNIT_TYPES, ARTS, FIELD_FACS, TRAPS, SHIP_TYPES, josa, josaRo, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL, AB_PICK } from './game.js?v=r59';
-import { aiThink } from './ai.js?v=r59';
+import { Map3D, toWorld } from './map3d.js?v=r60';
+import { Game, SAVE_KEY, RULES, forceColor, UNIT_TYPES, ARTS, FIELD_FACS, TRAPS, SHIP_TYPES, josa, josaRo, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL, AB_PICK } from './game.js?v=r60';
+import { aiThink } from './ai.js?v=r60';
 
 const $ = id => document.getElementById(id);
 let DATA = null, game = null, map = null, selectedUnit = null, autoTimer = null, pendingFire = null; // R15: 직접 전법·계략 대기
 
-const BUILD_ID = 'r59'; // 빌드 ID (index.html의 meta[name=build]와 같아야 함 - 오래된 캐시된 index와 새 스크립트의 혼합 감지)
+const BUILD_ID = 'r60'; // 빌드 ID (index.html의 meta[name=build]와 같아야 함 - 오래된 캐시된 index와 새 스크립트의 혼합 감지)
 function checkBuildSkew() {
   const idx = document.querySelector('meta[name="build"]')?.content;
   if (idx === BUILD_ID) { sessionStorage.removeItem('cheonha-xi-web.skew'); return; } // 일치하면 재시도 표식 해제
@@ -19,7 +19,7 @@ checkBuildSkew();
 async function loadData() {
   const [officers, skills, portraits, s184, s190, s251] = await Promise.all(
     ['data/officers670.json','data/skills.json','data/portraits.json','data/scenario-184.json','data/scenario-190.json','data/scenario-251.json']
-      .map(u => fetch(u + '?v=r59').then(r => r.json())));
+      .map(u => fetch(u + '?v=r60').then(r => r.json())));
   const byIdx = {};
   for (const o of officers) byIdx[o.idx] = o;
   DATA = { officers: byIdx, skills, portraits, scenarios: { '184': s184, '190': s190, '251': s251 } };
@@ -719,7 +719,7 @@ function showUnitPanel(uid) {
   const mine = u.force === game.playerForce && !game.delegated;
   p.innerHTML = `<h3>${u.label} (${UNIT_TYPES[u.type].name})</h3>
     <p>소속: ${game.forceName(u.force)} · 병력 ${u.troops.toLocaleString()}<br>
-    부장: ${u.officers.map(i => DATA.officers[i].name_ko).join(', ')}<br>기력 ${u.qi ?? 100} / 100${(u.conf ?? 0) > 0 ? ` · <span style='color:#e66'>혼란 ${u.conf}턴</span>` : ''}</p>
+    부장: ${u.officers.map(i => DATA.officers[i].name_ko).join(', ')}<br>기력 ${u.qi ?? 100} / 100${(u.conf ?? 0) > 0 ? ` · <span style='color:#e66'>혼란 ${u.conf}턴</span>` : ''}${u.food != null ? ` · 병량 ${Math.round(u.food)}${(() => { const eat = u.troops * RULES.garrisonFood / 3; const days = eat > 0 ? Math.round(u.food / eat) * 10 : 999; return days <= 30 ? ` <span style='color:#e66'>(${days}일분!)</span>` : ` (${days}일분)`; })()}` : ''}</p>
     ${mine ? '<p style="color:#ffd700">목표 도시를 클릭하면 이동 명령을 내립니다.</p>' : ''}
     ${mine && game.tacticInfo?.(u) ? `<p>${game.tacticInfo(u).opts.map(o => `<button class="cmd up-tac" data-tid="${o.id}">전법 ${o.name} (기력 ${o.qi})</button>`).join(' ')}</p>` : ''}
     ${mine && game.canAmbush(u) && game.ambushTarget(u) && (u._stratTurn ?? -1) !== game.turn && (u.qi ?? 100) >= 10 && u.officers.some(i => (DATA.officers[i]?.int ?? 0) >= 60) ? '<p><button class="cmd" id="up-ambush">계략 복병 (기력 10, 숲에서 인접 적 기습)</button></p>' : ''}
@@ -767,11 +767,12 @@ async function boot() {
       const d = JSON.parse(localStorage.getItem(SAVE_KEY));
       const g = new Game(DATA.scenarios[d.scenId], DATA.officers, DATA.skills, d.playerForce);
       window.__game = g; // 테스트 훅
-      Object.assign(g, { year: d.year, month: d.month, dan: d.dan, turn: d.turn, cities: d.cities, forces: d.forces, units: d.units, nextUnitId: d.nextUnitId, fieldFacs: d.fieldFacs ?? [], nextFacId: d.nextFacId ?? 1, playerForce: d.playerForce, delegated: d.delegated, logs: d.logs, deadAck: d.deadAck, chronicle: d.chronicle ?? [], over: d.over ?? false, unified: d.unified ?? d.over ?? false }); // R14: over로 저장된 통일 세이브 호환
+      Object.assign(g, { year: d.year, month: d.month, dan: d.dan, turn: d.turn, cities: d.cities, forces: d.forces, units: d.units, nextUnitId: d.nextUnitId, fieldFacs: d.fieldFacs ?? [], nextFacId: d.nextFacId ?? 1, playerForce: d.playerForce, delegated: d.delegated, logs: d.logs, deadAck: d.deadAck, chronicle: d.chronicle ?? [], over: d.over ?? false, unified: d.unified ?? d.over ?? false, econGraceUntil: d.econGraceUntil ?? null, econV: d.econV ?? 1 }); // R14: over로 저장된 통일 세이브 호환 / 병량 유예 복원 / econV 없는 구 저장은 구 경제 규칙 보존
       g.cityById = {}; g.cities.forEach(c => g.cityById[c.id] = c);
       for (const c of g.cities) c.officers = [...new Set(c.officers ?? [])]; // 레거시 세이브 중복 무장 정리
       g.diplo = d.diplo ?? {};
       g.itemPool = d.itemPool ?? Object.values(ITEMS).map(i => i.id).filter(id => !Object.values(g.officers).some(o => (o.state.items ?? []).includes(id)));
+      // 강제 마이그레이션 없음: 구 저장은 econV 1 규칙 그대로 진행 (향후 전환 선택 UI는 별도)
       for (const o of Object.values(g.officers)) { o.state.items = o.state.items ?? []; if (o.state.status === 'free' && o.state.found === undefined) o.state.found = true; } // 기존 세이브의 재야는 발견 상태 유지
       for (const f of Object.values(g.forces)) { f.advisor = f.advisor ?? null; f.legions = f.legions ?? []; } // 군사·군단 필드 호환 // 외교 상태 복원 (레거시 세이브는 공백)
       for (const [i, st] of Object.entries(d.officerStates)) if (DATA.officers[i]) {
