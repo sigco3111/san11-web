@@ -21,7 +21,7 @@ button.big { font-size:20px; padding:14px 44px; }
 #hud-force { color:#ffd700; font-weight:bold; }
 #hud-speed { flex-basis:100%; display:flex; gap:10px; justify-content:center; background:rgba(60,30,10,.85); padding:6px; font-size:13px; } /* R14: hud-top 내부 흐름으로 — 좁은 화면에서 메뉴 버튼을 덮던 고정 위치 제거 */
 #panel { position:fixed; top:var(--hud-h, 50px); right:0; /* R14: HUD 실제 높이에 연동 (refreshHud가 --hud-h 갱신) */ width:min(360px,94vw); max-height:calc(100vh - var(--hud-h, 50px) - 150px); max-height:calc(100dvh - var(--hud-h, 50px) - 150px); overflow-y:auto; overscroll-behavior:contain; background:rgba(26,22,16,.96); border:1px solid #6b5d43; border-radius:6px 0 0 6px; padding:14px; z-index:20; font-size:14px; }
-#panel h3 { color:#d4af37; margin-bottom:8px; }
+#panel h3 { color:#d4af37; margin-bottom:8px; padding-right:36px; line-height:1.4; } /* R62: 지도 반액 안내 등 긴 헤더가 닫기 X와 겹치지 않도록 */
 #panel .cmd { display:inline-block; margin:3px 4px 3px 0; font-size:13px; padding:6px 10px; }
 #panel .officer { display:flex; gap:10px; align-items:center; padding:6px 0; border-bottom:1px solid #333; }
 #panel .officer .pimg { width:48px; height:48px; border-radius:4px; background-color:#333; display:inline-block; flex:none; }
