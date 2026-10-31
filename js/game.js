@@ -1256,11 +1256,12 @@ export class Game {
     if (ut.burn) { const ex = Math.round(c.troops * 0.03); c.troops = Math.max(0, c.troops - ex); c.hp = Math.max(0, c.hp - Math.round(ex*0.5)); this.log(`${u.label}의 목수가 화염을 뿜어 추가 피해 -${ex}`, u.force === this.playerForce); }
     if (this.cityHasSkill(c, '수성')) dmg = Math.round(dmg * 0.85); // 수성: 주둔 도시 방어 보정
     if (c.force != null) dmg = Math.round(dmg * (1 - 0.05 * this.techLv(c.force, '방위'))); // 방위 기교: 도시 방어
-    c.troops = Math.max(0, c.troops - dmg);
-    c.hp = Math.max(0, c.hp - Math.round(dmg*0.5));
+    const troopDmg = Math.min(c.troops, dmg), hpDmg = Math.min(c.hp, Math.round(dmg * 0.5)); // R69: 로그는 실제 감소분 — 계산 피해량을 그대로 적으면 공백지(수비 0)에도 '적병 -673'처럼 실상과 어긋남
+    c.troops -= troopDmg;
+    c.hp -= hpDmg;
     u.troops = Math.max(0, u.troops - loss);
-    this.gainTechP(u.force, Math.min(50, Math.floor(dmg / 100))); // 전투 기교P
-    this.log(`${josa(u.label, ['이','가'])} ${josa(c.name_ko, ['을','를'])} 공격 (적병 -${dmg}, 아군 -${loss})`, u.force === this.playerForce);
+    this.gainTechP(u.force, Math.min(50, Math.floor(dmg / 100))); // 전투 기교P는 계산 피해량 기준 유지
+    this.log(`${josa(u.label, ['이','가'])} ${josa(c.name_ko, ['을','를'])} 공격 (적병 -${troopDmg}, 내구 -${hpDmg}, 아군 -${loss})`, u.force === this.playerForce);
     if (u.troops <= 0) { this.units = this.units.filter(x => x !== u); this.log(`${u.label} 부대가 전멸했습니다`, false); return; }
     if (c.troops <= 0 || c.hp <= 0) {
       const old = c.force;
@@ -1326,10 +1327,11 @@ export class Game {
     let da = strike(a, b), db = strike(b, a);
     if (a._guard) db = Math.round(db * (TACTICS[a.type]?.guard ?? 1)); // 철벽: 받는 피해 감소
     if (b._guard) da = Math.round(da * (TACTICS[b.type]?.guard ?? 1));
-    a.troops = Math.max(0, a.troops - db);
-    b.troops = Math.max(0, b.troops - da);
-    this.gainTechP(a.force, Math.min(40, Math.floor(db / 100))); this.gainTechP(b.force, Math.min(40, Math.floor(da / 100))); // 전투 기교P
-    this.log(`【야전】${a.label} ↔ ${b.label} 교전 (${a.label} -${db} / ${b.label} -${da})`, a.force === this.playerForce || b.force === this.playerForce);
+    const aLoss = Math.min(a.troops, db), bLoss = Math.min(b.troops, da); // R69: 로그는 실제 감소분
+    a.troops -= aLoss;
+    b.troops -= bLoss;
+    this.gainTechP(a.force, Math.min(40, Math.floor(db / 100))); this.gainTechP(b.force, Math.min(40, Math.floor(da / 100))); // 전투 기교P는 계산 피해량 기준 유지
+    this.log(`【야전】${a.label} ↔ ${b.label} 교전 (${a.label} -${aLoss} / ${b.label} -${bLoss})`, a.force === this.playerForce || b.force === this.playerForce);
     // R10: 일기토 발동 — 기병 전법 시 15%, 일반 야전 8% (자체 확률). 양측 무장 보유·적병 제외
     if (!this.pendingDuel && a.troops > 0 && b.troops > 0 && a.officers.length && b.officers.length && a.force !== -1 && b.force !== -1) {
       const cavTac = a._cavTactic || b._cavTactic;
