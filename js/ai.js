@@ -7,16 +7,28 @@ export function aiThink(game, fid, legion = null) { // legion 지정 시 그 군
   // R9: 치안 순찰 — 치안 80 미만 도시, 플레이어와 동일 비용 (금100·AP20)
   for (const c of cities) if ((c.security ?? 80) < 80) game.patrol(c.id);
   if (cities.length === 0) return;
-  // 1) 내정: 여유 금이 있으면 개발
+  // 1) 내정: 여유 금이 있으면 개발 (군사 행동력 40 예약: 전선 도시가 있을 때 내정이 AP를 다 쓰지 않도록)
+  // 예약은 '실제 출진 기회'가 있을 때만: 적(비동맹·비휴전) 도시가 12 이내이고 병력이 출진 임계(1.5배/6000)를 넘는 도시가 있어야 함. 없으면 0 → 내정 영구 정지 없음.
+  let apReserve = 0;
+  if (globalThis.__AP_RESERVE !== false) {
+    for (const c of cities) {
+      if (!c.officers.length) continue;
+      for (const e of game.cities) {
+        if (e.force === fid || (e.force != null && (game.isAllied(fid, e.force) || game.isPeace(fid, e.force)))) continue;
+        if (Math.hypot(e.lon - c.lon, e.lat - c.lat) < 12 && c.troops > Math.max(e.troops * 1.5, 6000)) { apReserve = 40; break; }
+      }
+      if (apReserve) break;
+    }
+  }
   for (const c of cities) {
-    if (f.ap < 30) break;
+    if (f.ap < 30 + apReserve) break;
     if (c.gold > 1200) {
       game.develop(c.id, c.commerce <= c.farm ? 'commerce' : 'farm');
     }
   }
   // 1.5) 수색: 미발견 재야가 있는 도시, 같은 비용(AP20·금100) — 40% 확률
   for (const c of cities) {
-    if (f.ap < 20 || c.gold < 100 || !c.officers.length) continue;
+    if (f.ap < 20 + apReserve || c.gold < 100 || !c.officers.length) continue;
     const hasHidden = Object.values(game.officers).some(o => o.state?.status === 'free' && o.state.city === c.id && o.state.found === false);
     if (hasHidden && Math.random() < 0.4) game.searchCity(c.id);
   }
@@ -30,7 +42,7 @@ export function aiThink(game, fid, legion = null) { // legion 지정 시 그 군
   }
   // 2) 징병: 병력이 적은 도시
   for (const c of cities) {
-    if (f.ap < 30) break;
+    if (f.ap < 30 + apReserve) break;
     const avgNbr = cities.reduce((s,x) => s + x.troops, 0) / cities.length;
     if (c.troops < Math.min(avgNbr, 12000) && c.gold > 500 && c.food > 3000) game.recruit(c.id);
   }
@@ -83,7 +95,7 @@ export function aiThink(game, fid, legion = null) { // legion 지정 시 그 군
   }
   // 2.5) 인재 등용: 도시의 재야 무장을 같은 규칙으로 영입
   for (const c of cities) {
-    if (f.ap < 20 || c.gold < 300 || !c.officers.length) continue;
+    if (f.ap < 20 + apReserve || c.gold < 300 || !c.officers.length) continue;
     const free = game.freeOfficers(c.id);
     if (!free.length) continue;
     const target = free.sort((a, b) => game.recruitChance(c.id, b.idx) - game.recruitChance(c.id, a.idx))[0];
