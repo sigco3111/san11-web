@@ -1,12 +1,12 @@
 // 진입점: 화면 전환·UI·지도 연결
-import { Map3D, toWorld } from './map3d.js?v=r98';
-import { Game, SAVE_KEY, RULES, forceColor, UNIT_TYPES, ARTS, OFFICES, restoreOfficer, FIELD_FACS, TRAPS, SHIP_TYPES, TAC_SHIP_OK, josa, josaRo, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL, AB_PICK } from './game.js?v=r98';
-import { aiThink } from './ai.js?v=r98';
+import { Map3D, toWorld } from './map3d.js?v=r99';
+import { Game, SAVE_KEY, RULES, forceColor, UNIT_TYPES, ARTS, OFFICES, restoreOfficer, FIELD_FACS, TRAPS, SHIP_TYPES, TAC_SHIP_OK, josa, josaRo, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL, AB_PICK } from './game.js?v=r99';
+import { aiThink } from './ai.js?v=r99';
 
 const $ = id => document.getElementById(id);
 let DATA = null, game = null, map = null, selectedUnit = null, autoTimer = null, pendingFire = null; // R15: 직접 전법·계략 대기
 
-const BUILD_ID = 'r98'; // 빌드 ID (index.html의 meta[name=build]와 같아야 함 - 오래된 캐시된 index와 새 스크립트의 혼합 감지)
+const BUILD_ID = 'r99'; // 빌드 ID (index.html의 meta[name=build]와 같아야 함 - 오래된 캐시된 index와 새 스크립트의 혼합 감지)
 function checkBuildSkew() {
   const idx = document.querySelector('meta[name="build"]')?.content;
   if (idx === BUILD_ID) { sessionStorage.removeItem('cheonha-xi-web.skew'); return; } // 일치하면 재시도 표식 해제
@@ -19,7 +19,7 @@ checkBuildSkew();
 async function loadData() {
   const [officers, skills, portraits, s184, s190, s251] = await Promise.all(
     ['data/officers670.json','data/skills.json','data/portraits.json','data/scenario-184.json','data/scenario-190.json','data/scenario-251.json']
-      .map(u => fetch(u + '?v=r98').then(r => r.json())));
+      .map(u => fetch(u + '?v=r99').then(r => r.json())));
   const byIdx = {};
   for (const o of officers) byIdx[o.idx] = o;
   DATA = { officers: byIdx, skills, portraits, scenarios: { '184': s184, '190': s190, '251': s251 } };
@@ -291,24 +291,43 @@ function showChronicle() { // R14: 연감 — 【】 주요 사건 기록 (설�
   m.querySelector('#chr-close').onclick = () => m.classList.add('hidden');
 }
 
-function showDashboard() { // R97: 세력 현황 대시보드 — 내 세력 / 세력 비교 (수지는 정산 산식 재사용 예상치로 표기, 실측 정산 결과가 아님)
+function showDashboard() { // R97→R99: 세력 현황 대시보드 — 카드형 핵심 지표 + 섹션 구분 (수지는 정산 산식 재사용 예상치로 표기, 실측 정산 결과가 아님)
   const m = $('modal'); m.classList.remove('hidden');
   const fmt = n => Math.round(n).toLocaleString();
+  const sec = (title, inner, alert = false) => `<div style="margin:8px 0 2px;border:1px solid #4a4132;border-radius:6px;padding:6px 8px"><div style="color:${alert ? '#e66' : '#d4af37'};font-weight:bold;margin-bottom:3px">${title}</div>${inner}</div>`;
+  const none = t => `<p style="margin:2px 0;color:#aa9">${t}</p>`;
   const render = (tab) => {
     let body = '';
     if (tab === 'my') {
       const ov = game.forceOverview(game.playerForce), s = ov.summary;
-      body += `<p style="text-align:left;margin:4px 0">도시 ${s.cities} · 무장 ${s.officers} · 주둔 ${fmt(s.garrison)} · 출진 ${s.fieldUnits}부대 ${fmt(s.fieldTroops)} · 금 ${fmt(s.gold)} · 군량 ${fmt(s.food)} · 기교P ${fmt(s.techP)} · 습득 기교 ${s.arts}</p>`;
-      body += `<p style="text-align:left;margin:4px 0;color:#aa9">월 예상 수지(정산 산식 기준): 금 +${fmt(s.goldIn)} / 봉록 -${fmt(s.sal)} · 군량 수입은 1·4·7·10월</p>`;
-      if (ov.threats.length) body += `<h4 style="color:#e66;text-align:left;margin:8px 0 2px">접근 중인 적 부대</h4>` + ov.threats.map(t => `<p style="text-align:left;margin:2px 0">⚠ ${t.forceName} 「${t.label}」 ${fmt(t.troops)} → ${t.city} (거리 ${t.dist})</p>`).join('');
-      if (ov.units.length) body += `<h4 style="text-align:left;margin:8px 0 2px">출진 부대</h4>` + ov.units.map(u => `<p style="text-align:left;margin:2px 0">${u.label} ${UNIT_TYPES[u.type]?.name ?? u.type} ${fmt(u.troops)} (${u.officers.join('·')})${u.dest ? ` → ${u.dest} (남은 경로 ${u.pathLen})` : ''}${u.building ? ` · ${u.building} 건설 중` : ''}</p>`).join('');
-      const fb = ov.fieldBuilding.map(f => `${f.type} (남은 ${f.left}턴)`).join(', ');
-      body += `<h4 style="text-align:left;margin:8px 0 2px">도시</h4>` + ov.cities.map(r => {
-        const warn = [r.foodLackMonth != null ? `<span style="color:#e66">⚠ ${r.foodLackMonth}월 병량 부족 예상</span>` : '', r.goldLackMonth != null ? `<span style="color:#e66">⚠ ${r.goldLackMonth}월 금 부족 예상</span>` : ''].filter(Boolean).join(' ');
-        const bld = r.building.length ? ` · 건설: ${r.building.map(b => `${b.type} ${b.progress}/${b.turns ?? '?'}`).join(',')}` : '';
-        return `<p style="text-align:left;margin:2px 0"><b>${r.name}</b> — 금 ${fmt(r.gold)} <span style="color:#aa9">(+${fmt(r.goldIn)}/봉록-${fmt(r.sal)})</span> · 군량 ${fmt(r.food)} <span style="color:#aa9">(+${fmt(r.foodIn)}/소비-${fmt(r.foodNeed)})</span> · 병 ${fmt(r.troops)} · 무장 ${r.officers}${bld} ${warn}</p>`;
-      }).join('');
-      if (fb) body += `<p style="text-align:left;margin:2px 0;color:#aa9">야전 건설: ${fb}</p>`;
+      const card = (label, val) => `<div style="flex:1;min-width:84px;background:#2a251d;border:1px solid #4a4132;border-radius:6px;padding:6px 4px;text-align:center"><div style="font-size:11px;color:#aa9">${label}</div><div style="font-size:16px;color:#e8dfc8;font-weight:bold">${val}</div></div>`;
+      body += `<div style="display:flex;gap:6px;flex-wrap:wrap;margin:4px 0">` +
+        card('도시', s.cities) + card('무장', s.officers) + card('주둔 병력', fmt(s.garrison)) +
+        card('출진', `${s.fieldUnits}부대 ${fmt(s.fieldTroops)}`) + card('금', fmt(s.gold)) + card('군량', fmt(s.food)) + `</div>`;
+      body += `<p style="margin:2px 0;color:#aa9;font-size:12px">기교P ${fmt(s.techP)} · 습득 기교 ${s.arts}종</p>`;
+      const net = s.goldIn - s.sal; // R99: 수입·지출·순수지를 분리 표기 — +금/봉록 나열이 순수지인지 모호하다는 지적 반영
+      body += sec('월 예상 수지 (정산 산식 기준 예상치)',
+        `<p style="margin:2px 0">금 수입 +${fmt(s.goldIn)} − 봉록 지출 −${fmt(s.sal)} → <b style="color:${net >= 0 ? '#8d6' : '#e66'}">순수지 ${net >= 0 ? '+' : ''}${fmt(net)}</b></p>` +
+        `<p style="margin:2px 0;color:#aa9;font-size:12px">군량 수입은 1·4·7·10월에만 입고(분기), 소비는 매월. 실제 정산과 같은 산식으로 계산한 예상치이며, 산출 시점 사이의 AI·전투 변동은 반영되지 않음.</p>`);
+      const warns = [];
+      for (const r of ov.cities) {
+        if (r.foodLackMonth != null) warns.push(`⚠ ${r.name}: ${r.foodLackMonth}월 병량 부족 예상`);
+        if (r.goldLackMonth != null) warns.push(`⚠ ${r.name}: ${r.goldLackMonth}월 금 부족 예상`);
+      }
+      body += sec('부족 경고', warns.length ? warns.map(w => `<p style="margin:2px 0;color:#e66">${w}</p>`).join('') : none('부족 경고 없음 — 현재 추세를 12개월 시뮬레이션한 기준'), warns.length > 0);
+      body += sec('위협 (공격받는 도시)', ov.threats.length ? ov.threats.map(t => `<p style="margin:2px 0;color:#e66">⚠ ${t.forceName} 「${t.label}」 ${fmt(t.troops)} → ${t.city} (거리 ${t.dist})</p>`).join('') : none('공격받는 도시 없음 — 접근 중인 적 부대가 확인되지 않음'), ov.threats.length > 0);
+      const orders = ov.units.map(u => {
+        const st = u.building ? `${u.building} 건설 중` : u.dest ? `→ ${u.dest} 이동 중 (남은 경로 ${u.pathLen})` : '대기 중 — 부여된 목표 없음';
+        return `<p style="margin:2px 0">${u.label} ${UNIT_TYPES[u.type]?.name ?? u.type} ${fmt(u.troops)} (${u.officers.join('·')}) — ${st}</p>`;
+      });
+      body += sec('진행 명령 (출진 부대)', orders.length ? orders.join('') : none('진행 중인 명령 없음 — 출진 부대가 없음'));
+      const arts = Object.keys(game.forces[game.playerForce]?.arts ?? {});
+      const research = `<p style="margin:2px 0">진행 중인 연구 없음 — 이 게임의 연구는 기교P 소모 즉시 습득 방식 · 습득 기교 ${arts.length}종${arts.length ? `: ${arts.slice(0, 10).join(', ')}${arts.length > 10 ? ' 외' : ''}` : ''}</p>`;
+      const blds = [];
+      for (const r of ov.cities) for (const b of r.building) blds.push(`${r.name}: ${b.type} ${b.progress}/${b.turns ?? '?'}`);
+      for (const f of ov.fieldBuilding) blds.push(`야전: ${f.type} (남은 ${f.left}턴)`);
+      body += sec('연구 / 건설', research + (blds.length ? blds.map(b => `<p style="margin:2px 0">${b}</p>`).join('') : none('건설 중인 시설 없음')));
+      body += sec('도시', ov.cities.length ? ov.cities.map(r => `<p style="margin:2px 0"><b>${r.name}</b> — 금 ${fmt(r.gold)} · 군량 ${fmt(r.food)} · 병 ${fmt(r.troops)} · 무장 ${r.officers} <span style="color:#aa9">(금 +${fmt(r.goldIn)} / 봉록 −${fmt(r.sal)} · 군량 +${fmt(r.foodIn)} / 소비 −${fmt(r.foodNeed)})</span></p>`).join('') : none('보유 도시 없음'));
     } else {
       const rows = game.forceComparison();
       const th = 'style="padding:3px 8px;text-align:right;white-space:nowrap"', thl = 'style="padding:3px 8px;text-align:left;white-space:nowrap"';
