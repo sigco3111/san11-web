@@ -1,6 +1,6 @@
 // 3D 저폴리 지도 엔진 (Three.js) - 고정 등각 아이소메트릭 + 계단식 지형 + 성곽/숲
 import * as THREE from 'three';
-import { loadGLBAssets, applyEnvironment } from './assets-3d.js?v=r118';
+import { loadGLBAssets, applyEnvironment } from './assets-3d.js?v=r119';
 
 const LON0 = 100, LON1 = 126.5, LAT0 = 21.5, LAT1 = 43;
 export function toWorld(lon, lat) {
@@ -317,12 +317,8 @@ export class Map3D {
     const walls = [], towers = [], keeps = [], flags = {}, roofs = [], eaves = [], gates = [], tips = [];
     const sc = (x, y, z, sx, sy, sz, ry) => new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0), ry), new THREE.Vector3(sx, sy, sz));
     // R115: 처마 반전(위로 치켜올린 모서리) — sc에 Y회전만 있어 팔자 회전은 오일러 조합 별도 도우미 (자체 수치)
-    // R118: 추노를 2단 판재로 세분 — 몸통부는 완만(0.14), 끝단만 크게 젖혀(0.5) 동양풍 처마의 연속 곡선에 근사 (자체 수치)
-    const tip = (x, y, z, dx, dz) => {
-      const seg = (ox, oy, oz, ang, len) => new THREE.Matrix4().compose(new THREE.Vector3(x+ox, y+oy, z+oz), new THREE.Quaternion().setFromEuler(new THREE.Euler(dz*ang, dx !== 0 ? Math.PI/4 : -Math.PI/4, -dx*ang)), new THREE.Vector3(len, 1, 1));
-      return [seg(dx*0.05, 0.004, dz*0.05, 0.14, 0.55), seg(dx*0.14, 0.028, dz*0.14, 0.5, 0.45)];
-    };
-    const pushEave = (x, y, z, s, sy) => { eaves.push(sc(x, y, z, s, sy, s, Math.PI/4)); const r = s*0.74, ty = y + 0.03*s; for (const [dx, dz] of [[1,0],[-1,0],[0,1],[0,-1]]) tips.push(...tip(x+r*dx, ty, z+r*dz, dx, dz)); };
+    const tip = (x, y, z, dx, dz) => new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(dz*0.38, dx !== 0 ? Math.PI/4 : -Math.PI/4, -dx*0.38)), new THREE.Vector3(1, 1, 1)); // R119: 2단 판재는 공중 분리 인상이라 r116/117 단일 접합판으로 복귀(부모 실화면 지적)
+    const pushEave = (x, y, z, s, sy) => { eaves.push(sc(x, y, z, s, sy, s, Math.PI/4)); const r = s*0.74, ty = y + 0.03*s; tips.push(tip(x+r, ty, z, 1, 0), tip(x-r, ty, z, -1, 0), tip(x, ty, z+r, 0, 1), tip(x, ty, z-r, 0, -1)); };
     for (const c of this.cityList) {
       const [x, z] = toWorld(c.lon, c.lat);
       const y = STEP; // 도시 평탄화 레벨 1
@@ -355,7 +351,7 @@ export class Map3D {
     addInst(pyr, new THREE.MeshLambertMaterial({ color: 0x2f4f55 }), roofs);   // 청회색 기와
     addInst(pyr, new THREE.MeshLambertMaterial({ color: 0x8a2b24 }), eaves);   // 붉은 처마
     addInst(box, new THREE.MeshLambertMaterial({ color: 0xa5342a }), gates);   // 붉은 문루 기둥·보
-    const tipGeo = new THREE.BoxGeometry(0.2, 0.045, 0.13); tipGeo.translate(0, 0.02, 0); // R116: 가시형 첨체 대신 납작한 추노 마감(완만한 상승 곡선 인상) / R118: 2단 곡선 세분화의 단위 판재
+    const tipGeo = new THREE.BoxGeometry(0.2, 0.045, 0.13); tipGeo.translate(0, 0.02, 0); // R116: 가시형 첨체 대신 납작한 추노 마감(완만한 상승 곡선 인상)
     addInst(tipGeo, new THREE.MeshLambertMaterial({ color: 0x8a2b24 }), tips); // R115: 처마 반전 팁
   }
 
