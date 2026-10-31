@@ -2480,6 +2480,48 @@ console.log('sample logs:'); for (const l of g.logs.slice(-8)) console.log(' ', 
   for (const t of ['R103: 모바일', 'bottom:0; left:0; right:0; width:100%', 'max-height:46vh']) if (!css.includes(t)) fail('하단 시트 CSS 누락: ' + t);
   console.log('R103 모바일 하단 시트 게이트 PASS');
 }
+// === R105: 로스터·위치 정합 정리 게이트 — 부대 배치(city=null)/정상 주둔/재야/타도시 중복 잔류 4상태 구분 + 기록 도시 우선 복귀 + 멱등 회귀 ===
+{
+  const fail = m => { console.log('FAIL: R105 ' + m); process.exit(1); };
+  const mkG = () => new Game(JSON.parse(readFileSync('data/scenario-184.json')), JSON.parse(JSON.stringify(officers)), {}, 28);
+  const g = mkG(); g.econV = 2;
+  const cs = g.cities.filter(c => c.force === 28);
+  if (cs.length < 2) fail('시나리오에 세력28 도시 2개 필요');
+  const A = cs[0], B = cs[1];
+  const keep = A.officers[0];                                   // 정상 주둔 — 유지돼야 함
+  const moved = B.officers[0];                                  // B 소속 정상 — A에 중복 잔류 주입
+  A.officers.push(moved);
+  const free = Object.values(g.officers).find(o => o.state?.status === 'free' && o.state.city === A.id)
+    ?? Object.values(g.officers).find(o => o.state?.status === 'free');
+  if (!free) fail('시나리오에 재야 무장 필요');
+  free.state.city = A.id; A.officers.push(free.idx);            // 재야 잔류 주입
+  const dep = A.officers.find(i => i !== keep && i !== moved && i !== free.idx); // 부대 배치 — city=null + 부대 탑승이 정상, 로스터 잔류분만 정리돼야 함
+  if (dep == null) fail('배치 시험용 무장 부족');
+  g.officers[dep].state.city = null;
+  g.units.push({ id: 990010, force: 28, officers: [dep], troops: 1000, type: 'sword', x: A.lon + 1, z: A.lat + 1, path: [], tx: null, tz: null, targetCity: null, label: 'R105', qi: 100, conf: 0, food: 0 });
+  g._reconcileOfficerRosters();
+  if (!A.officers.includes(keep) || g.officers[keep].state.city !== A.id) fail('정상 주둔 무장 유실');
+  if (A.officers.includes(moved)) fail('타도시 중복 잔류 미정리');
+  if (!B.officers.includes(moved) || g.officers[moved].state.city !== B.id) fail('중복 정리가 정상 소속까지 훼손');
+  if (A.officers.includes(free.idx)) fail('재야 무장 로스터 잔존');
+  if (free.state.status !== 'free' || free.state.city !== A.id) fail('재야 상태 훼손');
+  if (A.officers.includes(dep)) fail('배치 무장의 로스터 잔류 미정리');
+  const u = g.units.find(x => x.id === 990010);
+  if (!u || !u.officers.includes(dep) || g.officers[dep].state.city !== null) fail('부대 배치 상태 훼손');
+  if (g.cities.some(c => c.officers.includes(dep))) fail('배치 무장이 로스터에 재유입');
+  const snap = JSON.stringify(g.cities.map(c => c.officers));
+  g._reconcileOfficerRosters();
+  if (snap !== JSON.stringify(g.cities.map(c => c.officers))) fail('정합화 비멱등');
+  // 기록 도시 우선 복귀: 로스터에서 빠진 소속 무장은 state.city의 같은 세력 도시로 복귀 (무관한 도시 이동 금지)
+  const g2 = mkG(); g2.econV = 2;
+  const D = g2.cities.filter(c => c.force === 28)[1];
+  const wand = D.officers[0];
+  D.officers = D.officers.filter(i => i !== wand);
+  g2._reconcileOfficerRosters();
+  if (!D.officers.includes(wand) || g2.officers[wand].state.city !== D.id) fail('기록 도시 우선 복귀 실패');
+  console.log('R105 로스터·위치 정합 게이트 PASS (정상주둔 유지/타도시중복 정리/재야 정리/배치 보존/기록도시 복귀/멱등)');
+}
+
 // === R104: 대시보드 부족 경고 문구 — 개월 수 기간임이 드러나는 표기 게이트 ===
 {
   const fail = m => { console.log('FAIL: R104-wording ' + m); process.exit(1); };
