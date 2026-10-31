@@ -42,3 +42,11 @@ select { background:#3a3226; color:#e8e0d0; border:1px solid #6b5d43; font-famil
 /* R22: 패널 닫기 버튼 - 패널이 열려 있을 때만 표시, 내부 스크롤과 무관하게 항상 접근 가능 */
 #panel-x { display:none; position:fixed; top:calc(var(--hud-h, 50px) - 2px); right:6px; z-index:30; width:30px; height:30px; padding:0; font-size:18px; line-height:28px; border-radius:15px; background:#3a3020; color:#ffd700; border:1px solid #d4af37; cursor:pointer; }
 #panel:not(.hidden) + #panel-x { display:block; }
+
+/* R102: 모바일 — 모달 박스가 좁은 화면(390px)에서 넘치지 않도록 상한+가로 스크롤 (min-width 고정 박스 대응) */
+#modal .box { max-width:94vw; max-height:88vh; max-height:88dvh; overflow-x:auto; overflow-y:auto; }
+@media (max-width: 480px) {
+  #hud-top { font-size:12px; gap:8px; padding:6px 8px; }
+  #hud-top button { padding:5px 10px; font-size:12px; }
+  h1 { font-size:34px; letter-spacing:4px; }
+}
