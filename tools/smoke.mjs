@@ -2364,4 +2364,103 @@ console.log('sample logs:'); for (const l of g.logs.slice(-8)) console.log(' ', 
   if (!('building' in ov.cities[0])) fail('도시 건설 진행 필드 누락');
   if (!Array.isArray(ov.threats) || !Array.isArray(ov.fieldBuilding)) fail('위협/야전 건설 배열 누락');
   console.log('R99 대시보드 시각 완성 게이트 PASS (섹션 라벨 9종·순수지 표기·섹션 데이터 필드)');
+}
+// === R101: AI 재배치 게이트 — ① 공백 도시로 보충 출진(병3000+무장1) ② 도착 전량 합류·무장 재배치 ③ 중복 출진 없음(스래시 방지) ===
+{
+  const fail = m => { console.log('FAIL: R101 ' + m); process.exit(1); };
+  function mulberry32(a){ return function(){ a|=0; a=a+0x6D2B79F5|0; let t=Math.imul(a^a>>>15,1|a); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
+  Math.random = mulberry32(101);
+  const g = new Game(JSON.parse(readFileSync('data/scenario-184.json')), JSON.parse(JSON.stringify(officers)), {}, 28);
+  g.econV = 2;
+  const home = g.forceCities(28).find(c => c.name_ko === '남피') ?? g.forceCities(28)[0];
+  const needy = g.cities.find(c => c.name_ko === '북해' && c.force == null);
+  if (!home || !needy) fail('시험 도시 확보 실패');
+  needy.force = 28; needy.troops = 500; needy.officers = [];
+  for (const c of g.cities) { c.gold = 0; c.food = 0; c.security = 100; c.dous = c.lous = c.junks = 0; if (c.force !== 28) c.troops = 50000; } // 내정·공세 억제 — 재배치만 관측
+  home.food = 49000; needy.food = 49000; // 시험용 병량 — 탈영 방지(상인 매각 문턱 50000 미만으로 유지해 금 회복 경로 차단)
+  for (const c of g.forceCities(28)) if (c !== home && c !== needy) c.troops = 5000;
+  home.troops = 22000;
+  const homeOffs0 = home.officers.length, homeTroops0 = home.troops;
+  aiThink(g, 28);
+  const reinf = g.units.find(u => u.force === 28 && u.targetCity === needy.id);
+  if (!reinf) fail('보충 출진 없음');
+  if (reinf.troops < 3000 || reinf.officers.length !== 1) fail(`보충 부대 편성 이상 troops=${reinf.troops} offs=${reinf.officers.length}`);
+  if (home.troops < 3000) fail('출발지 잔류 하한 위반 ' + home.troops);
+  if (home.officers.length !== homeOffs0 - 1) fail('무장 파견 수 이상 ' + home.officers.length);
+  const sentOff = reinf.officers[0], sentTroops = reinf.troops;
+  let arrived = false;
+  for (let k = 0; k < 40 && !arrived; k++) { const t = g.turn; g.endTurn(aiThink); if (g.turn === t) { g.pendingDuel = null; g.pendingDebate = null; } arrived = !g.units.some(u => u.id === reinf.id); }
+  if (!arrived) fail('40턴 내 도착 실패');
+  if (needy.troops < 500 + sentTroops) fail(`합류 손실: ${needy.troops} < ${500 + sentTroops}`); // R87 전량 합류
+  if (!needy.officers.includes(sentOff) || g.officers[sentOff].state.city !== needy.id) fail('무장 재배치 실패');
+  aiThink(g, 28);
+  if (g.units.some(u => u.force === 28 && u.targetCity === needy.id)) fail('스래시: 목표 달성 후 중복 보충 출진'); // 목적지 기준만 판정 — 시험 기간 중 타 세력 공세에 대한 방어 출진은 정상 동작이라 부대 총수 비교는 무효
+  console.log('R101 AI 재배치 게이트 PASS (보충 출진·전량 합류·무장 재배치·중복 출진 없음)');
+}
+// === R102: 함락 부대 입성 게이트 — ① 점령 부대 잔여 병력·무장이 신규 도시에 전량 합류 ② 야전에 부대 잔류 없음 ③ 일반 귀환 합류 회귀 ===
+{
+  const fail = m => { console.log('FAIL: R102 ' + m); process.exit(1); };
+  function mulberry32(a){ return function(){ a|=0; a=a+0x6D2B79F5|0; let t=Math.imul(a^a>>>15,1|a); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
+  Math.random = mulberry32(102);
+  const g = new Game(JSON.parse(readFileSync('data/scenario-184.json')), JSON.parse(JSON.stringify(officers)), {}, 28);
+  g.econV = 2;
+  const home = g.forceCities(28).find(c => c.name_ko === '남피') ?? g.forceCities(28)[0];
+  const tgt = g.cities.find(c => c.name_ko === '북해' && c.force == null);
+  if (!home || !tgt) fail('시험 도시 확보 실패');
+  for (const c of g.cities) { c.gold = 0; c.food = 0; c.security = 100; c.dous = c.lous = c.junks = 0; }
+  home.food = 49000;
+  tgt.troops = 50; tgt.hp = 50; // 즉시 함락 가능 수준
+  const offs = [...home.officers].slice(0, 1);
+  const u = g.dispatch(home.id, offs, 8000, 'spear') || g.dispatch(home.id, offs, 8000, 'sword'); // 병장 재고 부족 시 검병 폴백 (dispatch는 실패 시 false 반환)
+  if (!u) fail('출진 실패');
+  u.x = tgt.lon + 0.5; u.z = tgt.lat; u.path = []; // 시험 배치 — 공성 사거리 내 직접 배치
+  if (!g.orderUnit(u.id, tgt.id)) fail('목표 지정 실패');
+  const troopsBefore = u.troops, foodBefore = u.food ?? 0, off0 = u.officers[0];
+  let captured = false;
+  for (let k = 0; k < 6 && !captured; k++) { const t = g.turn; g.endTurn(aiThink); if (g.turn === t) { g.pendingDuel = null; g.pendingDebate = null; } captured = tgt.force === 28; }
+  if (!captured) fail('6턴 내 함락 실패');
+  if (g.units.some(x => x.id === u.id)) fail('점령 부대가 야전에 잔류');
+  const gained = tgt.troops;
+  if (gained < troopsBefore - 2000) fail(`입성 병력 손실 과다: ${gained} (출진 ${troopsBefore})`); // 공성 손실분만 차감 허용
+  if (!tgt.officers.includes(off0) || g.officers[off0].state.city !== tgt.id) fail('점령 무장 입성 실패');
+  // ③ 일반 귀환 합류 회귀: 다른 부대가 아군 도시로 돌아오면 전량 합류
+  const homeT0 = home.troops;
+  const u2 = g.dispatch(home.id, [...home.officers].slice(0, 1), 3000, 'sword');
+  if (!u2) fail('귀환 시험 출진 실패');
+  u2.x = home.lon + 0.3; u2.z = home.lat; u2.path = [];
+  if (!g.orderUnit(u2.id, home.id)) fail('귀환 목표 지정 실패');
+  for (let k = 0; k < 6 && g.units.some(x => x.id === u2.id); k++) { const t = g.turn; g.endTurn(aiThink); if (g.turn === t) { g.pendingDuel = null; g.pendingDebate = null; } }
+  if (g.units.some(x => x.id === u2.id)) fail('귀환 부대 미합류');
+  if (home.troops < homeT0) fail(`귀환 합류 손실: ${home.troops} < ${homeT0}`);
+  console.log('R102 함락 입성 게이트 PASS (점령 부대 전량 입성·야전 잔류 없음·일반 귀환 합류 회귀)');
+}
+// === R101b: 무장 0 도시 재배치 게이트 — ① 호위 동반 무장 파견 ② 도착 합류로 무장 0 해소 ③ 출발지 잔류 유지 ===
+{
+  const fail = m => { console.log('FAIL: R101b ' + m); process.exit(1); };
+  function mulberry32(a){ return function(){ a|=0; a=a+0x6D2B79F5|0; let t=Math.imul(a^a>>>15,1|a); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
+  Math.random = mulberry32(1017);
+  const g = new Game(JSON.parse(readFileSync('data/scenario-184.json')), JSON.parse(JSON.stringify(officers)), {}, 28);
+  g.econV = 2;
+  const home = g.forceCities(28).find(c => c.name_ko === '남피') ?? g.forceCities(28)[0];
+  const needy = g.cities.find(c => c.name_ko === '수춘' && c.force == null);
+  if (!home || !needy) fail('시험 도시 확보 실패');
+  needy.force = 28; needy.troops = 5000; needy.officers = [];
+  for (const c of g.cities) { c.gold = 0; c.food = 0; c.security = 100; c.dous = c.lous = c.junks = 0; if (c.force !== 28) c.troops = 50000; }
+  for (const c of g.forceCities(28)) if (c !== home && c !== needy) c.troops = 5000;
+  home.troops = 22000; home.food = 49000; needy.food = 49000;
+  const homeOffs0 = home.officers.length;
+  aiThink(g, 28);
+  const mv = g.units.find(u => u.force === 28 && u.targetCity === needy.id);
+  if (!mv) fail('무장 재배치 출진 없음');
+  if (mv.officers.length !== 1 || mv.troops > 1000) fail(`재배치 편성 이상 troops=${mv.troops} offs=${mv.officers.length}`); // 호위 1000 이하+무장 1
+  const sentOff = mv.officers[0];
+  const only28 = (gg, fid) => { if (fid === 28) aiThink(gg, fid); }; // 관측 대상 외 AI 정지 — 호위 1000의 이동 부대가 타 세력 공세에 요격·전멸되는 노이즈 차단 (해당 경로는 R96 게이트가 검증)
+  let arrived = false;
+  for (let k = 0; k < 40 && !arrived; k++) { const t = g.turn; g.endTurn(only28); if (g.turn === t) { g.pendingDuel = null; g.pendingDebate = null; } arrived = !g.units.some(u => u.id === mv.id); }
+  if (!arrived) fail('40턴 내 도착 실패');
+  if (!needy.officers.includes(sentOff) || g.officers[sentOff].state.city !== needy.id) fail('무장 0 해소 실패');
+  if (home.officers.length < 1 || home.officers.includes(sentOff)) fail('출발지 무장 잔류 이상'); // 등용으로 총수는 늘 수 있음 — 잔류 1+·파견 무장 미복귀가 계약 (시작 수 '+homeOffs0+'는 기록용)
+  aiThink(g, 28);
+  if (g.units.some(u => u.force === 28 && u.targetCity === needy.id)) fail('스래시: 무장 배치 후 중복 출진');
+  console.log('R101b 무장 0 재배치 게이트 PASS (호위 동반 파견·도착 해소·중복 출진 없음)');
       }
