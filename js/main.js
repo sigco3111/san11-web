@@ -1,12 +1,12 @@
 // 진입점: 화면 전환·UI·지도 연결
-import { Map3D, toWorld } from './map3d.js?v=r96';
-import { Game, SAVE_KEY, RULES, forceColor, UNIT_TYPES, ARTS, OFFICES, restoreOfficer, FIELD_FACS, TRAPS, SHIP_TYPES, TAC_SHIP_OK, josa, josaRo, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL, AB_PICK } from './game.js?v=r96';
-import { aiThink } from './ai.js?v=r96';
+import { Map3D, toWorld } from './map3d.js?v=r97';
+import { Game, SAVE_KEY, RULES, forceColor, UNIT_TYPES, ARTS, OFFICES, restoreOfficer, FIELD_FACS, TRAPS, SHIP_TYPES, TAC_SHIP_OK, josa, josaRo, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL, AB_PICK } from './game.js?v=r97';
+import { aiThink } from './ai.js?v=r97';
 
 const $ = id => document.getElementById(id);
 let DATA = null, game = null, map = null, selectedUnit = null, autoTimer = null, pendingFire = null; // R15: 직접 전법·계략 대기
 
-const BUILD_ID = 'r96'; // 빌드 ID (index.html의 meta[name=build]와 같아야 함 - 오래된 캐시된 index와 새 스크립트의 혼합 감지)
+const BUILD_ID = 'r97'; // 빌드 ID (index.html의 meta[name=build]와 같아야 함 - 오래된 캐시된 index와 새 스크립트의 혼합 감지)
 function checkBuildSkew() {
   const idx = document.querySelector('meta[name="build"]')?.content;
   if (idx === BUILD_ID) { sessionStorage.removeItem('cheonha-xi-web.skew'); return; } // 일치하면 재시도 표식 해제
@@ -19,7 +19,7 @@ checkBuildSkew();
 async function loadData() {
   const [officers, skills, portraits, s184, s190, s251] = await Promise.all(
     ['data/officers670.json','data/skills.json','data/portraits.json','data/scenario-184.json','data/scenario-190.json','data/scenario-251.json']
-      .map(u => fetch(u + '?v=r96').then(r => r.json())));
+      .map(u => fetch(u + '?v=r97').then(r => r.json())));
   const byIdx = {};
   for (const o of officers) byIdx[o.idx] = o;
   DATA = { officers: byIdx, skills, portraits, scenarios: { '184': s184, '190': s190, '251': s251 } };
@@ -289,6 +289,37 @@ function showChronicle() { // R14: 연감 — 【】 주요 사건 기록 (설�
   const body = ch.length ? ch.map(e => `<p class="st">[${e.y}년 ${e.m}월] ${e.msg}</p>`).join('') : '<p>기록된 사건이 없습니다.</p>';
   m.innerHTML = `<div class="box" style="max-height:72vh;max-width:560px;display:flex;flex-direction:column"><h3>연감</h3><div style="overflow:auto;flex:1;min-height:0">${body}</div><button id="chr-close" style="flex:none;margin-top:8px">닫기</button></div>`; // R14: 기록이 길어도 닫기 버튼 고정 노출
   m.querySelector('#chr-close').onclick = () => m.classList.add('hidden');
+}
+
+function showDashboard() { // R97: 세력 현황 대시보드 — 내 세력 / 세력 비교 (수지는 정산 산식 재사용 예상치로 표기, 실측 정산 결과가 아님)
+  const m = $('modal'); m.classList.remove('hidden');
+  const fmt = n => Math.round(n).toLocaleString();
+  const render = (tab) => {
+    let body = '';
+    if (tab === 'my') {
+      const ov = game.forceOverview(game.playerForce), s = ov.summary;
+      body += `<p style="text-align:left;margin:4px 0">도시 ${s.cities} · 무장 ${s.officers} · 주둔 ${fmt(s.garrison)} · 출진 ${s.fieldUnits}부대 ${fmt(s.fieldTroops)} · 금 ${fmt(s.gold)} · 군량 ${fmt(s.food)} · 기교P ${fmt(s.techP)} · 습득 기교 ${s.arts}</p>`;
+      body += `<p style="text-align:left;margin:4px 0;color:#aa9">월 예상 수지(정산 산식 기준): 금 +${fmt(s.goldIn)} / 봉록 -${fmt(s.sal)} · 군량 수입은 1·4·7·10월</p>`;
+      if (ov.threats.length) body += `<h4 style="color:#e66;text-align:left;margin:8px 0 2px">접근 중인 적 부대</h4>` + ov.threats.map(t => `<p style="text-align:left;margin:2px 0">⚠ ${t.forceName} 「${t.label}」 ${fmt(t.troops)} → ${t.city} (거리 ${t.dist})</p>`).join('');
+      if (ov.units.length) body += `<h4 style="text-align:left;margin:8px 0 2px">출진 부대</h4>` + ov.units.map(u => `<p style="text-align:left;margin:2px 0">${u.label} ${UNIT_TYPES[u.type]?.name ?? u.type} ${fmt(u.troops)} (${u.officers.join('·')})${u.dest ? ` → ${u.dest} (남은 경로 ${u.pathLen})` : ''}${u.building ? ` · ${u.building} 건설 중` : ''}</p>`).join('');
+      const fb = ov.fieldBuilding.map(f => `${f.type} (남은 ${f.left}턴)`).join(', ');
+      body += `<h4 style="text-align:left;margin:8px 0 2px">도시</h4>` + ov.cities.map(r => {
+        const warn = [r.foodLackMonth != null ? `<span style="color:#e66">⚠ ${r.foodLackMonth}월 병량 부족 예상</span>` : '', r.goldLackMonth != null ? `<span style="color:#e66">⚠ ${r.goldLackMonth}월 금 부족 예상</span>` : ''].filter(Boolean).join(' ');
+        const bld = r.building.length ? ` · 건설: ${r.building.map(b => `${b.type} ${b.progress}/${b.turns ?? '?'}`).join(',')}` : '';
+        return `<p style="text-align:left;margin:2px 0"><b>${r.name}</b> — 금 ${fmt(r.gold)} <span style="color:#aa9">(+${fmt(r.goldIn)}/봉록-${fmt(r.sal)})</span> · 군량 ${fmt(r.food)} <span style="color:#aa9">(+${fmt(r.foodIn)}/소비-${fmt(r.foodNeed)})</span> · 병 ${fmt(r.troops)} · 무장 ${r.officers}${bld} ${warn}</p>`;
+      }).join('');
+      if (fb) body += `<p style="text-align:left;margin:2px 0;color:#aa9">야전 건설: ${fb}</p>`;
+    } else {
+      const rows = game.forceComparison();
+      body += `<table style="width:100%;border-collapse:collapse;font-size:13px"><tr style="color:#d4af37;text-align:left"><th>세력</th><th>도시</th><th>무장</th><th>병력</th><th>금</th><th>군량</th></tr>` +
+        rows.map(r => `<tr style="border-top:1px solid #4a4132;${r.id === game.playerForce ? 'color:#d4af37;' : ''}"><td>${r.name}</td><td>${r.cities}</td><td>${r.officers}</td><td>${fmt(r.troops)}</td><td>${fmt(r.gold)}</td><td>${fmt(r.food)}</td></tr>`).join('') + `</table>`;
+    }
+    m.innerHTML = `<div class="box" style="max-height:78vh;max-width:640px;display:flex;flex-direction:column;text-align:left"><h3 style="text-align:center">세력 현황</h3><div style="display:flex;gap:8px;justify-content:center"><button id="dash-my"${tab === 'my' ? ' disabled' : ''}>내 세력</button><button id="dash-cmp"${tab !== 'my' ? ' disabled' : ''}>세력 비교</button></div><div style="overflow:auto;flex:1;min-height:0">${body}</div><button id="dash-close" style="flex:none">닫기</button></div>`;
+    m.querySelector('#dash-close').onclick = () => m.classList.add('hidden');
+    m.querySelector('#dash-my').onclick = () => render('my');
+    m.querySelector('#dash-cmp').onclick = () => render('cmp');
+  };
+  render('my');
 }
 
 function checkGameOver() {
@@ -837,7 +868,9 @@ async function boot() {
   $('btn-rot-r').onclick = () => map && map.rotate90(-1);
   if ($('panel-x')) $('panel-x').onclick = () => { $('panel').classList.add('hidden'); selectedUnit = null; pendingFire = null; };
   if ($('btn-sound')) { $('btn-sound').onclick = toggleSound; applySound(); }
+  if ($('btn-dash')) $('btn-dash').onclick = () => showDashboard(); // R97
   $('btn-menu').onclick = () => modal('메뉴', [
+    ['세력 현황', () => showDashboard()], // R97
     ['연감', () => showChronicle()], // R14
     ['저장하고 타이틀로', () => { game?.autosave(); location.reload(); }],
     ['타이틀로 (저장은 자동)', () => location.reload()],
