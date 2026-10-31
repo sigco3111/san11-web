@@ -2573,3 +2573,13 @@ console.log('sample logs:'); for (const l of g.logs.slice(-8)) console.log(' ', 
   for (const sh of [8, 9]) { try { readFileSync('portraits-atlas/sheet-' + sh + '.jpg'); } catch { fail('sheet-' + sh + '.jpg 없음'); } }
   console.log('R107 초상 아틀라스 514 연결 게이트 PASS (' + ents.length + '건)');
       }
+
+// === R108: 도시 패널 턴 갱신 게이트 — 열린 도시 기본 패널만 갱신(스크롤 유지), 하위 화면(출진·기교 등) 입력 상태 보존 ===
+{
+  const fail = m => { console.log('FAIL: R108 ' + m); process.exit(1); };
+  const src = readFileSync('js/main.js', 'utf8');
+  if (!src.includes("$('panel').dataset.view === 'city'")) fail('doTurn 도시 패널 갱신 분기 없음');
+  if (!/const p = \$\('panel'\), st = p\.scrollTop; showCityPanel\(c\); p\.scrollTop = st;/.test(src)) fail('스크롤 보존 로직 없음');
+  for (const t of ["dataset.view = 'city'", "dataset.view = 'unit'", "dataset.view='dispatch'", "dataset.view='tech'", "dataset.view='trade'", "dataset.view='diplo'", "dataset.view='advisor'", "dataset.view='legion'"]) if (!src.includes(t)) fail('뷰 태그 누락: ' + t);
+  console.log('R108 도시 패널 턴 갱신 게이트 PASS (뷰 태그 8종·스크롤 보존)');
+      }
