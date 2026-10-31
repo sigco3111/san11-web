@@ -1351,9 +1351,8 @@ export class Game {
       u.tx = null; u.targetCity = null;
       return;
     }
-    if (c.force === u.force) { // 아군 도시 합류
-      const cap = c.metropolis ? 150000 : 100000;
-      c.troops = Math.min(cap, c.troops + u.troops);
+    if (c.force === u.force) { // 아군 도시 합류 — R87: 귀환 병력은 상한 캡으로 증발시키지 않고 전량 합류 (자체 처리: 상한은 징병 등 신규 생성에만 적용, 기존 보유 병력의 귀환 손실 방지)
+      c.troops += u.troops;
       c.food += (u.food ?? 0); // 잔여 휴대 병량 회수
       const sb = SHIP_BUILD[u.type]; if (sb) c[sb.store] = (c[sb.store] ?? 0) + 1; // R64: 귀환 선박은 도시 재고로 회수 (자체 규칙)
       for (const i of u.officers) { if (!c.officers.includes(i)) c.officers.push(i); this.officers[i].state.city = c.id; }
