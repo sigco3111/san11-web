@@ -2499,6 +2499,16 @@ console.log('sample logs:'); for (const l of g.logs.slice(-8)) console.log(' ', 
     for (const v of vs) if (v !== meta) fail(f + ' 의 ?v=' + v + ' != meta ' + meta);
   }
   console.log('R-ver2 빌드 버전 일치 게이트 PASS (' + meta + ')');
+
+// === R121: 대시보드 카드 구성 게이트 — 행말 주석이 같은 행의 카드 코드를 삼켜 금·군량 카드가 소실된 r120 결함 재발 방지
+{
+  const src = readFileSync('js/main.js', 'utf8');
+  for (const needle of ["card('도시'", "card('무장'", "card('주둔 병력'", "card('포로'", "card('출진'", "card('금'", "card('군량'"]) {
+    if (!src.includes(needle)) { console.log('FAIL: R121 대시보드 카드 누락 ' + needle); process.exit(1); }
+  }
+  if (!src.includes('부대·병력')) { console.log('FAIL: R121 출진 카드 단위 표기 누락'); process.exit(1); }
+  console.log('R121 대시보드 카드 구성 게이트 PASS (7종)');
+}
 }
 
 // === R105: 로스터·위치 정합 정리 게이트 — 부대 배치(city=null)/정상 주둔/재야/타도시 중복 잔류 4상태 구분 + 기록 도시 우선 복귀 + 멱등 회귀 ===
@@ -2746,4 +2756,4 @@ console.log('sample logs:'); for (const l of g.logs.slice(-8)) console.log(' ', 
     if (!/금이 부족합니다/.test(g.lastRecruitWhy ?? '')) fail('등용 금 안내 없음', g.lastRecruitWhy);
   }
   console.log('R112 시설 소화·비용 안내 게이트 PASS (소화 성공·사거리/미점화 차단·기력 소모·쿨다운·석방 AP·등용 AP/금 안내)');
-    }
+      }
