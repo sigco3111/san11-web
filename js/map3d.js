@@ -1,6 +1,6 @@
 // 3D 저폴리 지도 엔진 (Three.js) - 고정 등각 아이소메트릭 + 계단식 지형 + 성곽/숲
 import * as THREE from 'three';
-import { loadGLBAssets, applyEnvironment } from './assets-3d.js?v=r115';
+import { loadGLBAssets, applyEnvironment } from './assets-3d.js?v=r116';
 
 const LON0 = 100, LON1 = 126.5, LAT0 = 21.5, LAT1 = 43;
 export function toWorld(lon, lat) {
@@ -117,7 +117,7 @@ function centered(node) {
   const g = new THREE.Group(); g.add(node); return g;
 }
 // GLB 씬 + 변환 배열 -> 메시 종류별 InstancedMesh 묶음
-function instancedFromScene(srcScene, placements) {
+function instancedFromScene(srcScene, placements, clothColorHex = null) {
   srcScene.updateMatrixWorld(true);
   const box = new THREE.Box3().setFromObject(srcScene);
   const c = box.getCenter(new THREE.Vector3());
@@ -129,7 +129,9 @@ function instancedFromScene(srcScene, placements) {
     for (const mat of mats) {
       if (mat && mat.isMeshStandardMaterial) { mat.envMapIntensity = 0.2; }
     }
-    const im = new THREE.InstancedMesh(m.geometry, m.material, placements.length);
+    let useMat = m.material;
+    if (clothColorHex && m.name === 'roof') { useMat = m.material.clone(); useMat.color.set(clothColorHex); } // R116: 기치 천 세력색 (GLB cloth가 'roof' 명칭)
+    const im = new THREE.InstancedMesh(m.geometry, useMat, placements.length);
     const tmp = new THREE.Matrix4();
     for (let i = 0; i < placements.length; i++) {
       tmp.multiplyMatrices(placements[i], norm).multiply(m.matrixWorld);
@@ -312,11 +314,11 @@ export class Map3D {
   buildCastles() {
     this.castleGroup.clear();
     const A = this.assets, S = CASTLE_SCALE, C = CASTLE_CELL;
-    const walls = [], towers = [], keeps = [], flags = [], roofs = [], eaves = [], gates = [], tips = [];
+    const walls = [], towers = [], keeps = [], flags = {}, roofs = [], eaves = [], gates = [], tips = [];
     const sc = (x, y, z, sx, sy, sz, ry) => new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0), ry), new THREE.Vector3(sx, sy, sz));
     // R115: 처마 반전(위로 치켜올린 모서리) — sc에 Y회전만 있어 팔자 회전은 오일러 조합 별도 도우미 (자체 수치)
-    const tip = (x, y, z, dx, dz) => new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(dz*0.55, 0, -dx*0.55)), new THREE.Vector3(1, 1, 1));
-    const pushEave = (x, y, z, s, sy) => { eaves.push(sc(x, y, z, s, sy, s, Math.PI/4)); const r = s*0.7071, ty = y + 0.05*s; tips.push(tip(x+r, ty, z, 1, 0), tip(x-r, ty, z, -1, 0), tip(x, ty, z+r, 0, 1), tip(x, ty, z-r, 0, -1)); };
+    const tip = (x, y, z, dx, dz) => new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(dz*0.38, dx !== 0 ? Math.PI/4 : -Math.PI/4, -dx*0.38)), new THREE.Vector3(1, 1, 1));
+    const pushEave = (x, y, z, s, sy) => { eaves.push(sc(x, y, z, s, sy, s, Math.PI/4)); const r = s*0.74, ty = y + 0.03*s; tips.push(tip(x+r, ty, z, 1, 0), tip(x-r, ty, z, -1, 0), tip(x, ty, z+r, 0, 1), tip(x, ty, z-r, 0, -1)); };
     for (const c of this.cityList) {
       const [x, z] = toWorld(c.lon, c.lat);
       const y = STEP; // 도시 평탄화 레벨 1
@@ -336,21 +338,20 @@ export class Map3D {
       for (const [tx, tz] of [[-1,-1],[1,-1],[-1,1],[1,1]]) { pushEave(x + tx*C, y + 12.2*S, z + tz*C, 0.42, 0.07); roofs.push(sc(x + tx*C, y + 12.25*S, z + tz*C, 0.27, 0.4, 0.27, Math.PI/4)); }
       gates.push(sc(x - 0.2, y, z + C, 0.07, 0.62, 0.07, 0), sc(x + 0.2, y, z + C, 0.07, 0.62, 0.07, 0), sc(x, y + 0.6, z + C, 0.62, 0.07, 0.12, 0), sc(x, y + 0.7, z + C, 0.8, 0.05, 0.2, 0));
       const fy = y + 13.1 * S;
-      flags.push(placement(x, y + 10.7*S, z, S*1.5, 0));
-      flags.push(placement(x - C, fy, z + C, S*1.1, 0));
-      flags.push(placement(x + C, fy, z + C, S*1.1, 0));
+      const fcol = (this.cityColorOf && c.force != null) ? this.cityColorOf(c.force) : null; // R116: 세력색 기치
+      (flags[fcol ?? 'asset'] ??= []).push(placement(x, y + 10.7*S, z, S*1.5, 0), placement(x - C, fy, z + C, S*1.1, 0), placement(x + C, fy, z + C, S*1.1, 0));
     }
     if (walls.length) this.castleGroup.add(instancedFromScene(A.wall, walls));
     if (towers.length) this.castleGroup.add(instancedFromScene(A.towerSquareBaseColor, towers));
     if (keeps.length) this.castleGroup.add(instancedFromScene(A.towerSquareBaseColor, keeps));
-    if (flags.length) this.castleGroup.add(instancedFromScene(A.flagBlueWide, flags));
+    for (const [col, list] of Object.entries(flags)) this.castleGroup.add(instancedFromScene(A.flagBlueWide, list, col === 'asset' ? null : col)); // R116
     const addInst = (geo, mat, list) => { if (!list.length) return; const im = new THREE.InstancedMesh(geo, mat, list.length); list.forEach((m, i) => im.setMatrixAt(i, m)); im.castShadow = true; im.receiveShadow = true; this.castleGroup.add(im); };
     const pyr = new THREE.ConeGeometry(1, 1, 4, 1); pyr.translate(0, 0.5, 0); // 밑면 y=0, 4각 추
     const box = new THREE.BoxGeometry(1, 1, 1); box.translate(0, 0.5, 0);
     addInst(pyr, new THREE.MeshLambertMaterial({ color: 0x2f4f55 }), roofs);   // 청회색 기와
     addInst(pyr, new THREE.MeshLambertMaterial({ color: 0x8a2b24 }), eaves);   // 붉은 처마
     addInst(box, new THREE.MeshLambertMaterial({ color: 0xa5342a }), gates);   // 붉은 문루 기둥·보
-    const tipGeo = new THREE.ConeGeometry(0.09, 0.22, 4, 1); tipGeo.translate(0, 0.11, 0);
+    const tipGeo = new THREE.BoxGeometry(0.2, 0.045, 0.13); tipGeo.translate(0, 0.02, 0); // R116: 가시형 첨체 대신 납작한 추노 마감(완만한 상승 곡선 인상)
     addInst(tipGeo, new THREE.MeshLambertMaterial({ color: 0x8a2b24 }), tips); // R115: 처마 반전 팁
   }
 
