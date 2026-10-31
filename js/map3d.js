@@ -1,6 +1,6 @@
 // 3D 저폴리 지도 엔진 (Three.js) - 고정 등각 아이소메트릭 + 계단식 지형 + 성곽/숲
 import * as THREE from 'three';
-import { loadGLBAssets, applyEnvironment } from './assets-3d.js?v=r72';
+import { loadGLBAssets, applyEnvironment } from './assets-3d.js?v=r72b';
 
 const LON0 = 100, LON1 = 126.5, LAT0 = 21.5, LAT1 = 43;
 export function toWorld(lon, lat) {
@@ -562,7 +562,7 @@ export class Map3D {
   }
   removeUnit(id) { const m = this.unitMeshes[id]; if (m) { this.unitGroup.remove(m.group); delete this.unitMeshes[id]; } }
 
-  pick(nx, ny) {
+  pick(nx, ny, preferTarget = false) {
     this.raycaster.setFromCamera(new THREE.Vector2(nx, ny), this.camera);
     // 부대 우선: 광선이 부대 중심(몸통/기치 높이) 1.3 유닛 이내를 지나면 도시보다 부대를 선택
     const v = new THREE.Vector3();
@@ -575,7 +575,7 @@ export class Map3D {
         if (d < bestD) { bestD = d; bestU = Number(id); }
       }
     }
-    if (bestU != null) return { type: 'unit', id: bestU };
+    if (!preferTarget && bestU != null) return { type: 'unit', id: bestU };
     // 도시: 광선-메쉬 교차 대신 화면공간 근접 — 성채 메쉬가 겹치는 각도에서 앞 도시가 뒤 도시를 가리는 오선택 방지 (자체 수치)
     let bestC = null, bestCd = 0.06; // NDC 거리 임계 (~40px)
     const pv = new THREE.Vector3();
@@ -594,9 +594,9 @@ export class Map3D {
       const d = Math.hypot(pv.x - nx, pv.y - ny);
       if (d < bestFd) { bestFd = d; bestF = Number(id); }
     }
-    if (bestF != null && (bestC == null || bestFd <= bestCd)) return { type: 'fac', id: bestF };
-    if (bestC != null) return { type: 'city', id: bestC };
-    return null;
+    const tgt = bestF != null && (bestC == null || bestFd <= bestCd) ? { type: 'fac', id: bestF } : bestC != null ? { type: 'city', id: bestC } : null;
+    if (tgt) return tgt;
+    return bestU != null ? { type: 'unit', id: bestU } : null; // preferTarget(R72b): 명령 모드에서 목표 우선 — 시설 위 수비 부대에 가려 명령 불가하던 문제
   }
 
   rotate90(dir) { this.az += dir * Math.PI/2; }
