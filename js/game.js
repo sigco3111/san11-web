@@ -490,7 +490,7 @@ export class Game {
   tacMult(u, m) { return m > 1 && (u.type === 'spear' || u.type === 'pike') && this.forces[u.force]?.arts?.['창병단련'] ? m * 1.15 : m; } // 개별 기교 창병단련: 창병·극병 전법 위력 +15% (자체 잠정값)
   fireSpread(att, d) { // 개별 기교 신화계: 화계가 성공하면 대상 주변 3칸(2.7) 안 다른 적 부대에도 번짐 (자체 잠정값: 병력 -6%·불 3턴)
     if (!this.forces[att.force]?.arts?.['신화계']) return 0; let n = 0;
-    for (const x of [...this.units]) { if (x === d || x.force === att.force || this.isPeace(att.force, x.force) || Math.hypot(x.x - d.x, x.z - d.z) > 2.7) continue; const l = Math.round(x.troops * 0.06 * (1 + 0.15 * this.techLv(att.force, '화공'))); x.troops = Math.max(0, x.troops - l); x.burn = 3; n++; if (x.troops <= 0) { this.units = this.units.filter(y => y !== x); this.log(`${x.label} 부대가 전멸했습니다`, false); } }
+    for (const x of [...this.units]) { if (x === d || x.force === att.force || this.isPeace(att.force, x.force) || Math.hypot(x.x - d.x, x.z - d.z) > 2.7) continue; const l = Math.round(x.troops * 0.06 * (1 + 0.15 * this.techLv(att.force, '화공'))); x.troops = Math.max(0, x.troops - l); x.burn = 3; n++; if (x.troops <= 0) { this._rehomeOfficers(x); this.units = this.units.filter(y => y !== x); this.log(`${x.label} 부대가 전멸했습니다`, false); } }
     if (n) this.log(`【기교】신화계로 불이 주변 적 부대 ${n}개로 번졌습니다`, att.force === this.playerForce); return n;
   }
   unitTechAtk(u) { const b = TYPE2TECH[u.type]; return (b ? 1 + 0.05 * this.techLv(u.force, b) : 1) * ((u.type === 'spear' || u.type === 'pike') && this.forces[u.force]?.arts?.['정예창병'] ? 1.08 : 1); }
@@ -1289,7 +1289,7 @@ export class Game {
     if ((u.burn ?? 0) > 0) { // R32: 계속 타는 불 (소화로 끌 수 있음)
       u.burn--; const lost = Math.max(1, Math.round(u.troops * 0.04)); u.troops = Math.max(0, u.troops - lost);
       this.log(`${josa(u.label, ['이','가'])} 불에 타 병력 -${lost}`, u.force === this.playerForce);
-      if (u.troops <= 0) { this.units = this.units.filter(x => x !== u); this.log(`${u.label} 부대가 전멸했습니다`, false); return; }
+      if (u.troops <= 0) { this._rehomeOfficers(u); this.units = this.units.filter(x => x !== u); this.log(`${u.label} 부대가 전멸했습니다`, false); return; }
     }
     if ((u.conf ?? 0) > 0) { // 혼란: 이동·공격 불가
       u.conf--;
@@ -1305,7 +1305,7 @@ export class Game {
         const des = Math.max(1, Math.round(u.troops * 0.03)); // 병량 0: 턴당 3% 탈영 (자체 수치)
         u.troops -= des;
         if (!u._starveWarn || this.turn - u._starveWarn >= 6) { u._starveWarn = this.turn; this.log(`${josa(u.label, ['이','가'])} 병량이 바닥나 병사가 흩어집니다 (-${des})`, u.force === this.playerForce); }
-        if (u.troops <= 0) { this.units = this.units.filter(x => x !== u); this.log(`${u.label} 부대가 전멸했습니다`, false); return; }
+        if (u.troops <= 0) { this._rehomeOfficers(u); this.units = this.units.filter(x => x !== u); this.log(`${u.label} 부대가 전멸했습니다`, false); return; }
       }
     }
     const foodFull = Math.round(u.troops * RULES.garrisonFood * RULES.unitFoodMonths);
@@ -1440,16 +1440,49 @@ export class Game {
     u.troops = Math.max(0, u.troops - loss);
     this.gainTechP(u.force, Math.min(50, Math.floor(dmg / 100))); // 전투 기교P는 계산 피해량 기준 유지
     this.log(`${josa(u.label, ['이','가'])} ${josa(c.name_ko, ['을','를'])} 공격 (적병 -${troopDmg}, 내구 -${hpDmg}, 아군 -${loss})`, u.force === this.playerForce);
-    if (u.troops <= 0) { this.units = this.units.filter(x => x !== u); this.log(`${u.label} 부대가 전멸했습니다`, false); return; }
+    if (u.troops <= 0) { this._rehomeOfficers(u); this.units = this.units.filter(x => x !== u); this.log(`${u.label} 부대가 전멸했습니다`, false); return; }
     if (c.troops <= 0 || c.hp <= 0) {
       const old = c.force;
       c.force = u.force; c.district = null;
+      if (old != null) { // R96: 함락 수비 무장 도주 — 포로는 후속 구현 유지. 원 세력 잔여 도시로 복귀시켜 무장 귀속·위치 불일치와 원 세력 마비 방지 (없으면 로스터에서만 제거, 멸망 판정이 재야 전환)
+        const home = this.cities.filter(cc => cc.force === old).sort((p, q) => Math.hypot(p.lon - c.lon, p.lat - c.lat) - Math.hypot(q.lon - c.lon, q.lat - c.lat))[0];
+        for (const i of [...c.officers]) {
+          const o = this.officers[i];
+          if (o?.state?.force !== old) continue;
+          c.officers = c.officers.filter(j => j !== i);
+          if (home) { if (!home.officers.includes(i)) home.officers.push(i); o.state.city = home.id; }
+        }
+      }
       c.hp = Math.round(c.maxhp * 0.4);
       this.gainTechP(u.force, 200); // 도시 함락 기교P
       for (const i of u.officers) this.gainMerit(i, MERIT.capture);
       this.log(`【${c.name_ko}】함락! ${old != null ? this.forceName(old) : '공백지'} → ${this.forceName(u.force)}`, true);
       // 수비 무장 일부 포로/퇴각은 후속 구현 — 일단 공격측 도시에 그대로 둠
       u.tx = null; u.targetCity = null;
+    }
+  }
+  _rehomeOfficers(u) { // R96: 부대 소실 시 탑승 무장의 도주 복귀 — 포로는 후속 구현(매뉴얼 포로 개념 확인, 확률 등 세부 미확정) 유지, 무장이 로스터에서 소실되는 것만 방지
+    const home = this.cities.filter(c => c.force === u.force).sort((p, q) => Math.hypot(p.lon - u.x, p.lat - u.z) - Math.hypot(q.lon - u.x, q.lat - u.z))[0];
+    if (!home) return; // 도시 없음 — 멸망 판정이 재야 전환 처리
+    for (const i of u.officers) {
+      const o = this.officers[i]; if (!o) continue;
+      if (!home.officers.includes(i)) home.officers.push(i);
+      o.state.city = home.id;
+    }
+  }
+  _reconcileOfficerRosters() { // R96: 기존 저장 복구 — ① 타 세력 도시 로스터의 소속 무장 ② 로스터·부대 어디에도 없는 소속 무장을 원 세력 도시로 복귀. 멱등 (복귀 후엔 두 조건 모두 비일치)
+    for (const c of this.cities) for (const i of [...c.officers]) {
+      const o = this.officers[i]; const f = o?.state?.force;
+      if (f == null || f === c.force) continue;
+      c.officers = c.officers.filter(j => j !== i);
+    }
+    const inUnit = new Set(); for (const u of this.units) for (const i of u.officers) inUnit.add(i);
+    for (const o of Object.values(this.officers)) {
+      const st = o?.state; if (!st || st.force == null) continue;
+      if (!['serving', 'ruler', 'taesu'].includes(st.status)) continue;
+      if (inUnit.has(o.idx) || this.cities.some(c => c.officers.includes(o.idx))) continue;
+      const home = this.cities.filter(c => c.force === st.force).sort((p, q) => p.id - q.id)[0];
+      if (home) { home.officers.push(o.idx); st.city = home.id; }
     }
   }
   // === 야전: 접촉한 적 부대 쌍 교전 ===
@@ -1522,6 +1555,7 @@ export class Game {
     }
     for (const u of [a, b]) {
       if (u.troops <= 0) {
+        this._rehomeOfficers(u);
         this.units = this.units.filter(x => x !== u);
         this.log(`${u.label} 부대가 전멸했습니다`, false);
       } else if (u.troops < (this.unitHasSkill(u, '완강') ? 600 : 1200)) { // 퇴각: 가장 가까운 아군 도시로 (완강 특기는 기준 절반)
@@ -1612,7 +1646,7 @@ export class Game {
       note = tac.eff === 'side' ? ' 전방 ' + n + '부대 동시 타격' : ' ' + n + '부대 관통' + (fn ? '·시설 ' + fn + ' 관통' : '');
     }
     const dead = this.units.filter(v => v.troops <= 0 && v !== d);
-    for (const v of dead) this.log(v.label + ' 부대가 전멸했습니다', false);
+    for (const v of dead) { this._rehomeOfficers(v); this.log(v.label + ' 부대가 전멸했습니다', false); }
     this.units = this.units.filter(v => v.troops > 0 || v === d);
     return note;
   }
@@ -1644,7 +1678,7 @@ export class Game {
       this.gainTechP(u.force, Math.min(40, Math.floor(dmg / 100)));
       const note = tac.eff ? this._tacExtra(u, d, tac, dmg) : '';
       this.log(`【전법】${lead.name_ko}의 ${tac.name}! 야전에서 ${d.label}에 큰 피해 (-${dmg})${note}`, u.force === this.playerForce);
-      if (d.troops <= 0) { this.units = this.units.filter(x => x !== d); this.log(`${d.label} 부대가 전멸했습니다`, false); }
+      if (d.troops <= 0) { this._rehomeOfficers(d); this.units = this.units.filter(x => x !== d); this.log(`${d.label} 부대가 전멸했습니다`, false); }
       this.autosave();
       return true;
     }
@@ -1725,7 +1759,7 @@ export class Game {
         d.troops = Math.max(0, d.troops - burn);
         this.log(`【계략】${caster.name_ko}의 화계! ${d.label} 병력 -${burn} (불이 번져 3턴간 계속 탑니다)`, u.force === this.playerForce);
         d.burn = 3; this.fireSpread(u, d);
-        if (d.troops <= 0) { this.units = this.units.filter(x => x !== d); this.log(`${d.label} 부대가 전멸했습니다`, false); }
+        if (d.troops <= 0) { this._rehomeOfficers(d); this.units = this.units.filter(x => x !== d); this.log(`${d.label} 부대가 전멸했습니다`, false); }
         this.autosave();
         return true;
       }
@@ -1770,7 +1804,7 @@ export class Game {
       this.gainMerit(caster.idx, MERIT.stratagem);
       const hit = Math.round(d.troops * 0.07); d.troops = Math.max(0, d.troops - hit); d.qi = Math.max(0, (d.qi ?? 100) - 20);
       this.log(`【계략】${caster.name_ko}의 복병! ${d.label} 병력 -${hit}, 기력 -20`, u.force === this.playerForce);
-      if (d.troops <= 0) { this.units = this.units.filter(x => x !== d); this.log(`${d.label} 부대가 전멸했습니다`, false); }
+      if (d.troops <= 0) { this._rehomeOfficers(d); this.units = this.units.filter(x => x !== d); this.log(`${d.label} 부대가 전멸했습니다`, false); }
       this.autosave();
       return true;
     }
