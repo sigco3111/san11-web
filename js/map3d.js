@@ -1,6 +1,6 @@
 // 3D 저폴리 지도 엔진 (Three.js) - 고정 등각 아이소메트릭 + 계단식 지형 + 성곽/숲
 import * as THREE from 'three';
-import { loadGLBAssets, applyEnvironment } from './assets-3d.js?v=r117';
+import { loadGLBAssets, applyEnvironment } from './assets-3d.js?v=r118';
 
 const LON0 = 100, LON1 = 126.5, LAT0 = 21.5, LAT1 = 43;
 export function toWorld(lon, lat) {
@@ -317,8 +317,12 @@ export class Map3D {
     const walls = [], towers = [], keeps = [], flags = {}, roofs = [], eaves = [], gates = [], tips = [];
     const sc = (x, y, z, sx, sy, sz, ry) => new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0), ry), new THREE.Vector3(sx, sy, sz));
     // R115: 처마 반전(위로 치켜올린 모서리) — sc에 Y회전만 있어 팔자 회전은 오일러 조합 별도 도우미 (자체 수치)
-    const tip = (x, y, z, dx, dz) => new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(dz*0.38, dx !== 0 ? Math.PI/4 : -Math.PI/4, -dx*0.38)), new THREE.Vector3(1, 1, 1));
-    const pushEave = (x, y, z, s, sy) => { eaves.push(sc(x, y, z, s, sy, s, Math.PI/4)); const r = s*0.74, ty = y + 0.03*s; tips.push(tip(x+r, ty, z, 1, 0), tip(x-r, ty, z, -1, 0), tip(x, ty, z+r, 0, 1), tip(x, ty, z-r, 0, -1)); };
+    // R118: 추노를 2단 판재로 세분 — 몸통부는 완만(0.14), 끝단만 크게 젖혀(0.5) 동양풍 처마의 연속 곡선에 근사 (자체 수치)
+    const tip = (x, y, z, dx, dz) => {
+      const seg = (ox, oy, oz, ang, len) => new THREE.Matrix4().compose(new THREE.Vector3(x+ox, y+oy, z+oz), new THREE.Quaternion().setFromEuler(new THREE.Euler(dz*ang, dx !== 0 ? Math.PI/4 : -Math.PI/4, -dx*ang)), new THREE.Vector3(len, 1, 1));
+      return [seg(dx*0.05, 0.004, dz*0.05, 0.14, 0.55), seg(dx*0.14, 0.028, dz*0.14, 0.5, 0.45)];
+    };
+    const pushEave = (x, y, z, s, sy) => { eaves.push(sc(x, y, z, s, sy, s, Math.PI/4)); const r = s*0.74, ty = y + 0.03*s; for (const [dx, dz] of [[1,0],[-1,0],[0,1],[0,-1]]) tips.push(...tip(x+r*dx, ty, z+r*dz, dx, dz)); };
     for (const c of this.cityList) {
       const [x, z] = toWorld(c.lon, c.lat);
       const y = STEP; // 도시 평탄화 레벨 1
@@ -351,7 +355,7 @@ export class Map3D {
     addInst(pyr, new THREE.MeshLambertMaterial({ color: 0x2f4f55 }), roofs);   // 청회색 기와
     addInst(pyr, new THREE.MeshLambertMaterial({ color: 0x8a2b24 }), eaves);   // 붉은 처마
     addInst(box, new THREE.MeshLambertMaterial({ color: 0xa5342a }), gates);   // 붉은 문루 기둥·보
-    const tipGeo = new THREE.BoxGeometry(0.2, 0.045, 0.13); tipGeo.translate(0, 0.02, 0); // R116: 가시형 첨체 대신 납작한 추노 마감(완만한 상승 곡선 인상)
+    const tipGeo = new THREE.BoxGeometry(0.2, 0.045, 0.13); tipGeo.translate(0, 0.02, 0); // R116: 가시형 첨체 대신 납작한 추노 마감(완만한 상승 곡선 인상) / R118: 2단 곡선 세분화의 단위 판재
     addInst(tipGeo, new THREE.MeshLambertMaterial({ color: 0x8a2b24 }), tips); // R115: 처마 반전 팁
   }
 
@@ -505,11 +509,15 @@ export class Map3D {
       case 'spear': soldier('spear'); break;
       case 'pike': soldier('pike'); break;
       case 'bow': soldier('bow'); break;
-      case 'cav': // 말 + 기수 (R117: 다리 4개 추가)
+      case 'cav': // 말 + 기수 (R118: 기수를 몸통+머리+투구로 세분, 말/기수 색 분리)
         add(new THREE.BoxGeometry(0.5, 0.45, 1.0), 0x6a4a30, 0, 0.62, 0);
         for (const [lx, lz] of [[-0.16, 0.32], [0.16, 0.32], [-0.16, -0.32], [0.16, -0.32]]) add(new THREE.CylinderGeometry(0.06, 0.06, 0.45, 4), 0x54381f, lx, 0.22, lz);
-        add(new THREE.BoxGeometry(0.2, 0.3, 0.35), 0x6a4a30, 0, 0.82, 0.55);
-        add(new THREE.ConeGeometry(0.3, 0.8, 5), 0x5a4a3a, 0, 1.32, 0); break;
+        add(new THREE.BoxGeometry(0.2, 0.3, 0.35), 0x6a4a30, 0, 0.82, 0.55);      // 말 머리
+        add(new THREE.BoxGeometry(0.1, 0.22, 0.16), 0x54381f, 0, 0.72, 0.62);    // 말 귀·얼굴 앞면
+        add(new THREE.BoxGeometry(0.34, 0.4, 0.24), 0x5a4a3a, 0, 1.06, -0.05);   // 기수 몸통(갑옷)
+        add(new THREE.SphereGeometry(0.13, 6, 5), 0xd8b896, 0, 1.36, -0.05);     // 기수 머리
+        add(new THREE.ConeGeometry(0.16, 0.22, 6), 0x707078, 0, 1.5, -0.05);     // 기수 투구
+        add(new THREE.CylinderGeometry(0.04, 0.04, 1.4, 4), 0x9a7a4a, 0.26, 1.1, -0.05); break; // 기수 장창
       case 'ram': // 충거: 수레 + 충각 (R117: 바퀴 추가)
         add(new THREE.BoxGeometry(0.9, 0.6, 1.1), 0x5a4a3a, 0, 0.68, 0);
         for (const [wx, wz] of [[-0.48, 0.35], [0.48, 0.35], [-0.48, -0.35], [0.48, -0.35]]) add(new THREE.CylinderGeometry(0.16, 0.16, 0.08, 8), 0x3e2f1e, wx, 0.16, wz, 0, 0, Math.PI/2);
