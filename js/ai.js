@@ -1,4 +1,4 @@
-import { SHIP_TYPES } from './game.js?v=r76';
+import { SHIP_TYPES, TRAPS } from './game.js?v=r77';
 // 세력 AI — 위임 시 플레이어 세력도 이 AI가 운영 (위임·샌드박스의 실질 주체)
 export function aiThink(game, fid, legion = null) { // legion 지정 시 그 군단 소속 도시만 운영 (도독 위임)
   const f = game.forces[fid];
@@ -203,6 +203,15 @@ export function aiThink(game, fid, legion = null) { // legion 지정 시 그 군
   // 4) 목표 없는 야전 부대 재지정: 인접 적 도시가 약하면 공격, 아니면 귀환
   for (const u of game.units) {
     if (u.force !== fid || u.targetCity != null || u.building) continue; // R63: 건설 중 부대는 재지정 금지 — 재지정(tx 설정) 시 fieldTurn이 건설을 중단시킴
+    if (u.targetFac != null) continue; // R77: 시설 공격 명령 진행 중이면 유지 (매 턴 재지정으로 명령이 흔들리지 않게)
+    if (u.troops >= 1500) { // R77: AI 명령형 시설 공격 (매뉴얼: 군사시설은 공격 대상) — 목표 없는 부대가 6칸 안 적 완공 시설(함정 제외)을 명령형으로 공격. 기존에는 자동 소모(2%)만으로 시설을 깎아 플레이어 시설선을 전략적으로 무시하는 갭
+      let bf = null, bfd = 6;
+      for (const f2 of (game.fieldFacs ?? [])) {
+        if (f2.left > 0 || TRAPS.hasOwnProperty(f2.type) || f2.force == null || f2.force === fid || game.isPeace(fid, f2.force)) continue;
+        const d = Math.hypot(f2.x - u.x, f2.z - u.z); if (d < bfd) { bfd = d; bf = f2; }
+      }
+      if (bf && game.orderFacAttack(u.id, bf.id)) continue;
+    }
     const foes = game.cities.filter(c => c.force !== fid && (c.force == null || (game.forces[c.force]?.alive && !game.isAllied(fid, c.force))));
     let best = null, bd = 1e9;
     for (const e of foes) { const d = Math.hypot(e.lon - u.x, e.lat - u.z); if (d < bd) { bd = d; best = e; } }
@@ -222,6 +231,10 @@ export function aiThink(game, fid, legion = null) { // legion 지정 시 그 군
         game.fireTactic(u.id, { type: 'unit', id: eu.id }, pick ? pick.id : (info.opts.some(o => o.id === 'base') ? 'base' : null));
       }
       else if (ec) { game.fireTactic(u.id, { type: 'city', id: ec.id }); }
+      else { // R77: 인접 적 부대·도시가 없으면 시설 전법 (가능 병종 게이트는 fireTactic과 동일 — 투석·정란·수군·노병 등)
+        const ef = (game.fieldFacs ?? []).find(f => f.left <= 0 && !TRAPS.hasOwnProperty(f.type) && f.force != null && f.force !== u.force && !game.isPeace(u.force, f.force) && inR(f.x, f.z));
+        if (ef) game.fireTactic(u.id, { type: 'fac', id: ef.id });
+      }
     }
     if (!game.units.includes(u) || (u._stratTurn ?? -1) === game.turn) continue;
     const caster = u.officers.map(i => game.officers[i]).sort((a, b) => b.int - a.int)[0];
@@ -239,6 +252,10 @@ export function aiThink(game, fid, legion = null) { // legion 지정 시 그 군
     else if (tgt && caster.int >= 80 && (u.qi ?? 100) >= 15 && (tgt.conf ?? 0) <= 0) game.fireStrat(u.id, 'confuse', { type: 'unit', id: tgt.id }); // 혼란 우선
     else if (tgt && caster.int >= 75 && (u.qi ?? 100) >= 10) game.fireStrat(u.id, 'fire', { type: 'unit', id: tgt.id });
     else if (!tgt && ec && caster.int >= 75 && (u.qi ?? 100) >= 10) game.fireStrat(u.id, 'fire', { type: 'city', id: ec.id });
+    else if (!tgt && !ec && caster.int >= 75 && (u.qi ?? 100) >= 10) { // R77: AI도 화계로 시설을 태움 (매뉴얼 火計 対象 施設)
+      const ef = (game.fieldFacs ?? []).find(f => f.left <= 0 && !TRAPS.hasOwnProperty(f.type) && f.force != null && f.force !== u.force && !game.isPeace(u.force, f.force) && inR(f.x, f.z));
+      if (ef) game.fireStrat(u.id, 'fire', { type: 'fac', id: ef.id });
+    }
   }
 }
 
