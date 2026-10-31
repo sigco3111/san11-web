@@ -1448,14 +1448,7 @@ export class Game {
       u.tx = null; u.targetCity = null;
       return;
     }
-    if (c.force === u.force) { // 아군 도시 합류 — R87: 귀환 병력은 상한 캡으로 증발시키지 않고 전량 합류 (자체 처리: 상한은 징병 등 신규 생성에만 적용, 기존 보유 병력의 귀환 손실 방지)
-      c.troops += u.troops;
-      c.food += (u.food ?? 0); // 잔여 휴대 병량 회수
-      const sb = SHIP_BUILD[u.type]; if (sb) c[sb.store] = (c[sb.store] ?? 0) + 1; // R64: 귀환 선박은 도시 재고로 회수 (자체 규칙)
-      for (const i of u.officers) { if (!c.officers.includes(i)) c.officers.push(i); this.officers[i].state.city = c.id; }
-      this.units = this.units.filter(x => x !== u);
-      return;
-    }
+    if (c.force === u.force) { this._mergeIntoCity(u, c); return; } // 아군 도시 합류 (R87 전량 합류, _mergeIntoCity)
     // 공성: 도시 내구/병사 공격
     if (SIEGE_TYPES.has(u.type) && (u.qi ?? 100) <= 0) { // 병기: 기력 0이면 공격 불가 (설계안)
       this.log(`${u.label}의 병기가 기력 부족으로 공격하지 못합니다`, u.force === this.playerForce);
@@ -1522,8 +1515,15 @@ export class Game {
       for (const i of u.officers) this.gainMerit(i, MERIT.capture);
       this.log(`【${c.name_ko}】함락! ${old != null ? this.forceName(old) : '공백지'} → ${this.forceName(u.force)}`, true);
       // 수비 무장 일부 포로/퇴각은 후속 구현 — 일단 공격측 도시에 그대로 둠
-      u.tx = null; u.targetCity = null;
+      this._mergeIntoCity(u, c); // R102: 함락 부대 입성 (자체 처리) — 점령 부대의 잔여 병력·무장·휴대 병량이 주둔으로 전량 합류해 신규 도시의 병0 공백 방지. 원작 매뉴얼 명시 없음(자체 규칙)
     }
+  }
+  _mergeIntoCity(u, c) { // R87: 귀환 병력은 상한 캡으로 증발시키지 않고 전량 합류 (자체 처리: 상한은 징병 등 신규 생성에만 적용, 기존 보유 병력의 귀환 손실 방지). R102: 함락 입성도 같은 규칙 사용
+    c.troops += u.troops;
+    c.food += (u.food ?? 0); // 잔여 휴대 병량 회수
+    const sb = SHIP_BUILD[u.type]; if (sb) c[sb.store] = (c[sb.store] ?? 0) + 1; // R64: 귀환 선박은 도시 재고로 회수 (자체 규칙)
+    for (const i of u.officers) { if (!c.officers.includes(i)) c.officers.push(i); this.officers[i].state.city = c.id; }
+    this.units = this.units.filter(x => x !== u);
   }
   _rehomeOfficers(u) { // R96: 부대 소실 시 탑승 무장의 도주 복귀 — 포로는 후속 구현(매뉴얼 포로 개념 확인, 확률 등 세부 미확정) 유지, 무장이 로스터에서 소실되는 것만 방지
     const home = this.cities.filter(c => c.force === u.force).sort((p, q) => Math.hypot(p.lon - u.x, p.lat - u.z) - Math.hypot(q.lon - u.x, q.lat - u.z))[0];
