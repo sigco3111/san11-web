@@ -2040,6 +2040,10 @@ console.log('sample logs:'); for (const l of g.logs.slice(-8)) console.log(' ', 
 {
   const fail = m => { console.log('FAIL: R-ver ' + m); process.exit(1); };
   const settle = g => { if (g.pendingDuel) g.duelAuto(g.pendingDuel); if (g.pendingDebate) g.debateAuto(g.pendingDebate); };
+  // R-ver 게이트는 경제 규칙 분리만 검증 — 무작위 재해(역병 2%/턴, 병사×0.95)가 시험 도시를 때려 '주둔 탈영 500/9500'으로 오인된 간헐 실패 2건(13:48·15:03)의 원인. 게이트 동안 난수를 상수로 고정해 재해를 격리한다 (엔진 변경 아님).
+  const _mr = Math.random; Math.random = () => 0.99;
+  const restoreRandom = () => { Math.random = _mr; };
+  process.on('exit', restoreRandom);
   const nop = () => {}; // AI 무력화: 경제 정산만 격리 검증
   // 1) 구 경제(econV 1): 비수입월에도 식량 월수입 발생 + 주둔 소비 없음
   const g = new Game(JSON.parse(JSON.stringify(scen)), JSON.parse(JSON.stringify(officers)), {}, 0);
@@ -2100,6 +2104,7 @@ console.log('sample logs:'); for (const l of g.logs.slice(-8)) console.log(' ', 
     if (d3.econV !== 2) fail('신규 autosave econV ' + d3.econV);
     delete globalThis.localStorage;
   }
+  restoreRandom();
   console.log('R-ver 경제 버전 분리 게이트 PASS (구 월수입·주둔소비없음·탈영없음·구봉록·부대food없음·load-save-reload 유지·신규 격리)');
 }
 
