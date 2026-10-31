@@ -2463,4 +2463,28 @@ console.log('sample logs:'); for (const l of g.logs.slice(-8)) console.log(' ', 
   aiThink(g, 28);
   if (g.units.some(u => u.force === 28 && u.targetCity === needy.id)) fail('스래시: 무장 배치 후 중복 출진');
   console.log('R101b 무장 0 재배치 게이트 PASS (호위 동반 파견·도착 해소·중복 출진 없음)');
+}
+// === R102: 모바일 레이아웃 게이트 — 모달 상한/가로 스크롤 + 좁은 화면 미디어 쿼리 소스 존재 ===
+{
+  const fail = m => { console.log('FAIL: R102-css ' + m); process.exit(1); };
+  const css = readFileSync('css/style.css', 'utf8');
+  for (const t of ['#modal .box { max-width:94vw', 'overflow-x:auto', '@media (max-width: 480px)']) if (!css.includes(t)) fail('모바일 CSS 누락: ' + t);
+  const idx = readFileSync('index.html', 'utf8');
+  if (!/css\/style\.css\?v=r\d+/.test(idx)) fail('스타일시트 버전 파라미터 없음');
+  console.log('R102 모바일 레이아웃 게이트 PASS (모달 상한·가로 스크롤·미디어 쿼리·css 버전)');
+}
+// === R103: 모바일 하단 시트 게이트 — 좁은 화면에서 패널이 지도를 가리지 않도록 소스 존재 ===
+{
+  const fail = m => { console.log('FAIL: R103-css ' + m); process.exit(1); };
+  const css = readFileSync('css/style.css', 'utf8');
+  for (const t of ['R103: 모바일', 'bottom:0; left:0; right:0; width:100%', 'max-height:46vh']) if (!css.includes(t)) fail('하단 시트 CSS 누락: ' + t);
+  console.log('R103 모바일 하단 시트 게이트 PASS');
+}
+// === R104: 대시보드 부족 경고 문구 — 개월 수 기간임이 드러나는 표기 게이트 ===
+{
+  const fail = m => { console.log('FAIL: R104-wording ' + m); process.exit(1); };
+  const src = readFileSync('js/main.js', 'utf8');
+  for (const t of ['개월 후 병량 부족 예상', '개월 후 금 부족 예상']) if (!src.includes(t)) fail('기간 표기 누락: ' + t);
+  if (/LackMonth\}월 (병량|금) 부족 예상/.test(src)) fail('구 표기(달력 월 오독 가능) 잔존');
+  console.log('R104 부족 경고 기간 표기 게이트 PASS');
       }
