@@ -1412,7 +1412,7 @@ if (g.units.find(u => u.id === 9999) && g.units.find(u => u.id === 9999).qi === 
   // 8) R17b: 경로 실패 안전 처리 — 도달 불가 명령 거부(직선 폴백 없음) + 정상 노선 true
   {
     const g50 = mkG(); g50.units = [];
-    const han = g50.cities.find(c => c.name_ko === '한중'), tgt = g50.cities.find(c => c.name_ko === '성도');
+    const han = g50.cities.find(c => c.name_ko === '양평'), tgt = g50.cities.find(c => c.name_ko === '성도');
     const o = g50.forces[0].ruler;
     const ship = { id: 9501, force: 0, officers: [o], troops: 5000, type: 'junk', x: han.lon, z: han.lat, path: [], tx: null, tz: null, targetCity: null, label: '내륙수군', qi: 100, conf: 0 };
     g50.units.push(ship);
@@ -2253,4 +2253,4 @@ console.log('sample logs:'); for (const l of g.logs.slice(-8)) console.log(' ', 
   if (A.dous !== 1) fail('귀환 선박 재고 회수 안 됨 ' + A.dous);
   if (A.troops <= tr0) fail('귀환 병력 합류 안 됨');
   console.log('R64 수군 게이트 PASS (연안 출진 수상 스폰·재고 차감, 내륙 출진 불가, 수상 공성 병력+내구 피해, 연안 육↔수 쌍방 타격, 귀환 재고 회수·병력 합류)');
-            }
+      }
