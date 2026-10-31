@@ -1,4 +1,4 @@
-import { SHIP_TYPES, TRAPS, FIELD_FACS, SIEGE_TYPES } from './game.js?v=r110';
+import { SHIP_TYPES, TRAPS, FIELD_FACS, SIEGE_TYPES } from './game.js?v=r111';
 // 세력 AI — 위임 시 플레이어 세력도 이 AI가 운영 (위임·샌드박스의 실질 주체)
 export function aiThink(game, fid, legion = null) { // legion 지정 시 그 군단 소속 도시만 운영 (도독 위임)
   const f = game.forces[fid];
@@ -129,9 +129,9 @@ export function aiThink(game, fid, legion = null) { // legion 지정 시 그 군
   // 2.5) 인재 등용: 도시의 재야 무장을 같은 규칙으로 영입
   for (const c of cities) {
     if (f.ap < 20 + apReserve || c.gold < 300 || !c.officers.length) continue;
-    const free = game.freeOfficers(c.id);
-    if (!free.length) continue;
-    const target = free.sort((a, b) => game.recruitChance(c.id, b.idx) - game.recruitChance(c.id, a.idx))[0];
+    const targets = [...game.freeOfficers(c.id), ...(game.captiveOfficers ? game.captiveOfficers(c.id) : [])]; // R111: AI도 억류 포로 등용 시도 (같은 규칙)
+    if (!targets.length) continue;
+    const target = targets.sort((a, b) => game.recruitChance(c.id, b.idx) - game.recruitChance(c.id, a.idx))[0];
     if (game.recruitChance(c.id, target.idx) >= 0.3) game.recruitOfficer(c.id, target.idx);
   }
   // 2.7) 기교 연구: 플레이어와 같은 비용·효과 규칙. 주력 병종 계통 우선, 없으면 방어 계통
