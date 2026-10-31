@@ -1,12 +1,12 @@
 // 진입점: 화면 전환·UI·지도 연결
-import { Map3D, toWorld } from './map3d.js?v=r103';
-import { Game, SAVE_KEY, RULES, forceColor, UNIT_TYPES, ARTS, OFFICES, restoreOfficer, FIELD_FACS, TRAPS, SHIP_TYPES, TAC_SHIP_OK, josa, josaRo, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL, AB_PICK } from './game.js?v=r103';
-import { aiThink } from './ai.js?v=r103';
+import { Map3D, toWorld } from './map3d.js?v=r104';
+import { Game, SAVE_KEY, RULES, forceColor, UNIT_TYPES, ARTS, OFFICES, restoreOfficer, FIELD_FACS, TRAPS, SHIP_TYPES, TAC_SHIP_OK, josa, josaRo, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL, AB_PICK } from './game.js?v=r104';
+import { aiThink } from './ai.js?v=r104';
 
 const $ = id => document.getElementById(id);
 let DATA = null, game = null, map = null, selectedUnit = null, autoTimer = null, pendingFire = null; // R15: 직접 전법·계략 대기
 
-const BUILD_ID = 'r103'; // 빌드 ID (index.html의 meta[name=build]와 같아야 함 - 오래된 캐시된 index와 새 스크립트의 혼합 감지)
+const BUILD_ID = 'r104'; // 빌드 ID (index.html의 meta[name=build]와 같아야 함 - 오래된 캐시된 index와 새 스크립트의 혼합 감지)
 function checkBuildSkew() {
   const idx = document.querySelector('meta[name="build"]')?.content;
   if (idx === BUILD_ID) { sessionStorage.removeItem('cheonha-xi-web.skew'); return; } // 일치하면 재시도 표식 해제
@@ -19,7 +19,7 @@ checkBuildSkew();
 async function loadData() {
   const [officers, skills, portraits, s184, s190, s251] = await Promise.all(
     ['data/officers670.json','data/skills.json','data/portraits.json','data/scenario-184.json','data/scenario-190.json','data/scenario-251.json']
-      .map(u => fetch(u + '?v=r103').then(r => r.json())));
+      .map(u => fetch(u + '?v=r104').then(r => r.json())));
   const byIdx = {};
   for (const o of officers) byIdx[o.idx] = o;
   DATA = { officers: byIdx, skills, portraits, scenarios: { '184': s184, '190': s190, '251': s251 } };
@@ -311,8 +311,8 @@ function showDashboard() { // R97→R99: 세력 현황 대시보드 — 카드�
         `<p style="margin:2px 0;color:#aa9;font-size:12px">군량 수입은 1·4·7·10월에만 입고(분기), 소비는 매월. 실제 정산과 같은 산식으로 계산한 예상치이며, 산출 시점 사이의 AI·전투 변동은 반영되지 않음.</p>`);
       const warns = [];
       for (const r of ov.cities) {
-        if (r.foodLackMonth != null) warns.push(`⚠ ${r.name}: ${r.foodLackMonth}월 병량 부족 예상`);
-        if (r.goldLackMonth != null) warns.push(`⚠ ${r.name}: ${r.goldLackMonth}월 금 부족 예상`);
+        if (r.foodLackMonth != null) warns.push(`⚠ ${r.name}: ${r.foodLackMonth}개월 후 병량 부족 예상`);
+        if (r.goldLackMonth != null) warns.push(`⚠ ${r.name}: ${r.goldLackMonth}개월 후 금 부족 예상`);
       }
       body += sec('부족 경고', warns.length ? warns.map(w => `<p style="margin:2px 0;color:#e66">${w}</p>`).join('') : none('부족 경고 없음 — 현재 추세를 12개월 시뮬레이션한 기준'), warns.length > 0);
       body += sec('위협 (공격받는 도시)', ov.threats.length ? ov.threats.map(t => `<p style="margin:2px 0;color:#e66">⚠ ${t.forceName} 「${t.label}」 ${fmt(t.troops)} → ${t.city} (거리 ${t.dist})</p>`).join('') : none('공격받는 도시 없음 — 접근 중인 적 부대가 확인되지 않음'), ov.threats.length > 0);
