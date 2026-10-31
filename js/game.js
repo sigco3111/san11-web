@@ -31,7 +31,7 @@ export const SHIP_BUILD = { junk: { name: '주가', gold: 400, store: 'junks' },
 const APT_IDX = { spear: 0, pike: 1, bow: 2, cav: 3, ram: 4, tower: 4, beast: 4, catapult: 4, junk: 5, lou: 5, dou: 5 }; // data apt 순서: 창 극 노 기 병기 수군 (검병은 적성 없음)
 const APT_LV = g => ({ S: 3, A: 2, B: 1 })[g] ?? 0;
 export const TACTICS = {
-  // R73: fac:true = 시설(建物) 대상 가능 — 매뉴얼 대상표: 破砕 建物・罠 / 放射・井闌火矢・投石・水軍火矢 建物 포함 / 激突 船専용(미구현) / 창・극・기병 部隊・兵器만
+  // R73: fac:true = 시설(建物) 대상 가능 — 매뉴얼 대상표: 破砕 建物・罠 / 放射・井闌火矢・投石・水軍火矢 建物 포함 / 激突 船専용 — 창・극・기병 部隊・兵器만. 격돌은 lou/dou 추가 전법(EX)으로 구현돼 있으며 船 전용 제약은 아래 fireTactic/pickTactic에서 강제
   bow:   { name: '불화살', qi: 15, mult: 1.6, fac: true }, // 설계 노병 불화살(기력 15는 설계에서도 확인 필요 표기 - 이 게임의 잠정값). 연사(기력 20)는 설계 밖 자체 전법이어서 대체
   ram:      { name: '파쇄',   qi: 20, mult: 2.4, fac: true },                    // 충거: 거점 대데미지
   tower:    { name: '불화살', qi: 15, mult: 1.7, fac: true },                    // 정란: 병사 살상
@@ -1410,7 +1410,7 @@ export class Game {
     const AREA = ['whirl', 'volley', 'side', 'pierce'];
     const gap = Math.hypot(eu.x - u.x, eu.z - u.z);
     const canPush = () => { const [ux, uz] = this._tacPushDir(u, eu); const nx = eu.x + ux * 0.4, nz = eu.z + uz * 0.4; return Number.isFinite(nx + nz) && this._tacStandable(eu, nx, nz) && !this.units.some(v => v !== eu && Math.hypot(v.x - nx, v.z - nz) < 0.35); };
-    const ok = info.opts.filter(o => AREA.includes(o.eff) ? (this._tacHits(u, eu, o) >= 1 || o.mult > 1) : o.eff === 'pull' ? gap > 0.75 : o.eff === 'push' ? canPush() : true); // 실제 효과가 있는 전법만 후보 (광역: 다른 적을 맞히거나 단독 대상에도 배율이 1 초과인 것(옆베기·관통화살). 배율 1 광역(선풍·난사)은 다른 적이 있을 때만, 끌어당김: 거리가 있음, 격퇴: 밀릴 자리가 있음)
+    const ok = info.opts.filter(o => (o.id === 'ram' && !SHIP_TYPES.has(eu.type)) ? false : AREA.includes(o.eff) ? (this._tacHits(u, eu, o) >= 1 || o.mult > 1) : o.eff === 'pull' ? gap > 0.75 : o.eff === 'push' ? canPush() : true); // 격돌(ram)은 선박 대상만 (매뉴얼 対象 船) // 실제 효과가 있는 전법만 후보 (광역: 다른 적을 맞히거나 단독 대상에도 배율이 1 초과인 것(옆베기·관통화살). 배율 1 광역(선풍·난사)은 다른 적이 있을 때만, 끌어당김: 거리가 있음, 격퇴: 밀릴 자리가 있음)
     if (!ok.length) return null;
     return ok.find(o => o.eff === 'conf' && (eu.conf ?? 0) <= 0)
       || ok.filter(o => AREA.includes(o.eff) && this._tacHits(u, eu, o) >= 1).sort((x, y) => this._tacHits(u, eu, y) - this._tacHits(u, eu, x) || y.mult - x.mult)[0]
@@ -1476,6 +1476,7 @@ export class Game {
     if (target.type === 'unit') {
       const d = this.units.find(x => x.id === target.id);
       if (!d || d.force === u.force || this.isPeace(u.force, d.force) || !inRange(d.x, d.z)) return false;
+      if (tac.id === 'ram' && !SHIP_TYPES.has(d.type)) return false; // 격돌은 선박 전용 (매뉴얼 対象 船)
       const utA = UNIT_TYPES[u.type], utD = UNIT_TYPES[d.type];
       let dmg = Math.round(u.troops * 0.05 * utA.atk * (0.7 + lead.war/150) / utD.def * this.aptMult(u) * this.unitDmgMult(u) * this.unitItemAtk(u) * this.unitDefMult(d) * this.unitTechAtk(u) * this.unitRelMult(u) / this.unitRelMult(d) * (1 - 0.03 * this.techLv(d.force, '연병'))); // 야전 산식과 동일
       if (isWaterAt(u.x, u.z)) dmg = Math.round(dmg * (utA.ship ? 1.3 : 0.7) * (this.unitHasSkill(u, '수완') ? 1.15 : 1));
