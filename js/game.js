@@ -829,7 +829,8 @@ export class Game {
     this.log(`${c.name_ko}에서 ${this.officers[officerIdxs[0]].name_ko}의 ${ut.name} ${troops} 출진`, c.force === this.playerForce);
     return unit;
   }
-  _renderedWater(x, z) { // R64: 3D 렌더러가 실제로 물로 그리는 셀 — 강은 파내기 반경(세계 1.35) 안쪽, 도시 보호 반경(세계 2.4) 밖 (map3d.js의 CELL/RIVER_R/CITY_RIVER_R와 동일 기준)
+  _rw(x, z) { return this.renderedWaterFn ? this.renderedWaterFn(x, z) : this._renderedWater(x, z); } // R64: 라이브는 main.js가 주입하는 렌더러 지형(levels) 기준, 헤드리스는 격자 근사
+  _renderedWater(x, z) { // R64: 3D 렌더러가 실제로 물로 그리는 셀의 격자 근사(헤드리스용) — 강은 파내기 반경(세계 1.35) 안쪽, 도시 보호 반경(세계 2.4) 밖 (map3d.js의 CELL/RIVER_R/CITY_RIVER_R와 동일 기준)
     if (!isWaterAt(x, z)) return false;
     if (this.cities.some(c => Math.hypot((x - c.lon) * 3.1, (z - c.lat) * 3.7) < 2.4)) return false;
     if (isSeaAt(x, z)) return true;
@@ -845,7 +846,7 @@ export class Game {
       const ni = ci + di, nj = cj + dj;
       if (ni < 0 || ni > W || nj < 0 || nj > H) continue;
       const wx = lon0 + ni * st, wz = lat0 + nj * st;
-      if (this._renderedWater(wx, wz)) return [wx, wz];
+      if (this._rw(wx, wz)) return [wx, wz];
     }
     return null;
   }
@@ -866,11 +867,11 @@ export class Game {
       return null;
     };
     const snapStrict = (i, j) => { // R64: 수군 기점·종점은 렌더링된 수로 셀 우선 — 출진·공성 진지가 화면상 육지에 서지 않게
-      if (i >= 0 && i <= W && j >= 0 && j <= H && this._renderedWater(lon0 + i * st, lat0 + j * st)) return [i, j];
+      if (i >= 0 && i <= W && j >= 0 && j <= H && this._rw(lon0 + i * st, lat0 + j * st)) return [i, j];
       for (let r = 1; r <= 8; r++) for (let di = -r; di <= r; di++) for (let dj = -r; dj <= r; dj++) {
         if (Math.max(Math.abs(di), Math.abs(dj)) !== r) continue;
         const ni = i + di, nj = j + dj;
-        if (ni >= 0 && ni <= W && nj >= 0 && nj <= H && this._renderedWater(lon0 + ni * st, lat0 + nj * st)) return [ni, nj];
+        if (ni >= 0 && ni <= W && nj >= 0 && nj <= H && this._rw(lon0 + ni * st, lat0 + nj * st)) return [ni, nj];
       }
       return null;
     };
