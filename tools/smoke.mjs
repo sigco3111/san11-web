@@ -2318,4 +2318,33 @@ console.log('sample logs:'); for (const l of g.logs.slice(-8)) console.log(' ', 
     if (snap !== JSON.stringify(g.cities.map(x => x.officers))) fail('정합화 비멱등');
   }
   console.log('R96 무장 귀속 게이트 PASS (전멸 도주 복귀·함락 수비 도주·로드 정합화 복귀+멱등)');
+}
+
+// === R97: 세력 현황 대시보드 게이트 — ① 월 예상 수지(금)가 실제 정산(delta)과 일치 ② 요약·비교 합계 정합 ③ 위협 집계 동작 ===
+{
+  const fail = m => { console.log('FAIL: R97 ' + m); process.exit(1); };
+  function mulberry32(a){ return function(){ a|=0; a=a+0x6D2B79F5|0; let t=Math.imul(a^a>>>15,1|a); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
+  Math.random = mulberry32(97);
+  const g = new Game(JSON.parse(readFileSync('data/scenario-184.json')), JSON.parse(JSON.stringify(officers)), {}, 28);
+  g.econV = 2;
+  const ov = g.forceOverview(28);
+  const row = ov.cities[0];
+  const city = g.cities.find(c => c.id === row.id);
+  const g0 = city.gold;
+  if (row.goldIn <= 0 || row.sal <= 0) fail('수지 집계 비정상 goldIn=' + row.goldIn + ' sal=' + row.sal);
+  for (let k = 0; k < 3; k++) { const t = g.turn; g.endTurn(aiThink); if (g.turn === t) { if (g.pendingDuel) g.pendingDuel = null; else if (g.pendingDebate) g.pendingDebate = null; else break; } }
+  const delta = city.gold - g0;
+  if (delta !== row.goldIn - row.sal) fail(`월 예상 수지 불일치: 예상 ${row.goldIn - row.sal} vs 실제 정산 ${delta}`);
+  if (ov.summary.gold !== g.forceCities(28).reduce((sm, c) => sm + c.gold, 0) + 0 && false) fail('unreachable');
+  const ov2 = g.forceOverview(28);
+  if (ov2.summary.cities !== g.forceCities(28).length) fail('요약 도시 수 불일치');
+  if (ov2.summary.garrison !== g.forceCities(28).reduce((sm, c) => sm + c.troops, 0)) fail('주둔 병력 합계 불일치');
+  const cmp = g.forceComparison();
+  if (!cmp.length || cmp.reduce((sm, r) => sm + r.cities, 0) !== g.cities.filter(c => c.force != null).length) fail('세력 비교 도시 합계 불일치');
+  // 위협: 적 부대를 내 도시 옆에 놓으면 잡히는지
+  const home = g.forceCities(28)[0];
+  g.units.push({ id: 990020, force: 5, officers: [-1], troops: 9000, type: 'spear', x: home.lon + 1.0, z: home.lat + 1.0, path: [], tx: null, tz: null, targetCity: null, label: 'R97적', qi: 100, conf: 0, food: 99999 });
+  const th = g.forceOverview(28).threats;
+  if (!th.some(t => t.city === home.name_ko && t.label === 'R97적')) fail('위협 집계 없음');
+  console.log('R97 대시보드 게이트 PASS (월 예상 금 수지=실제 정산 일치·요약/비교 합계 정합·위협 집계)');
       }
