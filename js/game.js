@@ -302,6 +302,70 @@ export class Game {
   }
   forceName(fid) { const f = this.forces[fid]; return f ? this.officers[f.ruler].name_ko + '군' : '적병'; }
   forceCities(fid) { return this.cities.filter(c => c.force === fid); }
+  forceOverview(fid) { // R97: 세력 현황 대시보드 데이터. 월 수지는 정산(endTurn dan===3)과 같은 산식을 그대로 재사용한 예상치 — 별도 추정치가 아니며, 시점 사이 AI·전투 변동은 반영되지 않음
+    const cities = this.forceCities(fid);
+    const cityRows = cities.map(c => {
+      const mk = this.cityFacLv(c, '시장') * (this.cityFac(c, '조폐').length ? 1.5 : 1);
+      const fm = this.cityFacLv(c, '농장') * (this.cityFac(c, '곡창').length ? 1.5 : 1);
+      const goldIn = Math.round((50 + c.commerce * 8 * (c.metropolis ? 1.5 : 1)) * (this.cityHasSkill(c, '통상') ? 1.3 : 1) * (1 + 0.25 * mk) * (this.cityFac(c, '회계청').length ? 1.1 : 1)); // 정산 산식과 동일
+      const foodIn = Math.round((300 + c.farm * 80) * (this.cityHasSkill(c, '부농') ? 1.3 : 1) * (1 + 0.25 * fm) * (this.cityFac(c, '곡물창고').length ? 1.1 : 1)); // 정산 산식과 동일 (econV 2는 1·4·7·10월만 실제 입고)
+      const sal = [...new Set(c.officers)].reduce((sm, i) => { const st = this.officers[i]?.state; return sm + ((st && st.force != null) ? this.salaryOf(i) : 0); }, 0); // 정산 봉록 루프와 동일 조건
+      const foodNeed = this.econV === 2 ? Math.round(c.troops * RULES.garrisonFood) : 0; // 정산 주둔 병량과 동일
+      let foodLackMonth = null, goldLackMonth = null; { // 현재 추세 12개월 시뮬레이션 — 수입·소비 외 변동(전투·개발·징병)은 없다고 가정
+        let f = c.food, gd = c.gold;
+        for (let k = 1; k <= 12 && (foodLackMonth == null || goldLackMonth == null); k++) {
+          const m = ((this.month - 1 + k) % 12) + 1;
+          const harvest = this.econV === 2 ? [1, 4, 7, 10].includes(m) : true;
+          if (harvest) f += foodIn;
+          if (foodLackMonth == null) { if (f >= foodNeed) f -= foodNeed; else foodLackMonth = m; }
+          if (goldLackMonth == null) { gd = gd + goldIn - sal; if (gd < 0) goldLackMonth = m; }
+        }
+      }
+      return { id: c.id, name: c.name_ko, gold: c.gold, food: c.food, troops: c.troops, officers: new Set(c.officers).size, goldIn, sal, foodIn, foodNeed, foodLackMonth, goldLackMonth,
+        building: (c.facilities ?? []).filter(x => !x.done).map(x => ({ type: x.type, progress: x.progress, turns: FACILITIES[x.type]?.turns ?? null })) };
+    });
+    const units = this.units.filter(u => u.force === fid).map(u => ({
+      id: u.id, label: u.label, troops: u.troops, type: u.type,
+      officers: u.officers.filter(i => this.officers[i]).map(i => this.officers[i].name_ko),
+      dest: u.targetCity != null ? (this.cityById[u.targetCity]?.name_ko ?? null) : null, pathLen: (u.path ?? []).length,
+      building: u.building ? (this.fieldFacs ?? []).find(f => f.uid === u.id && f.left > 0)?.type ?? u.building : null,
+    }));
+    const threats = []; // 적 부대가 내 도시 3.0° 이내 접근 중이거나 내 도시를 목표로 지정 (야전 교전 거리 2.2 기준 외곽)
+    for (const u of this.units) {
+      if (u.force === fid || u.force === -1 || this.isPeace(u.force, fid)) continue;
+      for (const c of cities) {
+        const d = Math.hypot(u.x - c.lon, u.z - c.lat);
+        if (u.targetCity === c.id || d < 3.0) { threats.push({ label: u.label, forceName: this.forceName(u.force), troops: u.troops, city: c.name_ko, dist: +d.toFixed(2) }); break; }
+      }
+    }
+    const fieldBuilding = (this.fieldFacs ?? []).filter(f => f.force === fid && f.left > 0).map(f => ({ type: f.type, left: f.left }));
+    return {
+      summary: {
+        cities: cities.length,
+        officers: new Set(cities.flatMap(c => c.officers).concat(this.units.filter(u => u.force === fid).flatMap(u => u.officers).filter(i => this.officers[i]))).size,
+        garrison: cities.reduce((sm, c) => sm + c.troops, 0),
+        fieldUnits: units.length,
+        fieldTroops: units.reduce((sm, u) => sm + u.troops, 0),
+        gold: cities.reduce((sm, c) => sm + c.gold, 0),
+        food: cities.reduce((sm, c) => sm + c.food, 0),
+        goldIn: cityRows.reduce((sm, r) => sm + r.goldIn, 0),
+        sal: cityRows.reduce((sm, r) => sm + r.sal, 0),
+        techP: this.forces[fid]?.techP ?? 0,
+        arts: Object.keys(this.forces[fid]?.arts ?? {}).length,
+      },
+      cities: cityRows, units, threats, fieldBuilding,
+    };
+  }
+  forceComparison() { // R97: 세력 비교 탭 — 생존 세력별 규모 (도시·무장·병력·금·군량 합계)
+    return Object.values(this.forces).filter(f => f.alive).map(f => {
+      const cities = this.forceCities(f.id);
+      const units = this.units.filter(u => u.force === f.id);
+      return { id: f.id, name: this.forceName(f.id), cities: cities.length,
+        officers: new Set(cities.flatMap(c => c.officers).concat(units.flatMap(u => u.officers).filter(i => this.officers[i]))).size,
+        troops: cities.reduce((sm, c) => sm + c.troops, 0) + units.reduce((sm, u) => sm + u.troops, 0),
+        gold: cities.reduce((sm, c) => sm + c.gold, 0), food: cities.reduce((sm, c) => sm + c.food, 0) };
+    }).sort((a, b) => b.cities - a.cities || b.troops - a.troops);
+  }
   inVision(x, z) { // R14: 전쟁 안개 — 관전(위임) 중엔 전체 공개(설계안 191행), 직접 지휘 시 내 도시·부대 반경 5 (자체 수치)
     if (this.delegated || this.playerForce == null || !this.forces[this.playerForce]?.alive) return true;
     const R2 = 25;
