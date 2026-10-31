@@ -1,4 +1,4 @@
-import { SHIP_TYPES, TRAPS, FIELD_FACS, SIEGE_TYPES } from './game.js?v=r100';
+import { SHIP_TYPES, TRAPS, FIELD_FACS, SIEGE_TYPES } from './game.js?v=r101';
 // 세력 AI — 위임 시 플레이어 세력도 이 AI가 운영 (위임·샌드박스의 실질 주체)
 export function aiThink(game, fid, legion = null) { // legion 지정 시 그 군단 소속 도시만 운영 (도독 위임)
   const f = game.forces[fid];
@@ -143,6 +143,34 @@ export function aiThink(game, fid, legion = null) { // legion 지정 시 그 군
     if (game.turn % 3 === 0 && game.researchNextArt(fid)) { /* R23: AI도 같은 비용으로 개별 기교 연구 */ }
     else for (const b of [pref, '연병', '방위', '화공', '발명', '창병', '극병', '노병', '기병']) {
       if (game.researchTech(fid, b)) break;
+    }
+  }
+  // R101: 공백·신규 도시 재배치 (자체 규칙) — 공세보다 먼저 실행: 군사 섹션이 AP를 소진하면 재배치가 영구 불발하므로 우선 배치(관측: 종료 AP 평균 11) — 함락 직후 등으로 병력 2000 미만이 된 아군 도시에, 여유 있는(9000+) 아군 도시가 병력+무장 1명을 보충 출진. 1턴 1회·위협 도시는 주체/대상 모두 제외·출발지 3000 잔류·전투력 최하 무장 파견(주전력 잔류). 도착 시 아군 도시 합류(전량 귀속)로 무장 0 도시의 재배치도 함께 해소
+  if (f.ap >= 40) {
+    const threatOf = new Set(cities.filter(c => game.units.some(u => u.force !== fid && u.force !== -1 && !game.isAllied(fid, u.force) && !game.isPeace(fid, u.force) && (u.targetCity === c.id || Math.hypot(u.x - c.lon, u.z - c.lat) < 6))).map(c => c.id));
+    const incoming = c => game.units.some(u => u.force === fid && u.targetCity === c.id); // 보충 중인 도시 제외 — 도착 전 중복 출진 방지
+    const needy = cities.filter(c => c.troops < 2000 && !threatOf.has(c.id) && !incoming(c));
+    const needyOff = cities.filter(c => c.troops >= 2000 && c.officers.length === 0 && !threatOf.has(c.id) && !incoming(c)); // 무장 0 도시 — 호위 소부대 동반 무장 재배치
+    let pair = null, offOnly = false;
+    for (const d of needy) for (const s2 of cities) {
+      if (s2 === d || s2.troops < 6000 || threatOf.has(s2.id) || s2.officers.length < 2) continue; // 주체 하한 6000 (중견 세력도 동작) — 잔류 3000 보장 하에 보충분 3000+
+      const dd = Math.hypot(d.lon - s2.lon, d.lat - s2.lat);
+      if (dd < 15 && (!pair || dd < pair.dd)) pair = { s: s2, d, dd };
+    }
+    if (!pair) for (const d of needyOff) for (const s2 of cities) {
+      if (s2 === d || s2.troops < 4000 || threatOf.has(s2.id) || s2.officers.length < 2) continue; // 무장 재배치 주체 하한 4000 (호위 1000 + 잔류 3000)
+      const dd = Math.hypot(d.lon - s2.lon, d.lat - s2.lat);
+      if (dd < 15 && (!pair || dd < pair.dd)) pair = { s: s2, d, dd };
+    }
+    if (pair && !needy.includes(pair.d)) offOnly = true;
+    if (pair) {
+      const { s: src, d } = pair;
+      const offs = [...src.officers].sort((a, b) => game.officers[a].war - game.officers[b].war); // 전투력 최하부터 파견
+      const n = offOnly ? Math.min(1000, src.troops - 3000) : Math.min(src.troops - 3000, Math.max(3000, 4000 - d.troops));
+      let type = 'sword';
+      if (src.spears >= n) type = 'spear'; else if (src.pikes >= n) type = 'pike'; else if (src.bows >= n) type = 'bow'; else if (src.horses >= n) type = 'cav';
+      const u = n >= 1000 ? game.dispatch(src.id, [offs[0]], n, type) : null;
+      if (u && !game.orderUnit(u.id, d.id)) game.orderUnit(u.id, src.id); // 노선 없으면 원도시 대기 (R17b 회복 패턴)
     }
   }
   // 3) 군사: 전방 도시(적과 인접) 병력이 충분하면 공격, 아니면 집결
