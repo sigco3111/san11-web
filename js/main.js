@@ -1,12 +1,12 @@
 // 진입점: 화면 전환·UI·지도 연결
-import { Map3D, toWorld } from './map3d.js?v=r97';
-import { Game, SAVE_KEY, RULES, forceColor, UNIT_TYPES, ARTS, OFFICES, restoreOfficer, FIELD_FACS, TRAPS, SHIP_TYPES, TAC_SHIP_OK, josa, josaRo, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL, AB_PICK } from './game.js?v=r97';
-import { aiThink } from './ai.js?v=r97';
+import { Map3D, toWorld } from './map3d.js?v=r98';
+import { Game, SAVE_KEY, RULES, forceColor, UNIT_TYPES, ARTS, OFFICES, restoreOfficer, FIELD_FACS, TRAPS, SHIP_TYPES, TAC_SHIP_OK, josa, josaRo, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL, AB_PICK } from './game.js?v=r98';
+import { aiThink } from './ai.js?v=r98';
 
 const $ = id => document.getElementById(id);
 let DATA = null, game = null, map = null, selectedUnit = null, autoTimer = null, pendingFire = null; // R15: 직접 전법·계략 대기
 
-const BUILD_ID = 'r97'; // 빌드 ID (index.html의 meta[name=build]와 같아야 함 - 오래된 캐시된 index와 새 스크립트의 혼합 감지)
+const BUILD_ID = 'r98'; // 빌드 ID (index.html의 meta[name=build]와 같아야 함 - 오래된 캐시된 index와 새 스크립트의 혼합 감지)
 function checkBuildSkew() {
   const idx = document.querySelector('meta[name="build"]')?.content;
   if (idx === BUILD_ID) { sessionStorage.removeItem('cheonha-xi-web.skew'); return; } // 일치하면 재시도 표식 해제
@@ -19,7 +19,7 @@ checkBuildSkew();
 async function loadData() {
   const [officers, skills, portraits, s184, s190, s251] = await Promise.all(
     ['data/officers670.json','data/skills.json','data/portraits.json','data/scenario-184.json','data/scenario-190.json','data/scenario-251.json']
-      .map(u => fetch(u + '?v=r97').then(r => r.json())));
+      .map(u => fetch(u + '?v=r98').then(r => r.json())));
   const byIdx = {};
   for (const o of officers) byIdx[o.idx] = o;
   DATA = { officers: byIdx, skills, portraits, scenarios: { '184': s184, '190': s190, '251': s251 } };
@@ -311,8 +311,9 @@ function showDashboard() { // R97: 세력 현황 대시보드 — 내 세력 / �
       if (fb) body += `<p style="text-align:left;margin:2px 0;color:#aa9">야전 건설: ${fb}</p>`;
     } else {
       const rows = game.forceComparison();
-      body += `<table style="width:100%;border-collapse:collapse;font-size:13px"><tr style="color:#d4af37;text-align:left"><th>세력</th><th>도시</th><th>무장</th><th>병력</th><th>금</th><th>군량</th></tr>` +
-        rows.map(r => `<tr style="border-top:1px solid #4a4132;${r.id === game.playerForce ? 'color:#d4af37;' : ''}"><td>${r.name}</td><td>${r.cities}</td><td>${r.officers}</td><td>${fmt(r.troops)}</td><td>${fmt(r.gold)}</td><td>${fmt(r.food)}</td></tr>`).join('') + `</table>`;
+      const th = 'style="padding:3px 8px;text-align:right;white-space:nowrap"', thl = 'style="padding:3px 8px;text-align:left;white-space:nowrap"';
+      body += `<table style="width:100%;min-width:520px;border-collapse:collapse;font-size:13px"><tr style="color:#d4af37"><th ${thl}>세력</th><th ${th}>도시</th><th ${th}>무장</th><th ${th}>병력</th><th ${th}>금</th><th ${th}>군량</th></tr>` +
+        rows.map(r => `<tr style="border-top:1px solid #4a4132;${r.id === game.playerForce ? 'color:#d4af37;' : ''}"><td ${thl}>${r.name}</td><td ${th}>${r.cities}</td><td ${th}>${r.officers}</td><td ${th}>${fmt(r.troops)}</td><td ${th}>${fmt(r.gold)}</td><td ${th}>${fmt(r.food)}</td></tr>`).join('') + `</table>`;
     }
     m.innerHTML = `<div class="box" style="max-height:78vh;max-width:640px;display:flex;flex-direction:column;text-align:left"><h3 style="text-align:center">세력 현황</h3><div style="display:flex;gap:8px;justify-content:center"><button id="dash-my"${tab === 'my' ? ' disabled' : ''}>내 세력</button><button id="dash-cmp"${tab !== 'my' ? ' disabled' : ''}>세력 비교</button></div><div style="overflow:auto;flex:1;min-height:0">${body}</div><button id="dash-close" style="flex:none">닫기</button></div>`;
     m.querySelector('#dash-close').onclick = () => m.classList.add('hidden');
