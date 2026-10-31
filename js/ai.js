@@ -1,4 +1,4 @@
-import { SHIP_TYPES, TRAPS } from './game.js?v=r81';
+import { SHIP_TYPES, TRAPS } from './game.js?v=r82';
 // 세력 AI — 위임 시 플레이어 세력도 이 AI가 운영 (위임·샌드박스의 실질 주체)
 export function aiThink(game, fid, legion = null) { // legion 지정 시 그 군단 소속 도시만 운영 (도독 위임)
   const f = game.forces[fid];
@@ -204,6 +204,7 @@ export function aiThink(game, fid, legion = null) { // legion 지정 시 그 군
   for (const u of game.units) {
     if (u.force !== fid || u.targetCity != null || u.building) continue; // R63: 건설 중 부대는 재지정 금지 — 재지정(tx 설정) 시 fieldTurn이 건설을 중단시킴
     if (u.targetFac != null) continue; // R77: 시설 공격 명령 진행 중이면 유지 (매 턴 재지정으로 명령이 흔들리지 않게)
+    if (u.repairing != null) continue; // 보수 진행 중이면 유지 (완료·중단까지 재지정 금지)
     if (u.troops >= 1500) { // R77: AI 명령형 시설 공격 (매뉴얼: 군사시설은 공격 대상) — 목표 없는 부대가 6칸 안 적 완공 시설(함정 제외)을 명령형으로 공격. 기존에는 자동 소모(2%)만으로 시설을 깎아 플레이어 시설선을 전략적으로 무시하는 갭
       let bf = null, bfd = 6;
       for (const f2 of (game.fieldFacs ?? [])) {
@@ -217,7 +218,10 @@ export function aiThink(game, fid, legion = null) { // legion 지정 시 그 군
     for (const e of foes) { const d = Math.hypot(e.lon - u.x, e.lat - u.z); if (d < bd) { bd = d; best = e; } }
     const homes = cities.slice().sort((a,b) => Math.hypot(a.lon-u.x,a.lat-u.z) - Math.hypot(b.lon-u.x,b.lat-u.z));
     if (best && bd < 10 && u.troops > Math.max(best.troops * 1.2, 4000)) { if (!game.orderUnit(u.id, best.id) && homes.length) game.orderUnit(u.id, homes[0].id); } // R17b: 노선 없음 시 귀환 회복
-    else if (homes.length) game.orderUnit(u.id, homes[0].id);  // 귀환·합류
+    else { // 귀환 전에 인접 아군 손상 시설이 있으면 보수 (補修, 매뉴얼 P.41: 금 불요·인접 시설만)
+      const rf = (game.fieldFacs ?? []).find(f => game.canRepairFac(u, f) === null);
+      if (!(rf && game.repairFac(u.id, rf.id)) && homes.length) game.orderUnit(u.id, homes[0].id); // 보수 대상 없으면 귀환·합류
+    }
   }
   // 5) R15: AI도 같은 규칙으로 전법·계략 직접 발동 — 인접 적 부대·도시에 턴 1회, 비용·자격은 fireTactic/fireStrat과 동일
   for (const u of [...game.units]) {
