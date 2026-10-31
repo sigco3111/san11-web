@@ -23,6 +23,7 @@ export const UNIT_TYPES = {
 export const RULES = { cityTacticSiegeOnly: true, garrisonFood: 0.4, unitFoodMonths: 6 }; // garrisonFood: 병사 1명당 월 병량 소비 (자체 수치), unitFoodMonths: 출진 시 휴대 병량(개월) — 매뉴얼 「도시의 병량(매턴 소비)」·「병량 마커」 메커니즘 반영
 export const SIEGE_TYPES = new Set(['ram', 'tower', 'beast', 'catapult']);
 export const SHIP_TYPES = new Set(['junk', 'lou', 'dou']);
+export const TAC_SHIP_OK = new Set(['bow', 'tower', 'catapult', 'junk', 'lou', 'dou']); // R74: 전법으로 선박(船)을 대상할 수 있는 병종 — 매뉴얼 전법 일람 대상표: 노병(火矢・貫矢・乱射)·정란火矢・투석・수군火矢/投石 = 部隊・兵器・船・建物・罠 (船 포함) / 창・극・기병 = 部隊・兵器, 목수 방사 = 部隊・兵器・建物・罠 (船 불포함. 部隊=陸上에 있는 부대, 동 페이지 범례). 격돌은 船 전용 규칙으로 별도 처리
 // 병기 생산·선박 건조 (자체 비용). 특색 도시는 25% 할인 (설계안: 특색 병장 생산 비용 감소, 병기·배는 자동 생산 제외)
 export const SIEGE_BUILD = { ram: { name: '충거', gold: 600, store: 'rams' }, tower: { name: '정란', gold: 500, store: 'towers' }, beast: { name: '목수', gold: 800, store: 'beasts' }, catapult: { name: '투석기', gold: 1000, store: 'catapults' } };
 export const SHIP_BUILD = { junk: { name: '주가', gold: 400, store: 'junks' }, lou: { name: '누선', gold: 700, store: 'lous' }, dou: { name: '투함', gold: 1100, store: 'dous' } };
@@ -1410,7 +1411,7 @@ export class Game {
     const AREA = ['whirl', 'volley', 'side', 'pierce'];
     const gap = Math.hypot(eu.x - u.x, eu.z - u.z);
     const canPush = () => { const [ux, uz] = this._tacPushDir(u, eu); const nx = eu.x + ux * 0.4, nz = eu.z + uz * 0.4; return Number.isFinite(nx + nz) && this._tacStandable(eu, nx, nz) && !this.units.some(v => v !== eu && Math.hypot(v.x - nx, v.z - nz) < 0.35); };
-    const ok = info.opts.filter(o => (o.id === 'ram' && !SHIP_TYPES.has(eu.type)) ? false : AREA.includes(o.eff) ? (this._tacHits(u, eu, o) >= 1 || o.mult > 1) : o.eff === 'pull' ? gap > 0.75 : o.eff === 'push' ? canPush() : true); // 격돌(ram)은 선박 대상만 (매뉴얼 対象 船) // 실제 효과가 있는 전법만 후보 (광역: 다른 적을 맞히거나 단독 대상에도 배율이 1 초과인 것(옆베기·관통화살). 배율 1 광역(선풍·난사)은 다른 적이 있을 때만, 끌어당김: 거리가 있음, 격퇴: 밀릴 자리가 있음)
+    const ok = info.opts.filter(o => !this._tacTargetOk(u, eu, o) ? false : AREA.includes(o.eff) ? (this._tacHits(u, eu, o) >= 1 || o.mult > 1) : o.eff === 'pull' ? gap > 0.75 : o.eff === 'push' ? canPush() : true); // R74: _tacTargetOk = 격돌 선박 전용·육군 전법 선박 불가 (매뉴얼 대상표) // 실제 효과가 있는 전법만 후보 (광역: 다른 적을 맞히거나 단독 대상에도 배율이 1 초과인 것(옆베기·관통화살). 배율 1 광역(선풍·난사)은 다른 적이 있을 때만, 끌어당김: 거리가 있음, 격퇴: 밀릴 자리가 있음)
     if (!ok.length) return null;
     return ok.find(o => o.eff === 'conf' && (eu.conf ?? 0) <= 0)
       || ok.filter(o => AREA.includes(o.eff) && this._tacHits(u, eu, o) >= 1).sort((x, y) => this._tacHits(u, eu, y) - this._tacHits(u, eu, x) || y.mult - x.mult)[0]
@@ -1465,6 +1466,11 @@ export class Game {
     this.units = this.units.filter(v => v.troops > 0 || v === d);
     return note;
   }
+  _tacTargetOk(u, d, tac) { // R74: 전법별 대상 제약 (매뉴얼 대상표) — 격돌은 선박 전용, 창·극·기병·목수의 전법은 선박을 대상할 수 없음 (노병·정란·투석기·수군 전법은 船 포함). 일반 공격의 육↔수 상호 허용(R64)과는 별개 규칙
+  if (tac.id === 'ram') return SHIP_TYPES.has(d.type); // 격돌: 対象 船
+  if (SHIP_TYPES.has(d.type) && !TAC_SHIP_OK.has(u.type)) return false; // 창·극·기병 部隊・兵器 / 목수 部隊・兵器・建物・罠 — 船 불포함
+  return true;
+}
   fireTactic(uid, target, tid = null) { // 직접 전법: 확정 발동(기력 소모), 피해 산식은 자동 발동과 동일. target: {type:'unit'|'city', id}
     const u = this.units.find(x => x.id === uid);
     const info = this.tacticInfo(u);
@@ -1476,7 +1482,7 @@ export class Game {
     if (target.type === 'unit') {
       const d = this.units.find(x => x.id === target.id);
       if (!d || d.force === u.force || this.isPeace(u.force, d.force) || !inRange(d.x, d.z)) return false;
-      if (tac.id === 'ram' && !SHIP_TYPES.has(d.type)) return false; // 격돌은 선박 전용 (매뉴얼 対象 船)
+      if (!this._tacTargetOk(u, d, tac)) return false; // R74: 전법별 대상 제약 (격돌 船 전용, 창·극·기병·목수 전법 선박 대상 불가 — 매뉴얼 대상표)
       const utA = UNIT_TYPES[u.type], utD = UNIT_TYPES[d.type];
       let dmg = Math.round(u.troops * 0.05 * utA.atk * (0.7 + lead.war/150) / utD.def * this.aptMult(u) * this.unitDmgMult(u) * this.unitItemAtk(u) * this.unitDefMult(d) * this.unitTechAtk(u) * this.unitRelMult(u) / this.unitRelMult(d) * (1 - 0.03 * this.techLv(d.force, '연병'))); // 야전 산식과 동일
       if (isWaterAt(u.x, u.z)) dmg = Math.round(dmg * (utA.ship ? 1.3 : 0.7) * (this.unitHasSkill(u, '수완') ? 1.15 : 1));
