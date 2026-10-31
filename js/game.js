@@ -1200,7 +1200,7 @@ export class Game {
       else {
         const reach = SHIP_TYPES.has(u.type) ? 1.6 : u.type === 'catapult' ? 3.0 : 1.2; // R72: 수군은 수상 공성 사거리(R64, 자체 수치)로 연안 시설 타격 — 매뉴얼: 수군 전법 대상에 建物(군사시설) 포함 / 투석기 3칸 (설계), 나머지 인접
         if (Math.hypot(f.x - u.x, f.z - u.z) <= reach) {
-          const dmg = Math.max(10, Math.round(u.troops * 0.02)) * (SIEGE_TYPES.has(u.type) ? 3 : 1); // 병기 ×3 (설계 충거 파쇄), 수치 자체
+          const dmg = Math.min(Math.max(10, Math.round(u.troops * 0.02)) * (SIEGE_TYPES.has(u.type) ? 3 : 1), f.hp); // 병기 ×3 (설계 충거 파쇄), 수치 자체. R79: 잔여 내구 clamp — 전법 분기와 동일하게 로그가 실감소를 넘지 않게 (내구 음수 저장 방지 겸함)
           f.hp -= dmg; u._facAtkTurn = this.turn;
           this.log(`【야전】${josa(u.label, ['이','가'])} ${josa(f.type, ['을','를'])} 공격 (내구 -${dmg})`, u.force === this.playerForce || f.force === this.playerForce);
           if (f.hp <= 0) { this.fieldFacs = this.fieldFacs.filter(x => x !== f); this.log(`【야전】${josa(f.type, ['이','가'])} 파괴되었습니다`, u.force === this.playerForce || f.force === this.playerForce); u.targetFac = null; u.tx = null; }
