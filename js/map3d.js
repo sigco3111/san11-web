@@ -1,6 +1,6 @@
 // 3D 저폴리 지도 엔진 (Three.js) - 고정 등각 아이소메트릭 + 계단식 지형 + 성곽/숲
 import * as THREE from 'three';
-import { loadGLBAssets, applyEnvironment } from './assets-3d.js?v=r70';
+import { loadGLBAssets, applyEnvironment } from './assets-3d.js?v=r71';
 
 const LON0 = 100, LON1 = 126.5, LAT0 = 21.5, LAT1 = 43;
 export function toWorld(lon, lat) {
@@ -586,6 +586,15 @@ export class Map3D {
       const d = Math.hypot(pv.x - nx, pv.y - ny);
       if (d < bestCd) { bestCd = d; bestC = Number(id); }
     }
+    let bestF = null, bestFd = 0.06; // R71: 야전 시설도 화면공간 근접 피킹
+    for (const id of Object.keys(this.fieldMeshes ?? {})) {
+      const g2 = this.fieldMeshes[id].g;
+      pv.set(g2.position.x, g2.position.y + 0.8, g2.position.z).project(this.camera);
+      if (pv.z > 1) continue;
+      const d = Math.hypot(pv.x - nx, pv.y - ny);
+      if (d < bestFd) { bestFd = d; bestF = Number(id); }
+    }
+    if (bestF != null && (bestC == null || bestFd <= bestCd)) return { type: 'fac', id: bestF };
     if (bestC != null) return { type: 'city', id: bestC };
     return null;
   }
