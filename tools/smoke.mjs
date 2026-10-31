@@ -2276,3 +2276,46 @@ console.log('sample logs:'); for (const l of g.logs.slice(-8)) console.log(' ', 
   if (ho2.troops !== 3000 || ho2.junks !== 1) fail('합류 후 병력/선박 이상 troops=' + ho2.troops + ' junks=' + ho2.junks);
   console.log('R92fix 수군 항해 게이트 PASS (턴당 최대 ' + maxStep.toFixed(2) + '°, ' + turns + '턴 항해 후 회계 병력+3000·주가+1 합류)');
       }
+
+// === R96: 무장 귀속·소실 방지 게이트 — ① 부대 전멸 시 탑승 무장 아군 도시 도주 복귀 ② 도시 함락 시 수비 무장 원 세력 잔여 도시로 도주 ③ 저장 로드 정합화(_reconcileOfficerRosters) 복귀·멱등 ===
+{
+  const fail = m => { console.log('FAIL: R96 ' + m); process.exit(1); };
+  const mkG = () => new Game(JSON.parse(readFileSync('data/scenario-184.json')), JSON.parse(JSON.stringify(officers)), {}, 28);
+  // ① 전멸 복귀
+  {
+    const g = mkG(); g.econV = 2;
+    const home = g.cities.find(c => c.force === 28), offIdx = home.officers[0];
+    home.officers = home.officers.filter(i => i !== offIdx);
+    g.units.push({ id: 990001, force: 28, officers: [offIdx], troops: 100, type: 'sword', x: home.lon + 0.5, z: home.lat + 0.5, path: [], tx: null, tz: null, targetCity: null, label: 'R96', qi: 0, conf: 0, food: 0 });
+    g.units.push({ id: 990002, force: 5, officers: [-1], troops: 5000, type: 'spear', x: home.lon + 0.5, z: home.lat + 0.6, path: [], tx: null, tz: null, targetCity: null, label: '적', qi: 100, conf: 0, food: 99999 });
+    g.resolveFieldBattles();
+    if (g.units.find(u => u.id === 990001)) fail('전멸 미발생');
+    if (!g.cities.some(c => c.force === 28 && c.officers.includes(offIdx))) fail('전멸 무장 복귀 없음');
+  }
+  // ② 함락 도주 (다도시 세력 29 대상 — 단일도시 세력은 도주처 없음이 정상)
+  {
+    const g = mkG(); g.econV = 2;
+    const target = g.cities.find(c => c.force === 29);
+    const defs = [...target.officers];
+    target.troops = 1; target.hp = 1;
+    const atkHome = g.cities.find(c => c.force === 28), atkOff = atkHome.officers[0];
+    atkHome.officers = atkHome.officers.filter(i => i !== atkOff);
+    g.units.push({ id: 990003, force: 28, officers: [atkOff], troops: 20000, type: 'spear', x: target.lon, z: target.lat, path: [], tx: target.lon, tz: target.lat, targetCity: target.id, label: 'R96공격', qi: 100, conf: 0, food: 99999 });
+    g.stepUnit(g.units[g.units.length - 1]);
+    if (target.force !== 28) fail('함락 미발생');
+    if (defs.some(i => target.officers.includes(i))) fail('수비 무장이 공격측 로스터 잔류');
+    if (!defs.every(i => g.cities.some(c => c.force === 29 && c.officers.includes(i)))) fail('수비 무장 도주 없음');
+  }
+  // ③ 복구·멱등
+  {
+    const g = mkG(); g.econV = 2;
+    const c = g.cities.find(x => x.force === 28), offIdx = c.officers[1];
+    c.officers = c.officers.filter(i => i !== offIdx);
+    g._reconcileOfficerRosters();
+    if (!g.cities.some(x => x.force === 28 && x.officers.includes(offIdx))) fail('림보 무장 복귀 없음');
+    const snap = JSON.stringify(g.cities.map(x => x.officers));
+    g._reconcileOfficerRosters();
+    if (snap !== JSON.stringify(g.cities.map(x => x.officers))) fail('정합화 비멱등');
+  }
+  console.log('R96 무장 귀속 게이트 PASS (전멸 도주 복귀·함락 수비 도주·로드 정합화 복귀+멱등)');
+      }
