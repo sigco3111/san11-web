@@ -3,6 +3,24 @@ export const SAVE_KEY = 'cheonha-xi-web.save.v1';
 export const FORCE_COLORS = ['#4a7fd4','#d44a4a','#4ad47f','#d4a44a','#9a4ad4','#4ad4d4','#d44a8f','#8fd44a','#d47f4a','#6a6ad4','#d4d44a','#4a9a6a','#c46a4a','#7a4a2a','#2a7a8a','#8a2a4a','#5a8a2a','#aa6aaa','#4a5a9a','#9a8a3a','#3a7a4a','#b45a7a','#6aaac4','#c48a3a','#7a3a9a','#3a9a8a','#aa4a3a','#5a7a2a','#8a6aaa','#4a8aaa','#ca7a5a','#3a6a3a','#9a4a6a','#6a8a4a','#4a4aaa','#aa9a3a','#3a8a6a','#b46a8a','#5a9aca'];
 export function forceColor(fid) { const n = FORCE_COLORS.length; return FORCE_COLORS[((fid % n) + n) % n]; }
 
+// 관직(官職) 표 — 매뉴얼 P.37: 공적에 따라 부여, 능력 상승·지휘 병사 증가, 군주 작위가 높을수록 부여 가능 관직 증가. 명칭·수치 표는 매뉴얼에 없어 아래는 자체 수치 (근거 분리)
+export const OFFICES = {
+  1: { name: '부장',     cmd: 1000,  sal: 10,  bonus: {} },
+  2: { name: '교위',     cmd: 2000,  sal: 15,  bonus: {} },
+  3: { name: '중랑장',   cmd: 3000,  sal: 20,  bonus: { war: 1 } },
+  4: { name: '편장군',   cmd: 4000,  sal: 30,  bonus: { ldr: 1 } },
+  5: { name: '정동장군', cmd: 5000,  sal: 40,  bonus: { ldr: 1, war: 1 } },
+  6: { name: '진군장군', cmd: 6000,  sal: 60,  bonus: { ldr: 2 } },
+  7: { name: '거기장군', cmd: 8000,  sal: 80,  bonus: { ldr: 2, war: 1 } },
+  8: { name: '대장군',   cmd: 10000, sal: 100, bonus: { ldr: 2, war: 2 } }, // 관직명 — 세력 작위 '대장군'과는 별개 축
+};
+export function restoreOfficer(o, st) { // 저장 복원 공통: 상태 대입 + 능력 가산 재적용. 신규 게임의 기본 스탯 위에 더한다 (저장은 state만 하고 스탯은 기본값에서 재계산)
+  if (!o || !st) return;
+  o.state = st;
+  if (st.bonus) for (const [k, v] of Object.entries(st.bonus)) o[k] = Math.min(100, (o[k] ?? 50) + v); // R13 능력연구 복원
+  if (st.grantSkill) o.skill = st.grantSkill; // R13 연구 특기 복원
+  if (st._officeBonus) for (const [k, v] of Object.entries(st._officeBonus)) o[k] = Math.min(100, (o[k] ?? 50) + v); // R84 관직 능력 가산 복원 — 없으면 reload 후 관직 능력 상승이 소실되는 결함
+}
 export const UNIT_TYPES = {
   sword: { name: '검병', atk: 0.7, def: 0.8, move: 1.0, cost: {} },
   spear: { name: '창병', atk: 1.0, def: 1.0, move: 1.0, cost: { spears: 1 } },
@@ -488,6 +506,27 @@ export class Game {
   }
 // === 공적·충성·관작 ===
   gainMerit(i, n) { const st = this.officers[i]?.state; if (st) st.merit = (st.merit ?? 0) + n; }
+  officeOf(i) { return this.officers[i]?.state?.office ?? 0; } // 관직 등급 (0 = 무관직, 기존 저장은 필드 없음 → 0으로 해석)
+  officeGate(fid) { // 부여 가능 최대 관직 등급 (자체 매핑: 무작위 1, 주자사 2, …, 황제 8 — 매뉴얼: 작위가 높을수록 부여 가능 관직 증가)
+    const idx = RANKS.findIndex(([, n]) => n === this.forces[fid]?.rank);
+    return Math.min(8, idx < 0 ? 1 : idx + 2);
+  }
+  appointOffice(cityId, i, rank) { // 관직 임명 (매뉴얼 P.37 — 비용·행동력 없음). 능력 상승은 임명 시 부여·변경/해임 시 원복 (자체 처리)
+    const c = this.cityById[cityId], o = this.officers[i], st = o?.state;
+    if (!c || !o || !st || !c.officers.includes(i)) { this.lastOfficeWhy = '대상 무장이 이 도시에 없습니다'; return false; }
+    if (rank !== 0 && !OFFICES[rank]) { this.lastOfficeWhy = '알 수 없는 관직입니다'; return false; }
+    if (rank === this.officeOf(i)) { this.lastOfficeWhy = '이미 같은 관직입니다'; return false; }
+    if (rank > this.meritGrade(i)) { this.lastOfficeWhy = `공적이 부족합니다 (공적 등급 ${this.meritGrade(i)})`; return false; } // 매뉴얼: 부여 가능 관직은 공적에 비례
+    if (rank > this.officeGate(c.force)) { this.lastOfficeWhy = `세력 작위가 낮아 ${josa(OFFICES[rank]?.name, ['을','를'])} 줄 수 없습니다`; return false; } // 매뉴얼: 작위 연동
+    const prev = st._officeBonus ?? {};
+    for (const [k, v] of Object.entries(prev)) o[k] -= v; // 이전 관직 능력 가산 원복
+    const nb = OFFICES[rank]?.bonus ?? {};
+    for (const [k, v] of Object.entries(nb)) o[k] = Math.min(100, o[k] + v);
+    st._officeBonus = { ...nb }; st.office = rank;
+    if (rank === 0) this.log(`【관직】${josa(o.name_ko, ['이','가'])} 해임되었습니다`, c.force === this.playerForce);
+    else this.log(`【관직】${josa(o.name_ko, ['이','가'])} ${josa(OFFICES[rank].name, ['으로','로'])} 임명되었습니다 (지휘 +${OFFICES[rank].cmd}·봉록 +${OFFICES[rank].sal})`, c.force === this.playerForce);
+    return true;
+  }
   meritGrade(i) { return Math.min(8, Math.floor((this.officers[i]?.state?.merit ?? 0) / 500)); } // 공적 500당 1등급 (자체 수치)
   rewardOfficers(cityId, idxs) { // 포상(褒賞, 매뉴얼 P.39): 금 100·AP 5/인, 충성 +3 (상승 폭은 매뉴얼 미기재 — 자체 수치). 충성 100 불가·1턴 1인 1회·종군 무장 불가·도시별·복수 동시 가능
     const c = this.cityById[cityId], f = this.forces[c?.force];
@@ -509,7 +548,7 @@ export class Game {
     this.log(`【포상】${c.name_ko}에서 ${ok.map(i => this.officers[i].name_ko).join('·')}에게 포상을 내렸습니다 (충성 +3, 금 -${100 * ok.length})`, c.force === this.playerForce);
     return true;
   }
-  salaryOf(i) { if (this.econV !== 2) return 10 + this.meritGrade(i) * 5; const o = this.officers[i]; const abl = o ? Math.round((o.war + o.int + o.pol + o.chr) / 40) : 0; return 30 + this.meritGrade(i) * 10 + abl; } // 월 봉록 (자체 수치 — 매뉴얼: 봉록은 매월, 못 주면 충성 하락). econV 1은 구값 10+등급5 유지
+  salaryOf(i) { if (this.econV !== 2) return 10 + this.meritGrade(i) * 5; const o = this.officers[i]; const abl = o ? Math.round((o.war + o.int + o.pol + o.chr) / 40) : 0; return 30 + this.meritGrade(i) * 10 + abl + (OFFICES[this.officeOf(i)]?.sal ?? 0); } // 관직 봉록 가산 (econV 2만 — 매뉴얼: 관직별 봉록) // 월 봉록 (자체 수치 — 매뉴얼: 봉록은 매월, 못 주면 충성 하락). econV 1은 구값 10+등급5 유지
   emperorHolder() { return this.emperor ? (this.cityById[this.emperor.city]?.force ?? null) : null; } // R17: 현재 옹립 세력 = 황제 소재 도시 보유자
   forceRank(fid) { // 소유 도시 수 기준 관작 (황건 제외, 황제는 24도시 + 옹립 또는 황제 부재 — 설계안 102행)
     const f = this.forces[fid];
@@ -870,7 +909,7 @@ export class Game {
     const apc = Math.ceil(40 * this.apMult(c, 'military')); // R13 군사부
     if (f.ap < apc || c.troops < troops || officerIdxs.length === 0 || officerIdxs.length > this.dispatchCap(c.force)) return false;
     if (officerIdxs.some(i => (this.officers[i]?.state?.injuredUntil ?? 0) > this.turn)) return false; // R10: 부상 무장 출진 불가
-    troops = Math.min(troops, this.unitTroopCap(c.force)); // 부대 병력 상한(군제개혁 +3000)
+    troops = Math.min(troops, this.unitTroopCap(c.force) + (OFFICES[this.officeOf(officerIdxs[0])]?.cmd ?? 0)); // 부대 병력 상한 = 기본(군제개혁 +3000) + 주장 관직 지휘 가산 (매뉴얼: 官職で決まる) — 명시 합산, 중복 증가 경로 없음
     const ut = UNIT_TYPES[type];
     for (const [k, per] of Object.entries(ut.cost)) { // 병기·선박은 부대당 1대 (perUnit), 병장은 병사당 1개
       const need = ut.perUnit ? per : per * troops;
