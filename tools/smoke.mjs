@@ -1,4 +1,4 @@
-import { TACTICS, RULES, Game, UNIT_TYPES, ITEMS, FACILITIES, AB_BRANCHES, AB_P, AB_SKILL, isWaterAt, isSeaAt, isRiverAt, isFordAt, ARTS, FIELD_FACS } from '../js/game.js';
+import { TACTICS, RULES, Game, STRATS, UNIT_TYPES, ITEMS, FACILITIES, AB_BRANCHES, AB_P, AB_SKILL, isWaterAt, isSeaAt, isRiverAt, isFordAt, ARTS, FIELD_FACS } from '../js/game.js';
 import { aiThink } from '../js/ai.js';
 import { readFileSync } from 'fs';
 const officers = {}; for (const o of JSON.parse(readFileSync('data/officers670.json'))) officers[o.idx] = o;
@@ -931,10 +931,11 @@ if (g.units.find(u => u.id === 9999) && g.units.find(u => u.id === 9999).qi === 
   // 회계청·곡물창고: 금·병량 수입 +10% (기저 대비 비율)
   c14.facilities = c14.facilities.filter(x => !['시장','농장'].includes(x.type)); // 시장·농장 간섭 제거
   const savedOff = c14.officers; c14.officers = []; // 봉록 공제 배제 (수입 비율 순수 비교)
-  c14.gold = 0; c14.food = 0; runMonth(); const gBase = c14.gold, fdBase = c14.food;
-  c14.gold = 0; c14.food = 0; c14.facilities.push({ type: '회계청', progress: 3, builders: [], done: true }, { type: '곡물창고', progress: 3, builders: [], done: true });
+  const savedTr = c14.troops; c14.troops = 0; // 주둔 병량 소비 배제
+  c14.gold = 0; c14.food = 0; g14.month = 1; g14.dan = 1; runMonth(); const gBase = c14.gold, fdBase = c14.food; // 병량 수입은 1·4·7·10월만 (계절제)
+  c14.gold = 0; c14.food = 0; g14.month = 1; g14.dan = 1; c14.facilities.push({ type: '회계청', progress: 3, builders: [], done: true }, { type: '곡물창고', progress: 3, builders: [], done: true });
   runMonth();
-  c14.officers = savedOff;
+  c14.officers = savedOff; c14.troops = savedTr;
   const goldRatio = c14.gold / gBase, foodRatio = c14.food / fdBase;
   if (Math.abs(goldRatio - 1.1) > 0.02 || Math.abs(foodRatio - 1.1) > 0.02) { console.log('FAIL: R13 회계청·곡물창고', goldRatio.toFixed(3), foodRatio.toFixed(3)); process.exit(1); }
   // 군사부·인재부·외교부: AP 절감
@@ -1105,7 +1106,7 @@ if (g.units.find(u => u.id === 9999) && g.units.find(u => u.id === 9999).qi === 
   const foe2 = mk(8005, ef, [elead], 10000, 'sword', 41, 40);
   Math.random = () => 0;
   const fq = me2.qi, ft2 = foe2.troops;
-  if (!g21.fireStrat(me2.id, 'fire', { type: 'unit', id: foe2.id }) || me2.qi !== fq - 30 || foe2.troops !== ft2 - Math.round(ft2 * 0.06)) { console.log('FAIL: R15 화계 성공', me2.qi, foe2.troops); process.exit(1); }
+  if (!g21.fireStrat(me2.id, 'fire', { type: 'unit', id: foe2.id }) || me2.qi !== fq - STRATS.fire.qi || foe2.troops !== ft2 - Math.round(ft2 * 0.06)) { console.log('FAIL: R15 화계 성공', me2.qi, foe2.troops); process.exit(1); }
   // 화계 실패(확률 스텁 0.999) — 기력 유지
   me2._stratTurn = -1;
   Math.random = () => 0.999;
@@ -1113,11 +1114,11 @@ if (g.units.find(u => u.id === 9999) && g.units.find(u => u.id === 9999).qi === 
   if (!g21.fireStrat(me2.id, 'fire', { type: 'unit', id: foe2.id }) || me2.qi !== fq2) { console.log('FAIL: R15 화계 실패 기력 유지'); process.exit(1); }
   // 부대당 턴 1회 제한
   if (g21.fireStrat(me2.id, 'fire', { type: 'unit', id: foe2.id })) { console.log('FAIL: R15 계략 턴 1회 제한'); process.exit(1); }
-  // 혼란: 성공 시 conf 2·기력 -25
+  // 혼란: 성공 시 conf 2·기력 -STRATS.confuse.qi
   me2._stratTurn = -1;
   Math.random = () => 0;
   const cq = me2.qi;
-  if (!g21.fireStrat(me2.id, 'confuse', { type: 'unit', id: foe2.id }) || me2.qi !== cq - 25 || (foe2.conf ?? 0) !== 2) { console.log('FAIL: R15 혼란 성공', me2.qi, foe2.conf); process.exit(1); }
+  if (!g21.fireStrat(me2.id, 'confuse', { type: 'unit', id: foe2.id }) || me2.qi !== cq - STRATS.confuse.qi || (foe2.conf ?? 0) !== 2) { console.log('FAIL: R15 혼란 성공', me2.qi, foe2.conf); process.exit(1); }
   // 위장 부대 면역
   const camo = mk(8006, ef, [elead], 3000, 'sword', 41, 41);
   g21.officers[elead].skill = '위장';
@@ -1128,7 +1129,7 @@ if (g.units.find(u => u.id === 9999) && g.units.find(u => u.id === 9999).qi === 
   me2.x = ec2.lon - 1; me2.z = ec2.lat; me2._stratTurn = -1;
   Math.random = () => 0;
   const ct2 = ec2.troops, cq2 = me2.qi;
-  if (!g21.fireStrat(me2.id, 'fire', { type: 'city', id: ec2.id }) || me2.qi !== cq2 - 30 || ec2.troops !== ct2 - Math.round(ct2 * 0.08)) { console.log('FAIL: R15 화계 도시', me2.qi, ec2.troops); process.exit(1); }
+  if (!g21.fireStrat(me2.id, 'fire', { type: 'city', id: ec2.id }) || me2.qi !== cq2 - STRATS.fire.qi || ec2.troops !== ct2 - Math.round(ct2 * 0.08)) { console.log('FAIL: R15 화계 도시', me2.qi, ec2.troops); process.exit(1); }
   Math.random = rand0;
   // AI 측도 같은 규칙: 적 부대가 플레이어 부대에 직접 전법 (메서드 공용)
   { const ld = g21.officers[elead]; ld.apt = ld.apt ?? {}; for (let k = 0; k < 12; k++) ld.apt[k] = 'S'; }
@@ -1432,7 +1433,7 @@ if (g.units.find(u => u.id === 9999) && g.units.find(u => u.id === 9999).qi === 
         if (u.force === -1 || u.targetCity == null) continue;
         live.add(u.id); issued.add(u.id);
         const k = track.get(u.id); const pos = u.x.toFixed(2) + ',' + u.z.toFixed(2);
-        const eng = g51.units.some(v => v !== u && v.force !== u.force && v.force !== -1 && Math.hypot(v.x - u.x, v.z - u.z) < 2.2); const sieging = Math.hypot(u.tx - u.x, u.tz - u.z) <= 1.2 && g51.cityById[u.targetCity]?.force !== u.force; if (sieging && k && k.pos === pos) siegeTurns++; if (k && k.pos === pos && !(u.conf > 0) && !eng && !sieging) { k.n++; if (k.n >= 10) { stalled++; if (process.env.DBG && k.n === 10) console.log('  STALL', u.label, u.type, 'pos', pos, 'tgt', g51.cityById[u.targetCity]?.name_ko, 'dist', Math.hypot(u.tx - u.x, u.tz - u.z).toFixed(2), 'path', JSON.stringify(u.path.slice(0,2)), 'water', isWaterAt(u.x, u.z), 'sea', isSeaAt(u.x,u.z), 'warn', u._waterWarn, u._landWarn, 'conf', u.conf); } } else if (k && k.pos === pos && eng) { k.eng = (k.eng ?? 0) + 1; engagedTurns++; } else track.set(u.id, { pos, n: 0 });
+        const eng = g51.units.some(v => v !== u && v.force !== u.force && Math.hypot(v.x - u.x, v.z - u.z) < 2.2); // 게임의 요격 판정(적병 force -1 포함)과 동일 기준 const sieging = Math.hypot(u.tx - u.x, u.tz - u.z) <= 1.2 && g51.cityById[u.targetCity]?.force !== u.force; if (sieging && k && k.pos === pos) siegeTurns++; if (k && k.pos === pos && !(u.conf > 0) && !eng && !sieging) { k.n++; if (k.n >= 10) { stalled++; if (process.env.DBG && k.n === 10) console.log('  STALL', u.label, u.type, 'pos', pos, 'tgt', g51.cityById[u.targetCity]?.name_ko, 'dist', Math.hypot(u.tx - u.x, u.tz - u.z).toFixed(2), 'path', JSON.stringify(u.path.slice(0,2)), 'water', isWaterAt(u.x, u.z), 'sea', isSeaAt(u.x,u.z), 'warn', u._waterWarn, u._landWarn, 'conf', u.conf); } } else if (k && k.pos === pos && eng) { k.eng = (k.eng ?? 0) + 1; engagedTurns++; } else track.set(u.id, { pos, n: 0 });
       }
       for (const id of issued) if (!live.has(id)) gone.add(id);
     }
@@ -1758,14 +1759,18 @@ if (g.units.find(u => u.id === 9999) && g.units.find(u => u.id === 9999).qi === 
   // 2) 정예창병: 창·극 +8%, 노·기병 무영향
   const sp = mk(9304, f0, 100, 36, 'spear'), bw = mk(9305, f0, 100.5, 36, 'bow'); const s0 = g.unitTechAtk(sp), b0 = g.unitTechAtk(bw);
   if (!g.researchArt(f0, '정예창병')) fail('정예창병 연구'); if (Math.abs(g.unitTechAtk(sp) / s0 - 1.08) > 1e-9 || g.unitTechAtk(bw) !== b0) fail('정예창병 효과');
-  // 3) 군제개혁: 군사 AP 15% 절감, 외교·인사는 무영향
-  const c = g.forceCities(f0)[0]; const m0 = g.apMult(c, 'military'), d0 = g.apMult(c, 'diplo');
-  if (!g.researchArt(f0, '군제개혁')) fail('군제개혁 연구'); if (Math.abs(g.apMult(c, 'military') / m0 - 0.85) > 1e-9 || g.apMult(c, 'diplo') !== d0) fail('군제개혁 효과');
+  // 3) 군제개혁: 부대 병력 상한 +3000 (20000 → 23000), 실제 출진에 반영 (r57 정정: AP 절감 아님)
+  const c = g.forceCities(f0)[0]; c.troops = 30000; c.spears = 30000; g.forces[f0].ap = 100;
+  if (g.unitTroopCap(f0) !== 20000) fail('기본 상한 ' + g.unitTroopCap(f0));
+  if (!g.researchArt(f0, '군제개혁')) fail('군제개혁 연구'); if (g.unitTroopCap(f0) !== 23000) fail('군제개혁 효과 ' + g.unitTroopCap(f0));
+  const lead3 = c.officers[0];
+  if (lead3 == null || !g.dispatch(c.id, [lead3], 23000, 'spear')) fail('군제개혁 실출진');
+  if (!g.units.some(u => u.troops === 23000 && u.officers.includes(lead3))) fail('군제개혁 출진 병력');
   // 4) AI: researchNextArt가 순서대로 모두 연구하고 비용 부족이면 중단
   const g2 = mkg(); const ef = g2.cities.find(c => c.force != null && c.force !== g2.playerForce).force; g2.forces[ef].techP = 99999; g2.forceCities(ef).forEach(c => c.gold = 99999);
   let n = 0; while (g2.researchNextArt(ef) && n < 10) n++; if (n !== Object.keys(ARTS).length) fail('AI 연구 개수 ' + n);
   g2.forces[ef].arts = {}; g2.forces[ef].techP = 10; if (g2.researchNextArt(ef)) fail('AI 기교P 부족 차단');
-  console.log(`R30 개별 기교·석벽 게이트 PASS (석벽술 필요, 석벽 감속 0.15, 정예창병 +8%, 군제개혁 military ×0.85, AI ${n}종 연구)`);
+  console.log(`R30 개별 기교·석벽 게이트 PASS (석벽술 필요, 석벽 감속 0.15, 정예창병 +8%, 군제개혁 상한+3000·실출진, AI ${n}종 연구)`);
 }
 // === R32: 소화(지속 화계) 게이트 ===
 {
@@ -1919,3 +1924,180 @@ if (g.units.find(u => u.id === 9999) && g.units.find(u => u.id === 9999).qi === 
   console.log('R41 AI 호환 가드 게이트 PASS (pickTactic 없는 game에서도 AI 전법 발동, 정상 경로와 같은 기력·혼란 결과)');
 }
 console.log('sample logs:'); for (const l of g.logs.slice(-8)) console.log(' ', l.t, l.msg);
+
+// === R-eco: 병량 소비 경제 게이트 (매뉴얼: 도시 병량 매턴 소비·부대 휴대 병량·계절 수입) ===
+{
+  const fail = m => { console.log('FAIL: R-eco ' + m); process.exit(1); };
+  // 1) 총량 검증: 3턴(1개월) 진행 후 food = 수입(계절제) - 주둔 소비
+  const g2 = new Game(JSON.parse(JSON.stringify(scen)), JSON.parse(JSON.stringify(officers)), {}, 0);
+  g2.units = [];
+  const c2 = g2.forceCities(0)[0];
+  c2.troops = 10000; c2.food = 100000; c2.farm = 0; // 농장 0 → 계절 수입 300*mult
+  const before2 = c2.food, m0 = g2.month;
+  for (let i = 0; i < 3; i++) g2.endTurn(aiThink); // 1개월
+  const consumed = 4000; // 10000 * 0.4
+  const income = [1,4,7,10].includes(m0) ? Math.round(300 * (g2.cityHasSkill(c2, '부농') ? 1.3 : 1)) : 0;
+  if (c2.food !== before2 + income - consumed) fail('주둔 병량 정산 ' + c2.food + ' 기대 ' + (before2 + income - consumed));
+  // 2) 계절 수입: 수입월이 아니면 food 증가 없음 (위 검증에 포함)
+  // 3) 병량 부족 탈영: food 0이면 부족 병력환산의 50% 탈영
+  const g3 = new Game(JSON.parse(JSON.stringify(scen)), JSON.parse(JSON.stringify(officers)), {}, 0);
+  g3.units = [];
+  const c3 = g3.forceCities(0)[0];
+  c3.troops = 10000; c3.food = 1000; c3.farm = 0;
+  g3.month = 2; g3.dan = 1; // 비수입월 정산으로 고정
+  const t0 = c3.troops;
+  g3.endTurn(aiThink); g3.endTurn(aiThink); g3.endTurn(aiThink); // 1개월 → 정산 1회
+  // 정산: need 4000, food 1000(+수입) → 부족 3000 → 탈영 3000/0.4*0.5 = 3750
+  const expDes = Math.round(3000 / 0.4 * 0.5);
+  if (c3.troops !== t0 - expDes) fail('도시 탈영 ' + (t0 - c3.troops) + ' 기대 ' + expDes);
+  // 4) 출진 휴대 병량: 도시 food 차감 + 부대 food 적재
+  const g4 = new Game(JSON.parse(JSON.stringify(scen)), JSON.parse(JSON.stringify(officers)), {}, 0);
+  g4.units = [];
+  const c4 = g4.forceCities(0)[0];
+  c4.troops = 20000; c4.food = 30000; c4.spears = 30000; g4.forces[0].ap = 100;
+  const lead4 = c4.officers[0];
+  if (lead4 == null) fail('출진 무장 부재');
+  const settle4 = () => { if (g4.pendingDuel) g4.duelAuto(g4.pendingDuel); if (g4.pendingDebate) g4.debateAuto(g4.pendingDebate); }; // 일기토·설전 결판 전 턴 진행 불가 대응
+  const cf0 = c4.food;
+  if (!g4.dispatch(c4.id, [lead4], 5000, 'spear')) fail('출진');
+  const u4 = g4.units.find(u => u.officers.includes(lead4));
+  const carry = Math.round(5000 * 0.4 * 6);
+  if (!u4 || u4.food !== carry || c4.food !== cf0 - carry) fail('휴대 병량 ' + (u4 && u4.food) + ' 기대 ' + carry);
+  // 5) 부대 턴 소비 + 구 세이브(food 없음) 초기화 + 아사 탈영
+  u4.food = undefined; // 구 세이브 시뮬레이션
+  u4.tx = null; // 이동 명령 없음
+  u4.x = 0; u4.z = 0; // 아군 도시 보급권 밖으로 이동
+  const e0 = u4.troops;
+  g4.endTurn(aiThink); settle4();
+  const full = Math.round(5000 * 0.4 * 6);
+  if (u4.food == null || u4.food >= full) fail('구 세이브 병량 초기화 ' + u4.food);
+  u4.food = 0;
+  const t5 = u4.troops;
+  g4.endTurn(aiThink); settle4();
+  if (u4.troops !== t5 - Math.max(1, Math.round(t5 * 0.03))) fail('부대 아사 탈영 ' + (t5 - u4.troops));
+  // 6) 아군 도시 인접 보급
+  const home4 = g4.forceCities(0)[0];
+  u4.x = home4.lon; u4.z = home4.lat; u4.food = 0; home4.food = 50000;
+  g4.endTurn(aiThink); settle4();
+  const full2 = Math.round(u4.troops * 0.4 * 6);
+  if (u4.food <= 0) fail('인접 보급 ' + u4.food);
+  // 7) 합류 시 잔여 병량 회수
+  u4.tx = home4.lon; u4.tz = home4.lat; u4.targetCity = home4.id; u4.path = []; u4.x = home4.lon; u4.z = home4.lat; u4.food = 1000;
+  const hf0 = home4.food;
+  g4.endTurn(aiThink); settle4();
+  if (g4.units.includes(u4)) fail('합류 미처리');
+  const eat7 = Math.round(u4.troops * 0.4 / 3);
+  if (Math.abs((home4.food - hf0) - (1000 - eat7)) > 2) fail('합류 병량 회수 ' + (home4.food - hf0) + ' 기대 ' + (1000 - eat7));
+  console.log('R-eco 병량 경제 게이트 PASS (주둔 소비·계절 수입·탈영·휴대 병량·턴 소비·구 세이브·인접 보급·합류 회수)');
+}
+
+// === R-mig: 병량 경제 저장 마이그레이션 게이트 ===
+{
+  const fail = m => { console.log('FAIL: R-mig ' + m); process.exit(1); };
+  const settle = g => { if (g.pendingDuel) g.duelAuto(g.pendingDuel); if (g.pendingDebate) g.debateAuto(g.pendingDebate); };
+  // 1) v1 저장(구 경제): 유예 부여 + 유예 중 주둔 소비 없음
+  const g = new Game(JSON.parse(JSON.stringify(scen)), JSON.parse(JSON.stringify(officers)), {}, 0);
+  g.units = [];
+  const c = g.forceCities(0)[0];
+  c.troops = 10000; c.food = 10000; c.farm = 0;
+  g.month = 2; g.dan = 1; g.turn = 100;
+  if (!g.econMigrate({ })) fail('v1 저장 마이그레이션 미동작');
+  if (g.econGraceUntil !== 118) fail('유예 종료 턴 ' + g.econGraceUntil);
+  for (let i = 0; i < 3; i++) { g.endTurn(aiThink); settle(g); } // 1개월 (유예 중)
+  if (c.food !== 10000) fail('유예 중 병량 변동 ' + c.food);
+  // 2) 유예 종료: 종료 안내 1회 + 소비 개시
+  g.turn = 118; g.econGraceUntil = 118; g.month = 2; g.dan = 1;
+  for (let i = 0; i < 3; i++) { g.endTurn(aiThink); settle(g); }
+  if (g.econGraceUntil != null) fail('유예 해제 안 됨');
+  if (c.food >= 10000) fail('유예 종료 후 소비 없음 ' + c.food);
+  const endMsgs = g.logs.filter(l => l.msg.includes('유예가 끝났습니다')).length;
+  if (endMsgs !== 1) fail('유예 종료 안내 ' + endMsgs + '회');
+  // 3) saveV 2 저장: 재적용 없음 (멱등)
+  const g2 = new Game(JSON.parse(JSON.stringify(scen)), JSON.parse(JSON.stringify(officers)), {}, 0);
+  g2.econGraceUntil = null;
+  if (g2.econMigrate({ saveV: 2 })) fail('saveV 2 재마이그레이션');
+  if (g2.econGraceUntil !== null) fail('saveV 2 유예 변경');
+  // 4) autosave에 saveV 2 포함 → 재로드 시 유예 재부여 없음
+  {
+    const store = {};
+    const g3 = new Game(JSON.parse(JSON.stringify(scen)), JSON.parse(JSON.stringify(officers)), {}, 0);
+    globalThis.localStorage = { setItem: (k, v) => { store[k] = v; }, getItem: k => store[k] ?? null, removeItem: k => { delete store[k]; } };
+    g3.autosave();
+    const d3 = JSON.parse(store['cheonha-xi-web.save.v1']);
+    if (d3.saveV !== 2) fail('autosave saveV 누락');
+    const g4 = new Game(JSON.parse(JSON.stringify(scen)), JSON.parse(JSON.stringify(officers)), {}, 0);
+    if (g4.econMigrate(d3)) fail('재로드 재마이그레이션');
+    delete globalThis.localStorage;
+  }
+  // 5) 신규 게임: 유예 없이 즉시 소비 (R-eco 1번과 중복이나 마이그레이션 관점 명시)
+  const g5 = new Game(JSON.parse(JSON.stringify(scen)), JSON.parse(JSON.stringify(officers)), {}, 0);
+  if (g5.econGraceUntil !== null) fail('신규 게임 유예 존재');
+  console.log('R-mig 마이그레이션 게이트 PASS (v1 유예 부여·유예 중 소비 없음·종료 안내 1회·saveV2 멱등·autosave 영속·신규 즉시 적용)');
+}
+
+// === R-ver: 경제 버전 분리 게이트 (구 저장=구 규칙 보존, 신규=신 규칙, load-save-reload 유지) ===
+{
+  const fail = m => { console.log('FAIL: R-ver ' + m); process.exit(1); };
+  const settle = g => { if (g.pendingDuel) g.duelAuto(g.pendingDuel); if (g.pendingDebate) g.debateAuto(g.pendingDebate); };
+  const nop = () => {}; // AI 무력화: 경제 정산만 격리 검증
+  // 1) 구 경제(econV 1): 비수입월에도 식량 월수입 발생 + 주둔 소비 없음
+  const g = new Game(JSON.parse(JSON.stringify(scen)), JSON.parse(JSON.stringify(officers)), {}, 0);
+  g.econV = 1; // 구 저장 로드 시뮬레이션
+  g.units = [];
+  const c = g.forceCities(0)[0];
+  c.troops = 10000; c.food = 10000; c.farm = 0;
+  g.month = 2; g.dan = 1; // 비수입월
+  for (let i = 0; i < 3; i++) { g.endTurn(nop); settle(g); } // 1개월
+  const incExp = Math.round(300 * (g.cityHasSkill(c, '부농') ? 1.3 : 1) * (g.cityFac(c, '곡물창고').length ? 1.1 : 1));
+  if (c.food < 10000) fail('구 경제 주둔 소비 발생 ' + c.food);
+  if (c.food !== 10000 + incExp) fail('구 경제 월 수입 ' + (c.food - 10000) + ' 기대 ' + incExp);
+  // 2) 구 경제: 병량 0이어도 주둔 탈영 없음 (저병량 구 저장 보존)
+  c.food = 0; c.farm = 0; const t0 = c.troops;
+  g.month = 2; g.dan = 1;
+  for (let i = 0; i < 3; i++) { g.endTurn(nop); settle(g); }
+  if (c.troops !== t0) fail('구 경제 주둔 탈영 ' + (t0 - c.troops));
+  // 3) 구 경제: 구 봉록식 유지
+  const oi = c.officers[0];
+  if (oi != null && g.salaryOf(oi) !== 10 + g.meritGrade(oi) * 5) fail('구 봉록 ' + g.salaryOf(oi));
+  // 4) 구 경제: 출진 부대에 food 필드 없음 + 아사 탈영 없음
+  c.food = 50000; c.spears = 30000; g.forces[0].ap = 100;
+  if (!g.dispatch(c.id, [oi], 5000, 'spear')) fail('구 경제 출진');
+  const u = g.units.find(x => x.officers.includes(oi));
+  if (!u || 'food' in u) fail('구 경제 부대 food 필드 존재');
+  u.tx = null; u.x = 0; u.z = 0; // 보급권 밖
+  const ut0 = u.troops;
+  g.endTurn(aiThink); settle(g);
+  if ('food' in u || u.troops !== ut0) fail('구 경제 부대 병량/탈영 ' + JSON.stringify({ food: u.food, troops: u.troops }));
+  // 5) load-save-reload: econV 1 영속 + 규칙 유지
+  {
+    const store = {};
+    globalThis.localStorage = { setItem: (k, v) => { store[k] = v; }, getItem: k => store[k] ?? null, removeItem: k => { delete store[k]; } };
+    g.autosave();
+    const d = JSON.parse(store['cheonha-xi-web.save.v1']);
+    if (d.econV !== 1) fail('autosave econV ' + d.econV);
+    const g2 = new Game(JSON.parse(JSON.stringify(scen)), JSON.parse(JSON.stringify(officers)), {}, 0);
+    Object.assign(g2, { year: d.year, month: d.month, dan: d.dan, turn: d.turn, cities: d.cities, forces: d.forces, units: d.units, nextUnitId: d.nextUnitId, fieldFacs: d.fieldFacs ?? [], nextFacId: d.nextFacId ?? 1, playerForce: d.playerForce, delegated: d.delegated, logs: d.logs, deadAck: d.deadAck, chronicle: d.chronicle ?? [], over: d.over ?? false, unified: d.unified ?? d.over ?? false, econGraceUntil: d.econGraceUntil ?? null, econV: d.econV ?? 1 }); // main.js 로드 경로와 동일
+    if (g2.econV !== 1) fail('리로드 econV ' + g2.econV);
+    const c2 = g2.forceCities(0)[0];
+    c2.troops = 10000; c2.food = 0; c2.farm = 0; g2.units = [];
+    g2.month = 2; g2.dan = 1;
+    for (let i = 0; i < 3; i++) { g2.endTurn(nop); settle(g2); }
+    if (c2.troops !== 10000) fail('리로드 후 구 규칙 붕괴 탈영 ' + c2.troops);
+    g2.autosave();
+    const d2 = JSON.parse(store['cheonha-xi-web.save.v1']);
+    if (d2.econV !== 1) fail('재저장 econV ' + d2.econV);
+    delete globalThis.localStorage;
+  }
+  // 6) 신규 게임 격리: econV 2 + autosave 2 (R-eco와 독립 명시)
+  {
+    const store = {};
+    globalThis.localStorage = { setItem: (k, v) => { store[k] = v; }, getItem: k => store[k] ?? null, removeItem: k => { delete store[k]; } };
+    const g3 = new Game(JSON.parse(JSON.stringify(scen)), JSON.parse(JSON.stringify(officers)), {}, 0);
+    if (g3.econV !== 2) fail('신규 econV ' + g3.econV);
+    g3.autosave();
+    const d3 = JSON.parse(store['cheonha-xi-web.save.v1']);
+    if (d3.econV !== 2) fail('신규 autosave econV ' + d3.econV);
+    delete globalThis.localStorage;
+  }
+  console.log('R-ver 경제 버전 분리 게이트 PASS (구 월수입·주둔소비없음·탈영없음·구봉록·부대food없음·load-save-reload 유지·신규 격리)');
+}
