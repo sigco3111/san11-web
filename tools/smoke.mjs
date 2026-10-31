@@ -1,4 +1,4 @@
-import { TACTICS, RULES, Game, STRATS, UNIT_TYPES, ITEMS, FACILITIES, AB_BRANCHES, AB_P, AB_SKILL, isWaterAt, isSeaAt, isRiverAt, isFordAt, ARTS, FIELD_FACS } from '../js/game.js';
+import { TACTICS, RULES, Game, STRATS, UNIT_TYPES, ITEMS, FACILITIES, AB_BRANCHES, AB_P, AB_SKILL, isWaterAt, isSeaAt, isRiverAt, isFordAt, ARTS, FIELD_FACS, TECH_P, TECH_GOLD } from '../js/game.js';
 import { aiThink } from '../js/ai.js';
 import { readFileSync } from 'fs';
 const officers = {}; for (const o of JSON.parse(readFileSync('data/officers670.json'))) officers[o.idx] = o;
@@ -1445,11 +1445,11 @@ if (g.units.find(u => u.id === 9999) && g.units.find(u => u.id === 9999).qi === 
 }
   { // R17c: 진입점·전 모듈 import·데이터 fetch 가 동일 버전 쿼리를 쓰는지
     const vs = new Set(); let cnt = 0;
-    for (const [f, re] of [['js/main.js', /from '\.\/(?:map3d|game|ai)\.js\?v=([\w.-]+)'/g], ['js/map3d.js', /from '\.\/assets-3d\.js\?v=([\w.-]+)'/g], ['index.html', /src="js\/main\.js\?v=([\w.-]+)"/g], ['index.html', /href="css\/style\.css\?v=([\w.-]+)"/g], ['js/main.js', /fetch\(u \+ '\?v=([\w.-]+)'\)/g]]) {
+    for (const [f, re] of [['js/main.js', /from '\.\/(?:map3d|game|ai)\.js\?v=([\w.-]+)'/g], ['js/map3d.js', /from '\.\/assets-3d\.js\?v=([\w.-]+)'/g], ['js/ai.js', /from '\.\/game\.js\?v=([\w.-]+)'/g], ['index.html', /src="js\/main\.js\?v=([\w.-]+)"/g], ['index.html', /href="css\/style\.css\?v=([\w.-]+)"/g], ['js/main.js', /fetch\(u \+ '\?v=([\w.-]+)'\)/g]]) {
       const s = fs.readFileSync(new URL('../' + f, import.meta.url), 'utf8'); for (const m of s.matchAll(re)) { vs.add(m[1]); cnt++; }
     }
-    if (vs.size !== 1 || cnt !== 7) { console.error('FAIL: R17c 버전 쿼리 불일치', [...vs], cnt); process.exit(1); }
-    console.log('R17c 모듈 버전 일관 게이트 PASS (v=' + [...vs][0] + ', 참조 7곳(CSS 포함))');
+    if (vs.size !== 1 || cnt !== 8) { console.error('FAIL: R17c 버전 쿼리 불일치', [...vs], cnt); process.exit(1); }
+    console.log('R17c 모듈 버전 일관 게이트 PASS (v=' + [...vs][0] + ', 참조 8곳(CSS 포함))');
   }
 
 { // R31: 빌드 ID 일치 게이트
@@ -2101,3 +2101,81 @@ console.log('sample logs:'); for (const l of g.logs.slice(-8)) console.log(' ', 
   }
   console.log('R-ver 경제 버전 분리 게이트 PASS (구 월수입·주둔소비없음·탈영없음·구봉록·부대food없음·load-save-reload 유지·신규 격리)');
 }
+
+// === R-jido: 특기 「지도」 연구비 반액 게이트 (공식 매뉴얼: 지도 보유 무장이 연구에 참여하면 비용 반액) ===
+{
+  const fail = m => { console.log('FAIL: R-jido ' + m); process.exit(1); };
+  // 1) 데이터: 지도 보유 무장 존재 (조식·심배)
+  const jido = JSON.parse(readFileSync('data/officers670.json')).filter(o => o.skill === '지도');
+  if (jido.length < 2) fail('지도 보유 무장 부족 ' + jido.length);
+  // 2) 반액 적용: 지도 보유 세력은 금 절반·기교P 정량
+  const g = new Game(JSON.parse(JSON.stringify(scen)), JSON.parse(JSON.stringify(officers)), {}, 0);
+  const f = g.forces[0];
+  const holder = Object.values(g.officers).find(o => o.state?.force === 0 && !o.skill);
+  if (!holder) fail('무특기 무장 부재');
+  holder.skill = '지도';
+  const cap = g.forceCities(0)[0];
+  f.techP = TECH_P[0]; cap.gold = TECH_GOLD[0];
+  if (!g.researchTech(0, '창병')) fail('지도 연구 실패');
+  if (cap.gold !== Math.round(TECH_GOLD[0] / 2)) fail('지도 반액 미적용 잔여 ' + cap.gold);
+  if (f.techP !== 0) fail('기교P 차감 이상 ' + f.techP);
+  if (!g.logs.some(l => l.msg.includes('지도 반액'))) fail('반액 로그 없음');
+  // 3) 미보유 세력은 정가
+  const g2 = new Game(JSON.parse(JSON.stringify(scen)), JSON.parse(JSON.stringify(officers)), {}, 0);
+  const f2 = g2.forces[0];
+  if (g2.forceHasSkill(0, '지도')) fail('시나리오 190 조조군에 지도 보유자 있음(전제 붕괴)');
+  const cap2 = g2.forceCities(0)[0];
+  f2.techP = TECH_P[0]; cap2.gold = TECH_GOLD[0];
+  if (!g2.researchTech(0, '창병')) fail('정가 연구 실패');
+  if (cap2.gold !== 0) fail('정가 미적용 잔여 ' + cap2.gold);
+  // 4) 개별 기교도 반액
+  holder.skill = '지도';
+  const an = Object.keys(ARTS)[0];
+  f.techP = ARTS[an].p; cap.gold = ARTS[an].gold;
+  if (!g.researchArt(0, an)) fail('개별 기교 연구 실패');
+  if (cap.gold !== Math.round(ARTS[an].gold / 2)) fail('개별 기교 반액 미적용 ' + cap.gold);
+  console.log('R-jido 지도 연구비 반액 게이트 PASS (데이터·계통/개별 반액·기교P 정량·미보유 정가)');
+}
+
+// === R-facai: AI 야전 시설·함정 건설 게이트 (설계 군사시설·함정 — AI도 동일 규칙) ===
+{
+  const fail = m => { console.log('FAIL: R-facai ' + m); process.exit(1); };
+  // 적 부대 접근 시 AI가 대기 부대로 함정 건설
+  const g = new Game(JSON.parse(JSON.stringify(scen)), JSON.parse(JSON.stringify(officers)), {}, 0);
+  g.units = [];
+  const ai = 1;
+  if (!g.forces[ai]?.alive) fail('AI 세력 부재');
+  const c = g.forceCities(ai)[0];
+  if (!c) fail('AI 도시 부재');
+  c.gold = 1000;
+  const land = (cx, cz) => { for (const [dx, dz] of [[1.5,0],[-1.5,0],[0,1.5],[0,-1.5],[1.2,1.2],[-1.2,-1.2],[1.2,-1.2],[-1.2,1.2]]) if (!isWaterAt(cx+dx, cz+dz)) return [cx+dx, cz+dz]; return null; };
+  const p1 = land(c.lon, c.lat); if (!p1) fail('도시 주변 육지 없음');
+  g.units.push({ id: 9001, force: ai, officers: [g.forces[ai].ruler], troops: 5000, type: 'spear', x: p1[0], z: p1[1], path: [], tx: null, tz: null, targetCity: null, label: 'AI대기 5k', qi: 100, conf: 0 });
+  g.units.push({ id: 9002, force: 0, officers: [g.forces[0].ruler], troops: 8000, type: 'spear', x: p1[0] + 2, z: p1[1], path: [], tx: c.lon, tz: c.lat, targetCity: c.id, label: '적접근 8k', qi: 100, conf: 0 });
+  aiThink(g, ai);
+  const built = (g.fieldFacs ?? []).find(x => x.force === ai);
+  if (!built) fail('AI 시설 미건설');
+  if (built.type !== '불화살함정' && built.type !== '낙석') fail('근접 위협에 함정 아닌 ' + built.type);
+  // 원거리 위협: 지원 시설 없으면 진/채
+  const g2 = new Game(JSON.parse(JSON.stringify(scen)), JSON.parse(JSON.stringify(officers)), {}, 0);
+  g2.units = [];
+  const c2 = g2.forceCities(ai)[0];
+  c2.gold = 1000;
+  const p2 = land(c2.lon, c2.lat); if (!p2) fail('도시 주변 육지 없음2');
+  g2.units.push({ id: 9003, force: ai, officers: [g2.forces[ai].ruler], troops: 5000, type: 'spear', x: p2[0], z: p2[1], path: [], tx: null, tz: null, targetCity: null, label: 'AI대기 5k', qi: 100, conf: 0 });
+  g2.units.push({ id: 9004, force: 0, officers: [g2.forces[0].ruler], troops: 8000, type: 'spear', x: c2.lon + 5.5, z: c2.lat, path: [], tx: c2.lon, tz: c2.lat, targetCity: c2.id, label: '적접근 8k', qi: 100, conf: 0 });
+  aiThink(g2, ai);
+  const built2 = (g2.fieldFacs ?? []).find(x => x.force === ai);
+  if (!built2) fail('AI 지원시설 미건설');
+  if (built2.type !== '진' && built2.type !== '채') fail('원거리 위협에 진/채 아닌 ' + built2.type);
+  // 위협 없으면 건설 안 함
+  const g3 = new Game(JSON.parse(JSON.stringify(scen)), JSON.parse(JSON.stringify(officers)), {}, 0);
+  g3.units = [];
+  const c3 = g3.forceCities(ai)[0];
+  c3.gold = 1000;
+  const p3 = land(c3.lon, c3.lat); if (!p3) fail('도시 주변 육지 없음3');
+  g3.units.push({ id: 9005, force: ai, officers: [g3.forces[ai].ruler], troops: 5000, type: 'spear', x: p3[0], z: p3[1], path: [], tx: null, tz: null, targetCity: null, label: 'AI대기 5k', qi: 100, conf: 0 });
+  aiThink(g3, ai);
+  if ((g3.fieldFacs ?? []).some(x => x.force === ai)) fail('위협 없는데 건설');
+  console.log('R-facai AI 야전시설 게이트 PASS (근접 함정·원거리 진/채·무위협 미건설)');
+                                                                         }
