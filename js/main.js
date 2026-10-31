@@ -1,12 +1,12 @@
 // 진입점: 화면 전환·UI·지도 연결
-import { Map3D, toWorld } from './map3d.js?v=r110';
-import { Game, SAVE_KEY, RULES, forceColor, UNIT_TYPES, ARTS, OFFICES, restoreOfficer, FIELD_FACS, TRAPS, SHIP_TYPES, TAC_SHIP_OK, josa, josaRo, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL, AB_PICK } from './game.js?v=r110';
-import { aiThink } from './ai.js?v=r110';
+import { Map3D, toWorld } from './map3d.js?v=r111';
+import { Game, SAVE_KEY, RULES, forceColor, UNIT_TYPES, ARTS, OFFICES, restoreOfficer, FIELD_FACS, TRAPS, SHIP_TYPES, TAC_SHIP_OK, josa, josaRo, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL, AB_PICK } from './game.js?v=r111';
+import { aiThink } from './ai.js?v=r111';
 
 const $ = id => document.getElementById(id);
 let DATA = null, game = null, map = null, selectedUnit = null, autoTimer = null, pendingFire = null; // R15: 직접 전법·계략 대기
 
-const BUILD_ID = 'r110'; // 빌드 ID (index.html의 meta[name=build]와 같아야 함 - 오래된 캐시된 index와 새 스크립트의 혼합 감지)
+const BUILD_ID = 'r111'; // 빌드 ID (index.html의 meta[name=build]와 같아야 함 - 오래된 캐시된 index와 새 스크립트의 혼합 감지)
 function checkBuildSkew() {
   const idx = document.querySelector('meta[name="build"]')?.content;
   if (idx === BUILD_ID) { sessionStorage.removeItem('cheonha-xi-web.skew'); return; } // 일치하면 재시도 표식 해제
@@ -19,7 +19,7 @@ checkBuildSkew();
 async function loadData() {
   const [officers, skills, portraits, s184, s190, s251] = await Promise.all(
     ['data/officers670.json','data/skills.json','data/portraits.json','data/scenario-184.json','data/scenario-190.json','data/scenario-251.json']
-      .map(u => fetch(u + '?v=r110').then(r => r.json())));
+      .map(u => fetch(u + '?v=r111').then(r => r.json())));
   const byIdx = {};
   for (const o of officers) byIdx[o.idx] = o;
   DATA = { officers: byIdx, skills, portraits, scenarios: { '184': s184, '190': s190, '251': s251 } };
@@ -306,7 +306,7 @@ function showDashboard() { // R97→R99: 세력 현황 대시보드 — 카드�
       const ov = game.forceOverview(game.playerForce), s = ov.summary;
       const card = (label, val) => `<div style="flex:1;min-width:84px;background:#2a251d;border:1px solid #4a4132;border-radius:6px;padding:6px 4px;text-align:center"><div style="font-size:11px;color:#aa9">${label}</div><div style="font-size:16px;color:#e8dfc8;font-weight:bold">${val}</div></div>`;
       body += `<div style="display:flex;gap:6px;flex-wrap:wrap;margin:4px 0">` +
-        card('도시', s.cities) + card('무장', s.officers) + card('주둔 병력', fmt(s.garrison)) +
+        card('도시', s.cities) + card('무장', s.officers) + card('주둔 병력', fmt(s.garrison)) + card('포로', s.captives ?? 0) + // R111: 억류 포로 수 (매뉴얼 捕虜)
         card('출진', `${s.fieldUnits}부대 ${fmt(s.fieldTroops)}`) + card('금', fmt(s.gold)) + card('군량', fmt(s.food)) + `</div>`;
       body += `<p style="margin:2px 0;color:#aa9;font-size:12px">기교P ${fmt(s.techP)} · 습득 기교 ${s.arts}종</p>`;
       const net = s.goldIn - s.sal; // R99: 수입·지출·순수지를 분리 표기 — +금/봉록 나열이 순수지인지 모호하다는 지적 반영
@@ -726,6 +726,17 @@ function showCityPanel(c) {
       if (mine && game.recruitChance(c.id, o.idx) > 0) html += `<button class="cmd cmd-rec" data-i="${o.idx}">등용 (금100·성공률 ${Math.round(game.recruitChance(c.id, o.idx)*100)}%)</button>`;
     }
   }
+  const caps = game.captiveOfficers ? game.captiveOfficers(c.id) : []; // R111: 억류 포로 (매뉴얼 捕虜 — 등용·해방 가능)
+  if (caps.length) {
+    html += `<h3 style="margin-top:10px">포로 (${caps.length})</h3><p style="font-size:12px;color:#aa6">억류 중인 적 무장 — 매 턴 충성이 내려가며(부절대 보유 시 더 빠름), 등용하거나 석방할 수 있습니다.</p>`;
+    for (const o of caps) {
+      html += officerRow(o.idx) + `<span style="font-size:12px;color:#c96">충성 ${o.state?.loyal ?? '?'} · 원 소속 ${game.forceName(o.state?.force)}</span>`;
+      if (mine) {
+        if (game.recruitChance(c.id, o.idx) > 0) html += `<button class="cmd cmd-rec" data-i="${o.idx}">등용 (금100·성공률 ${Math.round(game.recruitChance(c.id, o.idx)*100)}%)</button>`;
+        html += `<button class="cmd cmd-rel" data-i="${o.idx}">석방 (기교P +50)</button>`;
+      }
+    }
+  }
   p.innerHTML = html;
   p.scrollTop = 0; // 패널 상단 고정 (이전 스크롤 잔류로 도시명이 가려지는 문제 방지)
   if (mine) {
@@ -750,6 +761,7 @@ function showCityPanel(c) {
     p.querySelectorAll('.cmd-rwd').forEach(b => b.onclick = () => { const ok = game.rewardOfficers(c.id, [Number(b.dataset.i)]); refreshAll(); showCityPanel(c); if (!ok) game.log(game.lastRewardWhy ?? '포상할 수 없습니다', true); }); // 褒賞
     p.querySelectorAll('.cmd-office').forEach(sel => sel.onchange = () => { const ok = game.appointOffice(c.id, Number(sel.dataset.i), Number(sel.value)); refreshAll(); showCityPanel(c); if (!ok) { game.log(game.lastOfficeWhy ?? '임명할 수 없습니다', true); refreshLog(); } }); // 官職
     p.querySelectorAll('.cmd-rec').forEach(b => b.onclick = () => { game.recruitOfficer(c.id, Number(b.dataset.i)); refreshAll(); showCityPanel(c); if (game.pendingDebate) showDebate(); }); // R11: 등용 실패 시 설전 발동
+    p.querySelectorAll('.cmd-rel').forEach(b => b.onclick = () => { game.releaseCaptive(c.id, Number(b.dataset.i)); refreshAll(); showCityPanel(c); }); // R111: 포로 석방
   }
   const join = $('cmd-join');
   if (join) join.onclick = () => {
@@ -870,7 +882,7 @@ async function boot() {
       window.__game = g; // 테스트 훅
       Object.assign(g, { year: d.year, month: d.month, dan: d.dan, turn: d.turn, cities: d.cities, forces: d.forces, units: d.units, nextUnitId: d.nextUnitId, fieldFacs: d.fieldFacs ?? [], nextFacId: d.nextFacId ?? 1, playerForce: d.playerForce, delegated: d.delegated, logs: d.logs, deadAck: d.deadAck, chronicle: d.chronicle ?? [], over: d.over ?? false, unified: d.unified ?? d.over ?? false, econGraceUntil: d.econGraceUntil ?? null, econV: d.econV ?? 1 }); // R14: over로 저장된 통일 세이브 호환 / 병량 유예 복원 / econV 없는 구 저장은 구 경제 규칙 보존
       g.cityById = {}; g.cities.forEach(c => g.cityById[c.id] = c);
-      for (const c of g.cities) c.officers = [...new Set(c.officers ?? [])]; // 레거시 세이브 중복 무장 정리
+      for (const c of g.cities) { c.officers = [...new Set(c.officers ?? [])]; c.captives = c.captives ?? []; } // 레거시 세이브 중복 무장 정리 / R111: 억류 명단 필드 호환 (정합은 _reconcileOfficerRosters)
       g.diplo = d.diplo ?? {};
       g.itemPool = d.itemPool ?? Object.values(ITEMS).map(i => i.id).filter(id => !Object.values(g.officers).some(o => (o.state.items ?? []).includes(id)));
       // 강제 마이그레이션 없음: 구 저장은 econV 1 규칙 그대로 진행 (향후 전환 선택 UI는 별도)
