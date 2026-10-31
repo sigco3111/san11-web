@@ -2583,3 +2583,33 @@ console.log('sample logs:'); for (const l of g.logs.slice(-8)) console.log(' ', 
   for (const t of ["dataset.view = 'city'", "dataset.view = 'unit'", "dataset.view='dispatch'", "dataset.view='tech'", "dataset.view='trade'", "dataset.view='diplo'", "dataset.view='advisor'", "dataset.view='legion'"]) if (!src.includes(t)) fail('뷰 태그 누락: ' + t);
   console.log('R108 도시 패널 턴 갱신 게이트 PASS (뷰 태그 8종·스크롤 보존)');
       }
+
+// === R109: 위임 자동 중단 게이트 — 포위·함락 위기(에피소드당 1회), 외교 제안 5종, 세력 멸망 시 pendingStop (설계안 184행) ===
+{
+  const fail = m => { console.log('FAIL: R109 ' + m); process.exit(1); };
+  const src = readFileSync('js/game.js', 'utf8');
+  if (!src.includes('_delegateStop(reason)')) fail('_delegateStop 정의 없음');
+  for (const t of ['친선 사절 도착', '동맹 제의 도착', '정전 요청 도착', '항복 권고 도착', '원군 요청 도착']) if (!src.includes(t)) fail('외교 스톱 누락: ' + t);
+  if (!src.includes('_siegeWatch')) fail('포위 감시 없음');
+  if (!/멸망했습니다!`, true\);\n        this\._delegateStop/.test(src)) fail('멸망 스톱 없음');
+  // 기능: 위임 중 적이 내 도시 4 이내 접근 → pendingStop, 같은 에피소드는 재정지 없음
+  const g9 = new Game(JSON.parse(JSON.stringify(scen)), officers, {}, 0);
+  g9.delegated = true;
+  const pc = g9.cities.find(c => c.force === g9.playerForce);
+  const other = g9.aliveForces().find(f => f.id !== g9.playerForce);
+  g9.units.push({ id: 'w109', force: other.id, officers: [], troops: 9000, type: 'spear', x: pc.lon + 2, z: pc.lat, path: [], tx: null, tz: null, targetCity: null, label: '위협시험 9k', qi: 100, conf: 0 });
+  g9.endTurn(aiThink);
+  if (!g9.pendingStop) fail('포위 위기 자동 정지 미발동');
+  const u9 = g9.units.find(u => u.id === 'w109');
+  g9.pendingStop = false;
+  if (u9 && Math.hypot(u9.x - pc.lon, u9.z - pc.lat) <= 4) { g9.endTurn(aiThink); if (g9.pendingStop) fail('같은 에피소드 재정지 발생'); }
+  // 기능: AI→플레이어 친선 사절 → pendingStop
+  const g10 = new Game(JSON.parse(JSON.stringify(scen)), officers, {}, 0);
+  g10.delegated = true;
+  const of10 = g10.aliveForces().find(f => f.id !== g10.playerForce);
+  const oc10 = g10.cities.find(c => c.force === of10.id);
+  oc10.gold = Math.max(oc10.gold, 500); of10.ap = 255;
+  if (!g10.envoy(of10.id, g10.playerForce, oc10.id)) fail('사절 집행 실패(전제 조건)');
+  if (!g10.pendingStop) fail('외교 제안 자동 정지 미발동');
+  console.log('R109 위임 자동 중단 게이트 PASS (포위 에피소드·외교 제안·멸망)');
+      }
