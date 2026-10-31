@@ -854,7 +854,7 @@ export class Game {
     const ship = SHIP_TYPES.has(u.type);
     const st = 0.15, lon0 = 100, lat0 = 20, W = 226, H = 146;
     const ci = x => Math.round((x - lon0) / st), cj = z => Math.round((z - lat0) / st);
-    const pass = (i, j) => ship ? isWaterAt(lon0 + i * st, lat0 + j * st) : !isSeaAt(lon0 + i * st, lat0 + j * st);
+    const pass = (i, j) => ship ? this._rw(lon0 + i * st, lat0 + j * st) : !isSeaAt(lon0 + i * st, lat0 + j * st); // R68: 수군 중간 경로도 렌더링된 수로만 — 격자 수로(isWaterAt)는 화면상 육지를 지나는 항로를 만들어 라이브에서 좌초했음
     const art = !!this.forces[u.force]?.arts?.['난소행군'];
     const stepCost = (i, j) => { if (ship) return 1; const x = lon0 + i * st, z = lat0 + j * st; if (!isRiverAt(x, z)) return this.passAt(x, z) ? (art ? 1.3 : 2.2) : 1; return art ? 1.25 : (isFordAt(x, z) ? 1.7 : 2.9); }; // R23: 여울 우선 도하, 난소행군 시 완화
     const snap = (i, j) => { // 가장 가까운 통과 가능 셀 (반경 8)
@@ -908,7 +908,7 @@ export class Game {
     while (cur) { cells.push(cur); cur = came.get(kk(cur[0], cur[1])); }
     cells.reverse();
     const pts = [];
-    for (let k = 4; k < cells.length; k += 5) pts.push([lon0 + cells[k][0] * st, lat0 + cells[k][1] * st]);
+    for (let k = ship ? 1 : 4; k < cells.length; k += ship ? 1 : 5) pts.push([lon0 + cells[k][0] * st, lat0 + cells[k][1] * st]); // R68: 수군은 매 셀 경유 — 경유지 사이 직선 보간이 렌더 육지를 가로지르지 않게
     if (ship) pts.push([lon0 + tc[0] * st, lat0 + tc[1] * st]); // R64: 수군 목표는 연안 수로 셀 — 도시 좌표(육지)로 직행하면 좌초
     else pts.push([tx, tz]);
     return pts;
