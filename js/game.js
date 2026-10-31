@@ -342,6 +342,7 @@ export class Game {
       }
       if (!TRAPS[f.type]) for (const v of this.units) { // 적 육군이 시설을 공격 (병력의 2% 상당 소모)
         if (v.force === f.force || SHIP_TYPES.has(v.type) || v._facAtkTurn === this.turn || Math.hypot(v.x - f.x, v.z - f.z) > 1.2) continue; // _facAtkTurn: 직접 공격 부대는 자동 소모 중복 제외 (R71)
+        if (v.force >= 0 && f.force != null && f.force >= 0 && this.isPeace(v.force, f.force)) continue; // R72: 자동 소모도 동맹·정전 중 피해 0 (직접 공격과 공통 평화 판정)
         f.hp -= Math.max(10, Math.round(v.troops * 0.02));
       }
       if (TRAPS[f.type]) { // R28: 함정 발동 (1회)
@@ -935,9 +936,12 @@ export class Game {
     if (!u || !f) return false;
     if (f.force === u.force) return false;
     if (f.force != null && f.force >= 0 && u.force >= 0 && this.isPeace(u.force, f.force)) { this.log(`${josa(this.forceName(f.force), ['은','는'])} 동맹·정전 중이라 공격할 수 없습니다`, u.force === this.playerForce); return false; }
-    if (SHIP_TYPES.has(u.type)) { this.log(`수군은 육상 시설을 공격할 수 없습니다`, u.force === this.playerForce); return false; }
     const path = this.findPath(u, f.x, f.z);
     if (!path) { this.log(`${josa(u.label, ['은','는'])} ${f.type}에 이르는 노선이 없어 공격할 수 없습니다`, u.force === this.playerForce); return false; }
+    if (SHIP_TYPES.has(u.type)) { // R72: 수군은 연안 시설만 — 경로 종점(연안 수로 셀)이 사거리 1.6 내여야 함
+      const ep = path[path.length - 1];
+      if (Math.hypot(ep[0] - f.x, ep[1] - f.z) > 1.6) { this.log(`${josa(u.label, ['은','는'])} 수로가 닿지 않아 ${josa(f.type, ['을','를'])} 공격할 수 없습니다`, u.force === this.playerForce); return false; }
+    }
     u.targetFac = facId; u.targetCity = null; u.tx = f.x; u.tz = f.z; u.path = path;
     return true;
   }
@@ -1178,8 +1182,12 @@ export class Game {
     if (u.targetFac != null) { // R71: 야전 시설 직접 공격 — 매뉴얼(군사시설은 공격 대상, 내구 0이면 파괴) + 설계(충거 파쇄: 시설 대데미지)
       const f = (this.fieldFacs ?? []).find(f => f.id === u.targetFac);
       if (!f || f.force === u.force) { u.targetFac = null; u.tx = null; }
+      else if (f.force != null && f.force >= 0 && u.force >= 0 && this.isPeace(u.force, f.force)) { // R72: 명령 후 동맹·정전 체결 시 공격 시점에 재검사
+        this.log(`${josa(u.label, ['은','는'])} 동맹·정전 중이라 공격을 중단합니다`, u.force === this.playerForce);
+        u.targetFac = null; u.tx = null;
+      }
       else {
-        const reach = u.type === 'catapult' ? 3.0 : 1.2; // 투석기만 원거리 (설계: 3칸 투석), 나머지 인접
+        const reach = SHIP_TYPES.has(u.type) ? 1.6 : u.type === 'catapult' ? 3.0 : 1.2; // R72: 수군은 수상 공성 사거리(R64, 자체 수치)로 연안 시설 타격 — 매뉴얼: 수군 전법 대상에 建物(군사시설) 포함 / 투석기 3칸 (설계), 나머지 인접
         if (Math.hypot(f.x - u.x, f.z - u.z) <= reach) {
           const dmg = Math.max(10, Math.round(u.troops * 0.02)) * (SIEGE_TYPES.has(u.type) ? 3 : 1); // 병기 ×3 (설계 충거 파쇄), 수치 자체
           f.hp -= dmg; u._facAtkTurn = this.turn;
