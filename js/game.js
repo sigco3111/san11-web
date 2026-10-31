@@ -281,6 +281,7 @@ export class Game {
   canUse(fid, ap) { return this.forces[fid].ap >= ap; }
   // === 특기·적성 보정 (자체 수치) ===
   unitHasSkill(u, sk) { return u.officers.some(i => this.officers[i]?.skill === sk); }
+  forceHasSkill(fid, sk) { return Object.values(this.officers).some(o => o.state?.force === fid && o.skill === sk); } // 세력 내 특기 보유 (연구 참여 추상화)
   cityHasSkill(c, sk) { return c.officers.some(i => this.officers[i]?.skill === sk); }
   aptMult(u) { // 병종 적성 공격 보정: C 0.9 / B 1.0 / A 1.1 / S 1.2
     if (u.type === 'sword') return 1;
@@ -419,13 +420,15 @@ export class Game {
   passAt(x, z) { return !!this.mountainFn?.(x, z); } // 간도: 렌더 고지대 셀과 동일(map3d.mountainAtLL 연결, 저장 없음)
   passMult(u) { return this.forces[u.force]?.arts?.['난소행군'] ? 0.9 : 0.6; } // 간도 통과 속도 (자체 잠정값, 난소행군이면 완화)
   riverMult(u) { if (this.forces[u.force]?.arts?.['난소행군']) return 0.8; return isFordAt(u.x, u.z) ? 0.6 : 0.35; }
+  researchGold(fid, base) { return this.forceHasSkill(fid, '지도') ? Math.round(base / 2) : base; } // 특기 「지도」 보유 무장이 있으면 연구 비용 반액 (공식 매뉴얼 기교 연구 항목)
   researchArt(fid, name) { // R23: 개별 기교 연구 (기교P+금, 1회)
     const f = this.forces[fid], a = ARTS[name];
     if (!f?.alive || !a || f.arts?.[name]) return false;
+    const gold = this.researchGold(fid, a.gold);
     const cap = this.forceCities(fid).sort((x, y) => y.gold - x.gold)[0];
-    if ((f.techP ?? 0) < a.p || !cap || cap.gold < a.gold) return false;
-    f.arts = f.arts ?? {}; f.techP -= a.p; cap.gold -= a.gold; f.arts[name] = true;
-    this.log(`【기교】${this.forceName(fid)} 「${name}」 연구 완료 (기교P ${a.p}·금 ${a.gold} 소비)`, fid === this.playerForce);
+    if ((f.techP ?? 0) < a.p || !cap || cap.gold < gold) return false;
+    f.arts = f.arts ?? {}; f.techP -= a.p; cap.gold -= gold; f.arts[name] = true;
+    this.log(`【기교】${this.forceName(fid)} 「${name}」 연구 완료 (기교P ${a.p}·금 ${gold} 소비${gold < a.gold ? ', 지도 반액' : ''})`, fid === this.playerForce);
     return true;
   }
   researchNextArt(fid) { for (const n of Object.keys(ARTS)) if (this.researchArt(fid, n)) return true; return false; } // R30: AI 개별 기교 연구
@@ -433,11 +436,12 @@ export class Game {
     const f = this.forces[fid];
     if (!f?.alive || !TECH_BRANCHES.includes(b)) return false;
     const lv = this.techLv(fid, b); if (lv >= 4) return false;
+    const gold = this.researchGold(fid, TECH_GOLD[lv]);
     const cap = this.forceCities(fid).sort((x, y) => y.gold - x.gold)[0];
-    if ((f.techP ?? 0) < TECH_P[lv] || !cap || cap.gold < TECH_GOLD[lv]) return false;
+    if ((f.techP ?? 0) < TECH_P[lv] || !cap || cap.gold < gold) return false;
     f.techs = f.techs ?? {}; // 레거시 세이브 호환
-    f.techP -= TECH_P[lv]; cap.gold -= TECH_GOLD[lv]; f.techs[b] = lv + 1;
-    this.log(`【기교】${this.forceName(fid)} ${b} ${lv + 1}단계 연구 완료 (기교P ${TECH_P[lv]}·금 ${TECH_GOLD[lv]} 소비)`, fid === this.playerForce);
+    f.techP -= TECH_P[lv]; cap.gold -= gold; f.techs[b] = lv + 1;
+    this.log(`【기교】${this.forceName(fid)} ${b} ${lv + 1}단계 연구 완료 (기교P ${TECH_P[lv]}·금 ${gold} 소비${gold < TECH_GOLD[lv] ? ', 지도 반액' : ''})`, fid === this.playerForce);
     return true;
   }
 // === 공적·충성·관작 ===
