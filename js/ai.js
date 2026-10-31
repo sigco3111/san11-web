@@ -1,3 +1,4 @@
+import { SHIP_TYPES } from './game.js?v=r61';
 // 세력 AI — 위임 시 플레이어 세력도 이 AI가 운영 (위임·샌드박스의 실질 주체)
 export function aiThink(game, fid, legion = null) { // legion 지정 시 그 군단 소속 도시만 운영 (도독 위임)
   const f = game.forces[fid];
@@ -45,6 +46,25 @@ export function aiThink(game, fid, legion = null) { // legion 지정 시 그 군
     if (f.ap < 30 + apReserve) break;
     const avgNbr = cities.reduce((s,x) => s + x.troops, 0) / cities.length;
     if (c.troops < Math.min(avgNbr, 12000) && c.gold > 500 && c.food > 3000) game.recruit(c.id);
+  }
+  // 2.6) 야전 시설: 위협받는 도시 근처의 대기 부대가 함정·진/채 건설 (설계 군사시설·함정 항목 — AI도 같은 규칙·비용 사용)
+  {
+    const isEnemy = (of) => of !== fid && of >= 0 && !(game.isAllied(fid, of) || game.isPeace(fid, of));
+    outer:
+    for (const c of cities) {
+      const foes = game.units.filter(v => isEnemy(v.force) && !SHIP_TYPES.has(v.type) && Math.hypot(v.x - c.lon, v.z - c.lat) < 6);
+      if (!foes.length) continue;
+      const myFacs = (game.fieldFacs ?? []).filter(x => x.force === fid && Math.hypot(x.x - c.lon, x.z - c.lat) < 3);
+      const hasSupport = myFacs.some(x => x.type === '진' || x.type === '채' || x.type === '성채');
+      const idle = game.units.find(u => u.force === fid && !SHIP_TYPES.has(u.type) && !u.building && u.tx == null && u.troops >= 1500 && Math.hypot(u.x - c.lon, u.z - c.lat) < 3.5);
+      if (!idle) continue;
+      // 적이 가까우면 함정부터 (도시 골드로 비용 지불 — 플레이어와 동일 규칙)
+      const near = foes.some(v => Math.hypot(v.x - idle.x, v.z - idle.z) < 3);
+      const trapNear = myFacs.some(x => (x.type === '낙석' || x.type === '불화살함정') && foes.some(v => Math.hypot(v.x - x.x, v.z - x.z) < 2.5));
+      const type = near && !trapNear ? (c.gold >= 120 ? '불화살함정' : '낙석') : (!hasSupport ? (c.gold >= 350 ? '채' : '진') : null);
+      if (!type) continue;
+      if (game.buildField(idle.id, type)) break outer;
+    }
   }
   // 2.7) 외교: 친선 사절·동맹 제의·정전 요청을 같은 조건·비용으로 사용
   if (!legion) {
