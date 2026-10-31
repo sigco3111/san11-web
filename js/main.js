@@ -1,12 +1,12 @@
 // 진입점: 화면 전환·UI·지도 연결
-import { Map3D, toWorld } from './map3d.js?v=r73';
-import { Game, SAVE_KEY, RULES, forceColor, UNIT_TYPES, ARTS, FIELD_FACS, TRAPS, SHIP_TYPES, josa, josaRo, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL, AB_PICK } from './game.js?v=r73';
-import { aiThink } from './ai.js?v=r73';
+import { Map3D, toWorld } from './map3d.js?v=r74';
+import { Game, SAVE_KEY, RULES, forceColor, UNIT_TYPES, ARTS, FIELD_FACS, TRAPS, SHIP_TYPES, TAC_SHIP_OK, josa, josaRo, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL, AB_PICK } from './game.js?v=r74';
+import { aiThink } from './ai.js?v=r74';
 
 const $ = id => document.getElementById(id);
 let DATA = null, game = null, map = null, selectedUnit = null, autoTimer = null, pendingFire = null; // R15: 직접 전법·계략 대기
 
-const BUILD_ID = 'r73'; // 빌드 ID (index.html의 meta[name=build]와 같아야 함 - 오래된 캐시된 index와 새 스크립트의 혼합 감지)
+const BUILD_ID = 'r74'; // 빌드 ID (index.html의 meta[name=build]와 같아야 함 - 오래된 캐시된 index와 새 스크립트의 혼합 감지)
 function checkBuildSkew() {
   const idx = document.querySelector('meta[name="build"]')?.content;
   if (idx === BUILD_ID) { sessionStorage.removeItem('cheonha-xi-web.skew'); return; } // 일치하면 재시도 표식 해제
@@ -19,7 +19,7 @@ checkBuildSkew();
 async function loadData() {
   const [officers, skills, portraits, s184, s190, s251] = await Promise.all(
     ['data/officers670.json','data/skills.json','data/portraits.json','data/scenario-184.json','data/scenario-190.json','data/scenario-251.json']
-      .map(u => fetch(u + '?v=r73').then(r => r.json())));
+      .map(u => fetch(u + '?v=r74').then(r => r.json())));
   const byIdx = {};
   for (const o of officers) byIdx[o.idx] = o;
   DATA = { officers: byIdx, skills, portraits, scenarios: { '184': s184, '190': s190, '251': s251 } };
@@ -333,6 +333,17 @@ function targetHint(pf) { // 발동 실패 안내: 전법·계략별 실제 대�
   if (pf.kind === 'calm') return '진정은 사거리 안의 아군 부대에만 쓸 수 있습니다';
   return '이 계략은 사거리 안의 적 부대에만 쓸 수 있습니다 (도시 대상 불가)';
 }
+function tacticFailWhy(pf, hit) { // R74: 발동 실패 사유를 대상 종류별로 구체 안내 (선박 전용·선박 불가 구분)
+  if (pf.kind === 'tactic' && hit && hit.type === 'unit') {
+    const u = game.units.find(x => x.id === pf.uid), d = game.units.find(x => x.id === hit.id);
+    if (u && d && SHIP_TYPES.has(d.type)) {
+      if (pf.tid === 'ram') return '격돌은 적 선박에만 사용할 수 있습니다'; // 매뉴얼 대상표: 激突 対象 船
+      if (!TAC_SHIP_OK.has(u.type)) return '이 전법은 육상 부대·병기에만 사용할 수 있습니다 (선박 대상 불가)'; // 매뉴얼 대상표: 창·극·기병 部隊・兵器, 목수 방사 部隊・兵器・建物・罠
+    }
+  }
+  if (pf.kind === 'tactic' && hit && hit.type === 'city') return '도시는 기본 공격으로 공략합니다. 전법은 부대를 대상으로 하며, 병기 부대만 도시에 쓸 수 있습니다.';
+  return targetHint(pf);
+}
 function onPick(nx, ny) {
   if (!game || game.over) return;
   const cmdMode = pendingFire == null && selectedUnit != null && !game.delegated && !!game.units.find(u => u.id === selectedUnit && u.force === game.playerForce); // R72c: 명령 모드 = 플레이어가 명령 가능한 아군 부대 선택 중일 때만 (적 부대 조회 중에는 목표 우선 아님)
@@ -345,7 +356,7 @@ function onPick(nx, ny) {
     else if (hit && hit.type === 'fac') ok = pf.kind === 'tactic' && game.fireTactic(pf.uid, { type: 'fac', id: hit.id }, pf.tid); // R73: 시설 대상 전법 (계략의 시설 대상은 별도 검토)
     selectedUnit = null;
     if (ok) { refreshAll(); if (game.units.find(x => x.id === pf.uid)) { selectedUnit = pf.uid; showUnitPanel(pf.uid); } else $('panel').classList.add('hidden'); }
-    else { game.log(pf.kind === 'tactic' && hit && hit.type === 'city' ? '도시는 기본 공격으로 공략합니다. 전법은 부대를 대상으로 하며, 병기 부대만 도시에 쓸 수 있습니다.' : targetHint(pf), true); refreshLog(); showUnitPanel(pf.uid); }
+    else { game.log(tacticFailWhy(pf, hit), true); refreshLog(); showUnitPanel(pf.uid); } // R74: 대상 종류별 구체 사유
     return;
   }
   if (!hit) { $('panel').classList.add('hidden'); selectedUnit = null; return; }
