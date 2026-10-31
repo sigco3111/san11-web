@@ -1,12 +1,12 @@
 // 진입점: 화면 전환·UI·지도 연결
-import { Map3D, toWorld } from './map3d.js?v=r99';
-import { Game, SAVE_KEY, RULES, forceColor, UNIT_TYPES, ARTS, OFFICES, restoreOfficer, FIELD_FACS, TRAPS, SHIP_TYPES, TAC_SHIP_OK, josa, josaRo, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL, AB_PICK } from './game.js?v=r99';
-import { aiThink } from './ai.js?v=r99';
+import { Map3D, toWorld } from './map3d.js?v=r100';
+import { Game, SAVE_KEY, RULES, forceColor, UNIT_TYPES, ARTS, OFFICES, restoreOfficer, FIELD_FACS, TRAPS, SHIP_TYPES, TAC_SHIP_OK, josa, josaRo, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL, AB_PICK } from './game.js?v=r100';
+import { aiThink } from './ai.js?v=r100';
 
 const $ = id => document.getElementById(id);
 let DATA = null, game = null, map = null, selectedUnit = null, autoTimer = null, pendingFire = null; // R15: 직접 전법·계략 대기
 
-const BUILD_ID = 'r99'; // 빌드 ID (index.html의 meta[name=build]와 같아야 함 - 오래된 캐시된 index와 새 스크립트의 혼합 감지)
+const BUILD_ID = 'r100'; // 빌드 ID (index.html의 meta[name=build]와 같아야 함 - 오래된 캐시된 index와 새 스크립트의 혼합 감지)
 function checkBuildSkew() {
   const idx = document.querySelector('meta[name="build"]')?.content;
   if (idx === BUILD_ID) { sessionStorage.removeItem('cheonha-xi-web.skew'); return; } // 일치하면 재시도 표식 해제
@@ -19,7 +19,7 @@ checkBuildSkew();
 async function loadData() {
   const [officers, skills, portraits, s184, s190, s251] = await Promise.all(
     ['data/officers670.json','data/skills.json','data/portraits.json','data/scenario-184.json','data/scenario-190.json','data/scenario-251.json']
-      .map(u => fetch(u + '?v=r99').then(r => r.json())));
+      .map(u => fetch(u + '?v=r100').then(r => r.json())));
   const byIdx = {};
   for (const o of officers) byIdx[o.idx] = o;
   DATA = { officers: byIdx, skills, portraits, scenarios: { '184': s184, '190': s190, '251': s251 } };
@@ -307,7 +307,7 @@ function showDashboard() { // R97→R99: 세력 현황 대시보드 — 카드�
       body += `<p style="margin:2px 0;color:#aa9;font-size:12px">기교P ${fmt(s.techP)} · 습득 기교 ${s.arts}종</p>`;
       const net = s.goldIn - s.sal; // R99: 수입·지출·순수지를 분리 표기 — +금/봉록 나열이 순수지인지 모호하다는 지적 반영
       body += sec('월 예상 수지 (정산 산식 기준 예상치)',
-        `<p style="margin:2px 0">금 수입 +${fmt(s.goldIn)} − 봉록 지출 −${fmt(s.sal)} → <b style="color:${net >= 0 ? '#8d6' : '#e66'}">순수지 ${net >= 0 ? '+' : ''}${fmt(net)}</b></p>` +
+        `<p style="margin:2px 0">금 수입 ${fmt(s.goldIn)} − 봉록 지출 ${fmt(s.sal)} = <b style="color:${net >= 0 ? '#8d6' : '#e66'}">순수지 ${net >= 0 ? '+' : ''}${fmt(net)}</b></p>` +
         `<p style="margin:2px 0;color:#aa9;font-size:12px">군량 수입은 1·4·7·10월에만 입고(분기), 소비는 매월. 실제 정산과 같은 산식으로 계산한 예상치이며, 산출 시점 사이의 AI·전투 변동은 반영되지 않음.</p>`);
       const warns = [];
       for (const r of ov.cities) {
@@ -327,7 +327,7 @@ function showDashboard() { // R97→R99: 세력 현황 대시보드 — 카드�
       for (const r of ov.cities) for (const b of r.building) blds.push(`${r.name}: ${b.type} ${b.progress}/${b.turns ?? '?'}`);
       for (const f of ov.fieldBuilding) blds.push(`야전: ${f.type} (남은 ${f.left}턴)`);
       body += sec('연구 / 건설', research + (blds.length ? blds.map(b => `<p style="margin:2px 0">${b}</p>`).join('') : none('건설 중인 시설 없음')));
-      body += sec('도시', ov.cities.length ? ov.cities.map(r => `<p style="margin:2px 0"><b>${r.name}</b> — 금 ${fmt(r.gold)} · 군량 ${fmt(r.food)} · 병 ${fmt(r.troops)} · 무장 ${r.officers} <span style="color:#aa9">(금 +${fmt(r.goldIn)} / 봉록 −${fmt(r.sal)} · 군량 +${fmt(r.foodIn)} / 소비 −${fmt(r.foodNeed)})</span></p>`).join('') : none('보유 도시 없음'));
+      body += sec('도시', ov.cities.length ? ov.cities.map(r => `<p style="margin:2px 0"><b>${r.name}</b> — 금 ${fmt(r.gold)} · 군량 ${fmt(r.food)} · 병 ${fmt(r.troops)} · 무장 ${r.officers} <span style="color:#aa9">(금 수입 ${fmt(r.goldIn)} − 봉록 ${fmt(r.sal)} · 군량 수입 ${fmt(r.foodIn)} − 소비 ${fmt(r.foodNeed)})</span></p>`).join('') : none('보유 도시 없음'));
     } else {
       const rows = game.forceComparison();
       const th = 'style="padding:3px 8px;text-align:right;white-space:nowrap"', thl = 'style="padding:3px 8px;text-align:left;white-space:nowrap"';
