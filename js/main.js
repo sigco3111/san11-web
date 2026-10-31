@@ -1,12 +1,12 @@
 // 진입점: 화면 전환·UI·지도 연결
-import { Map3D, toWorld } from './map3d.js?v=r113';
-import { Game, SAVE_KEY, RULES, forceColor, UNIT_TYPES, ARTS, OFFICES, restoreOfficer, FIELD_FACS, TRAPS, SHIP_TYPES, TAC_SHIP_OK, josa, josaRo, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL, AB_PICK } from './game.js?v=r113';
-import { aiThink } from './ai.js?v=r113';
+import { Map3D, toWorld } from './map3d.js?v=r114';
+import { Game, SAVE_KEY, RULES, forceColor, UNIT_TYPES, ARTS, OFFICES, restoreOfficer, FIELD_FACS, TRAPS, SHIP_TYPES, TAC_SHIP_OK, josa, josaRo, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL, AB_PICK } from './game.js?v=r114';
+import { aiThink } from './ai.js?v=r114';
 
 const $ = id => document.getElementById(id);
 let DATA = null, game = null, map = null, selectedUnit = null, autoTimer = null, pendingFire = null; // R15: 직접 전법·계략 대기
 
-const BUILD_ID = 'r113'; // 빌드 ID (index.html의 meta[name=build]와 같아야 함 - 오래된 캐시된 index와 새 스크립트의 혼합 감지)
+const BUILD_ID = 'r114'; // 빌드 ID (index.html의 meta[name=build]와 같아야 함 - 오래된 캐시된 index와 새 스크립트의 혼합 감지)
 function checkBuildSkew() {
   const idx = document.querySelector('meta[name="build"]')?.content;
   if (idx === BUILD_ID) { sessionStorage.removeItem('cheonha-xi-web.skew'); return; } // 일치하면 재시도 표식 해제
@@ -19,7 +19,7 @@ checkBuildSkew();
 async function loadData() {
   const [officers, skills, portraits, s184, s190, s251] = await Promise.all(
     ['data/officers670.json','data/skills.json','data/portraits.json','data/scenario-184.json','data/scenario-190.json','data/scenario-251.json']
-      .map(u => fetch(u + '?v=r113').then(r => r.json())));
+      .map(u => fetch(u + '?v=r114').then(r => r.json())));
   const byIdx = {};
   for (const o of officers) byIdx[o.idx] = o;
   DATA = { officers: byIdx, skills, portraits, scenarios: { '184': s184, '190': s190, '251': s251 } };
@@ -827,6 +827,7 @@ function showUnitPanel(uid) {
   $('panel').dataset.view = 'unit';
   const u = game.units.find(x => x.id === uid); if (!u) return;
   const p = $('panel'); p.classList.remove('hidden');
+  // R112: 시설 소화 (매뉴얼 消火) — 템플릿 내 up-douse-f 행 참조
   const mine = u.force === game.playerForce && !game.delegated;
   p.innerHTML = `<h3>${u.label} (${UNIT_TYPES[u.type].name})</h3>
     <p>소속: ${game.forceName(u.force)} · 병력 ${u.troops.toLocaleString()}<br>
@@ -836,7 +837,7 @@ function showUnitPanel(uid) {
     ${mine && game.canAmbush(u) && game.ambushTarget(u) && (u._stratTurn ?? -1) !== game.turn && (u.qi ?? 100) >= 10 && u.officers.some(i => (DATA.officers[i]?.int ?? 0) >= 60) ? '<p><button class="cmd" id="up-ambush">계략 복병 (기력 10, 숲에서 인접 적 기습)</button></p>' : ''}
     ${mine && (u.burn ?? 0) > 0 && (u._stratTurn ?? -1) !== game.turn && (u.qi ?? 100) >= 10 && u.officers.some(i => (DATA.officers[i]?.int ?? 0) >= 60) ? '<p style="color:#ff9a4a">불이 붙었습니다 (' + u.burn + '턴, 턴당 병력 -4%) <button class="cmd" id="up-douse">계략 소화 (기력 10)</button></p>' : ''}
     ${mine && (u._stratTurn ?? -1) !== game.turn && (u.qi ?? 100) >= 10 && u.officers.some(i => (DATA.officers[i]?.int ?? 0) >= 60) ? (() => { const bc = game.cities.find(c => c.force === u.force && (c.burn ?? 0) > 0 && Math.hypot(c.lon - u.x, c.lat - u.z) < 2.2); return bc ? `<p style="color:#ff9a4a">${bc.name_ko}에 불이 붙었습니다 <button class="cmd" id="up-douse-c" data-c="${bc.id}">계략 소화 — ${bc.name_ko} (기력 10)</button></p>` : ''; })() : ''}
-    ${mine && (u._stratTurn ?? -1) !== game.turn && (u.qi ?? 100) >= 10 && u.officers.some(i => (DATA.officers[i]?.int ?? 0) >= 60) ? (() => { const bf = (game.fieldFacs ?? []).find(f => (f.burn ?? 0) > 0 && Math.hypot(f.x - u.x, f.z - u.z) < 2.2); return bf ? `<p style="color:#ff9a4a">${bf.type}에 불이 붙었습니다 <button class="cmd" id="up-douse-f" data-f="${bf.id}">계략 소화 — ${bf.type} (기력 10)</button></p>` : ''; })() : ''} // R112: 시설 소화 (매뉴얼 消火)
+    ${mine && (u._stratTurn ?? -1) !== game.turn && (u.qi ?? 100) >= 10 && u.officers.some(i => (DATA.officers[i]?.int ?? 0) >= 60) ? (() => { const bf = (game.fieldFacs ?? []).find(f => (f.burn ?? 0) > 0 && Math.hypot(f.x - u.x, f.z - u.z) < 2.2); return bf ? `<p style="color:#ff9a4a">${bf.type}에 불이 붙었습니다 <button class="cmd" id="up-douse-f" data-f="${bf.id}">계략 소화 — ${bf.type} (기력 10)</button></p>` : ''; })() : ''}
     ${mine && (u.conf ?? 0) <= 0 && (u._stratTurn ?? -1) !== game.turn && u.officers.some(i => (DATA.officers[i]?.int ?? 0) >= 75) && (u.qi ?? 100) >= 10 ? '<p><button class="cmd" id="up-fire">계략 화계 (기력 10)</button></p>' : ''}
     ${mine && (u.conf ?? 0) <= 0 && (u._stratTurn ?? -1) !== game.turn && u.officers.some(i => (DATA.officers[i]?.int ?? 0) >= 80) && (u.qi ?? 100) >= 15 ? '<p><button class="cmd" id="up-conf">계략 교란 (기력 15)</button></p>' : ''}
     ${mine && (u.conf ?? 0) <= 0 && (u._stratTurn ?? -1) !== game.turn && u.officers.some(i => (DATA.officers[i]?.int ?? 0) >= 80) && (u.qi ?? 100) >= 15 ? '<button class="cmd" id="up-rumor">계략 위보 (기력 15)</button> <button class="cmd" id="up-calm">계략 진정 (기력 10)</button>' : ''}
