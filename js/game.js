@@ -756,6 +756,7 @@ export class Game {
     const apc = Math.ceil(20 * this.apMult(c, 'diplo')); // R13 외교부
     if (!c || c.force !== fid || !f?.alive || !t?.alive || f.ap < apc || c.gold < 500) return false;
     c.gold -= 500; f.ap -= apc;
+    if (tid === this.playerForce) this._delegateStop(`${this.forceName(fid)}의 친선 사절 도착`); // R109
     const pol = Math.max(50, ...c.officers.map(i => this.officers[i].pol));
     const negotiator = c.officers.some(i => this.officers[i].skill === '논객');
     const gain = Math.round((8 + pol / 10) * (negotiator ? 1.5 : 1));
@@ -771,6 +772,7 @@ export class Game {
     const apc = Math.ceil(30 * this.apMult(c, 'diplo')); // R13 외교부
     if (f.ap < apc) return false;
     c.gold -= 1000; f.ap -= apc;
+    if (tid === this.playerForce) this._delegateStop(`${this.forceName(fid)}의 동맹 제의 도착`); // R109
     const pol = Math.max(50, ...c.officers.map(i => this.officers[i].pol));
     const p = Math.min(0.9, 0.4 + (d.v - 50) / 100 + pol / 300);
     if (Math.random() < p) {
@@ -790,6 +792,7 @@ export class Game {
     const apc = Math.ceil(30 * this.apMult(c, 'diplo')); // R13 외교부
     if (f.ap < apc) return false;
     c.gold -= 2000; f.ap -= apc;
+    if (tid === this.playerForce) this._delegateStop(`${this.forceName(fid)}의 정전 요청 도착`); // R109
     const pol = Math.max(50, ...c.officers.map(i => this.officers[i].pol));
     if (Math.random() < Math.min(0.8, 0.3 + pol / 300 + d.v / 200)) {
       d.truceUntil = this.turn + 12; // 정전 12턴간 양측 공격 금지 (자체 수치)
@@ -801,6 +804,11 @@ export class Game {
     this.tryDebate({ kind: 'truce', fid, tid, cityId }); // R11: 결렬 시 설전 발동 가능
     return false;
   }
+  _delegateStop(reason) { // R109: 위임 자동 중단 조건 (설계안 184행 — 내 도시 포위·함락 위기, 외교 제안, 세력 멸망). 자동 진행 루프(main.js)가 pendingStop을 읽어 위임 해제
+    if (!this.delegated || this.over) return;
+    this.pendingStop = true;
+    this.log(`【위임】${reason} — 자동 진행을 멈추고 직접 지휘로 전환합니다`, true);
+  }
   demandSurrender(fid, tid, cityId) { // 항복 권고: 대상 도시 2개 이하, 금 1000·AP 30, 매력 보정 (자체 수치)
     const c = this.cityById[cityId], f = this.forces[c?.force], t = this.forces[tid];
     if (!c || c.force !== fid || !f?.alive || !t?.alive || f.ap < 23 || c.gold < 1000) return false;
@@ -809,6 +817,7 @@ export class Game {
     const apc = Math.ceil(30 * this.apMult(c, 'diplo')); // R13 외교부
     if (f.ap < apc) return false;
     c.gold -= 1000; f.ap -= apc;
+    if (tid === this.playerForce) this._delegateStop(`${this.forceName(fid)}의 항복 권고 도착`); // R109
     const chr = Math.max(50, ...c.officers.map(i => this.officers[i].chr));
     const myN = this.cities.filter(x => x.force === fid).length;
     const p = Math.min(0.5, 0.05 + (chr - 50) / 200 + (myN - tCities.length) * 0.05 + (this.cityHasSkill(c, '귀납') ? 0.1 : 0)); // R17: 귀납 특기 +0.1 (자체 수치)
@@ -833,6 +842,7 @@ export class Game {
     if (!src) return false;
     f.ap -= 20;
     src.troops -= 3000;
+    if (tid === this.playerForce) this._delegateStop(`${this.forceName(fid)}의 원군 요청 도착`); // R109
     const dst = this.cities.filter(x => x.force === fid).sort((a, b) => a.troops - b.troops)[0];
     dst.troops = Math.min(dst.metropolis ? 150000 : 100000, dst.troops + 3000);
     d.aidTurn = this.turn;
@@ -1307,6 +1317,7 @@ export class Game {
       if (!hasCity && !hasUnit) {
         f.alive = false;
         this.log(`【${this.forceName(f.id)}】${josa(this.forceName(f.id), ['이','가']).slice(-1)} 멸망했습니다!`, true);
+        this._delegateStop(`세력 멸망 — 【${this.forceName(f.id)}】`); // R109
         for (const o of this.forceOfficers(f.id)) { // R86: 멸망 시 관직 해임 + 능력 가산 회수 (자체 처리: 관직은 세력 작위에 종속 — 재야가 관직을 유지할 수 없음)
           const st = o.state; st.force = null; st.status = 'free'; st.found = false;
           if (st.office > 0) { for (const [k, v] of Object.entries(st._officeBonus ?? {})) o[k] = Math.max(1, (o[k] ?? 50) - v); st.office = 0; st._officeBonus = null; if (o.__restored) o.__restored.office = {}; }
@@ -1346,6 +1357,17 @@ export class Game {
     if (this.pendingJoin != null && this.forces[this.pendingJoin]?.alive) {
       this.playerForce = this.pendingJoin; this.delegated = false; this.pendingJoin = null;
       this.log(`【${this.forceName(this.playerForce)}】에 참가하여 지휘를 시작합니다.`, true);
+    }
+    // R109: 위임 중 내 도시 포위·함락 위기 감시 (설계안 184행) — 새 위협 에피소드에서만 정지 (같은 적이 계속 근접해 있으면 재정지하지 않아 전선 위임을 방해하지 않음)
+    this._siegeWatch = this._siegeWatch ?? {};
+    if (this.delegated && this.playerForce != null && this.forces[this.playerForce]?.alive) {
+      for (const c of this.cities) {
+        if (c.force !== this.playerForce) continue;
+        const foe = this.units.find(u => u.force !== this.playerForce && (u.force < 0 || !this.isAllied(u.force, this.playerForce)) && Math.hypot(u.x - c.lon, u.z - c.lat) <= 4);
+        if (foe) {
+          if (this._siegeWatch[c.id] !== foe.force) { this._siegeWatch[c.id] = foe.force; this._delegateStop(`${c.name_ko}에 적군(【${this.forceName(foe.force)}】 ${josa(foe.label, ['이','가']).slice(-1)}) 접근 — 포위·함락 위기`); }
+        } else delete this._siegeWatch[c.id];
+      }
     }
     this.autosave();
   }
