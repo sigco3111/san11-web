@@ -2555,3 +2555,21 @@ console.log('sample logs:'); for (const l of g.logs.slice(-8)) console.log(' ', 
   if (/LackMonth\}월 (병량|금) 부족 예상/.test(src)) fail('구 표기(달력 월 오독 가능) 잔존');
   console.log('R104 부족 경고 기간 표기 게이트 PASS');
     }
+
+// === R107: 초상 아틀라스 514 연결 게이트 — map 514건·슬롯 중복 없음·좌표 범위·신규 시트 파일 존재 (최종통과 108 연결) ===
+{
+  const fail = m => { console.log('FAIL: R107 ' + m); process.exit(1); };
+  const pj = JSON.parse(readFileSync('data/portraits.json', 'utf8'));
+  const ents = Object.entries(pj.map);
+  if (ents.length !== 514) fail('map ' + ents.length + '건 != 514');
+  const slots = new Set();
+  for (const [k, v] of ents) {
+    const key = v.join(',');
+    if (slots.has(key)) fail('슬롯 중복 ' + k + ' -> ' + key);
+    slots.add(key);
+    const [sh, c, r] = v;
+    if (!(Number.isInteger(sh) && sh >= 0 && sh <= 9 && Number.isInteger(c) && c >= 0 && c < 8 && Number.isInteger(r) && r >= 0 && r < 8)) fail('좌표 범위 초과 ' + k + ' -> ' + key);
+  }
+  for (const sh of [8, 9]) { try { readFileSync('portraits-atlas/sheet-' + sh + '.jpg'); } catch { fail('sheet-' + sh + '.jpg 없음'); } }
+  console.log('R107 초상 아틀라스 514 연결 게이트 PASS (' + ents.length + '건)');
+      }
