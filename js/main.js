@@ -1,12 +1,12 @@
 // 진입점: 화면 전환·UI·지도 연결
-import { Map3D, toWorld } from './map3d.js?v=r75';
-import { Game, SAVE_KEY, RULES, forceColor, UNIT_TYPES, ARTS, FIELD_FACS, TRAPS, SHIP_TYPES, TAC_SHIP_OK, josa, josaRo, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL, AB_PICK } from './game.js?v=r75';
-import { aiThink } from './ai.js?v=r75';
+import { Map3D, toWorld } from './map3d.js?v=r76';
+import { Game, SAVE_KEY, RULES, forceColor, UNIT_TYPES, ARTS, FIELD_FACS, TRAPS, SHIP_TYPES, TAC_SHIP_OK, josa, josaRo, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL, AB_PICK } from './game.js?v=r76';
+import { aiThink } from './ai.js?v=r76';
 
 const $ = id => document.getElementById(id);
 let DATA = null, game = null, map = null, selectedUnit = null, autoTimer = null, pendingFire = null; // R15: 직접 전법·계략 대기
 
-const BUILD_ID = 'r75'; // 빌드 ID (index.html의 meta[name=build]와 같아야 함 - 오래된 캐시된 index와 새 스크립트의 혼합 감지)
+const BUILD_ID = 'r76'; // 빌드 ID (index.html의 meta[name=build]와 같아야 함 - 오래된 캐시된 index와 새 스크립트의 혼합 감지)
 function checkBuildSkew() {
   const idx = document.querySelector('meta[name="build"]')?.content;
   if (idx === BUILD_ID) { sessionStorage.removeItem('cheonha-xi-web.skew'); return; } // 일치하면 재시도 표식 해제
@@ -19,7 +19,7 @@ checkBuildSkew();
 async function loadData() {
   const [officers, skills, portraits, s184, s190, s251] = await Promise.all(
     ['data/officers670.json','data/skills.json','data/portraits.json','data/scenario-184.json','data/scenario-190.json','data/scenario-251.json']
-      .map(u => fetch(u + '?v=r75').then(r => r.json())));
+      .map(u => fetch(u + '?v=r76').then(r => r.json())));
   const byIdx = {};
   for (const o of officers) byIdx[o.idx] = o;
   DATA = { officers: byIdx, skills, portraits, scenarios: { '184': s184, '190': s190, '251': s251 } };
@@ -329,7 +329,7 @@ function modal(text, buttons) {
 // === 선택·패널 ===
 function targetHint(pf) { // 발동 실패 안내: 전법·계략별 실제 대상 조건
   if (pf.kind === 'tactic') return pf.tid && pf.tid !== 'base' ? '이 전법은 사거리 안의 적 부대에만 쓸 수 있습니다 (도시 대상 불가)' : '대상이 유효하지 않습니다 (사거리 안의 적 부대·도시 가능, 시설은 노병·병기·수군 전법만 가능)'; // R73
-  if (pf.kind === 'fire') return '화계는 사거리 안의 적 부대·도시에 쓸 수 있습니다';
+  if (pf.kind === 'fire') return '화계는 사거리 안의 적 부대·도시·시설에 쓸 수 있습니다'; // R76: 시설 대상 추가 (매뉴얼 火計 対象 施設)
   if (pf.kind === 'calm') return '진정은 사거리 안의 아군 부대에만 쓸 수 있습니다';
   return '이 계략은 사거리 안의 적 부대에만 쓸 수 있습니다 (도시 대상 불가)';
 }
@@ -352,7 +352,7 @@ function onPick(nx, ny) {
     let ok = false;
     if (hit && hit.type === 'unit') ok = pf.kind === 'tactic' ? game.fireTactic(pf.uid, { type: 'unit', id: hit.id }, pf.tid) : game.fireStrat(pf.uid, pf.kind, { type: 'unit', id: hit.id });
     else if (hit && hit.type === 'city') ok = pf.kind === 'tactic' ? game.fireTactic(pf.uid, { type: 'city', id: hit.id }, pf.tid) : game.fireStrat(pf.uid, pf.kind, { type: 'city', id: hit.id });
-    else if (hit && hit.type === 'fac') ok = pf.kind === 'tactic' && game.fireTactic(pf.uid, { type: 'fac', id: hit.id }, pf.tid); // R73: 시설 대상 전법 (계략의 시설 대상은 별도 검토)
+    else if (hit && hit.type === 'fac') ok = pf.kind === 'tactic' ? game.fireTactic(pf.uid, { type: 'fac', id: hit.id }, pf.tid) : pf.kind === 'fire' ? game.fireStrat(pf.uid, 'fire', { type: 'fac', id: hit.id }) : false; // R73: 시설 대상 전법 // R76: 화계 시설 대상
     selectedUnit = null;
     if (ok) { refreshAll(); if (game.units.find(x => x.id === pf.uid)) { selectedUnit = pf.uid; showUnitPanel(pf.uid); } else $('panel').classList.add('hidden'); }
     else { game.log(tacticFailWhy(pf, hit), true); refreshLog(); showUnitPanel(pf.uid); } // R74: 대상 종류별 구체 사유
