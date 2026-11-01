@@ -1,6 +1,6 @@
 // 3D 저폴리 지도 엔진 (Three.js) - 고정 등각 아이소메트릭 + 계단식 지형 + 성곽/숲
 import * as THREE from 'three';
-import { loadGLBAssets, applyEnvironment } from './assets-3d.js?v=r137';
+import { loadGLBAssets, applyEnvironment } from './assets-3d.js?v=r138';
 
 const LON0 = 100, LON1 = 126.5, LAT0 = 21.5, LAT1 = 43;
 export function toWorld(lon, lat) {
@@ -648,6 +648,16 @@ export class Map3D {
         // R136b: 슬롯이 나쁜 위치(비조선소 수상·구릉·인접 성곽 침범)면 같은 각도로 안쪽 반경을 걸어 양호 지점 탐색(최소 r=1.7 — 성곽 벽 바깥 유지). 끝까지 없으면 원위치(best-effort)
         const bad = (x, z) => { const lv = this.levelAtWorld(x, z); return (lv === 0 && !dock) || lv > 1 || nearOther(x, z); };
         if (bad(px, pz)) for (let rr = r - 0.3; rr >= 1.7 && bad(px, pz); rr -= 0.3) { const nx = cf.x + Math.cos(a) * rr, nz = cf.z + Math.sin(a) * rr; if (!bad(nx, nz)) { px = nx; pz = nz; } }
+        // R136c: 방사 탐색 실패(강변 도시처럼 그 각도 전체가 물이거나 인접 성곽 방향 슬롯)면 ±반슬롯 각도 후보를 같은 방식으로 탐색 — 이미 놓은 시설과 0.9 미만 근접은 제외. 끝까지 없으면 원위치(best-effort)
+        if (bad(px, pz)) {
+          const st = 2 * Math.PI / n;
+          outer: for (const dk of [0.5, -0.5, 1, -1, 1.5, -1.5]) {
+            for (let rr = r; rr >= 1.7; rr -= 0.3) {
+              const aa = a + dk * st, nx = cf.x + Math.cos(aa) * rr, nz = cf.z + Math.sin(aa) * rr;
+              if (!bad(nx, nz) && meshes.every(mm => Math.hypot(mm.position.x - nx, mm.position.z - nz) >= 0.9)) { px = nx; pz = nz; break outer; }
+            }
+          }
+        }
         const m = this._cityFacModel(f.type, f.done);
         m.position.set(px, Math.max(this.levelAtWorld(px, pz) * STEP, WATER_Y + 0.2), pz);
         this.unitGroup.add(m); meshes.push(m);
