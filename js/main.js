@@ -346,10 +346,10 @@ function showDashboard() { // R97→R99: 세력 현황 대시보드 — 카드�
     let body = '';
     if (tab === 'my') {
       const ov = game.forceOverview(game.playerForce), s = ov.summary;
-      const card = (label, val) => `<div style="flex:1;min-width:84px;background:#2a251d;border:1px solid #4a4132;border-radius:6px;padding:6px 4px;text-align:center"><div style="font-size:11px;color:#aa9">${label}</div><div style="font-size:16px;color:#e8dfc8;font-weight:bold">${val}</div></div>`;
+      const card = (label, val) => `<div style="flex:1;min-width:84px;background:#2a251d;border:1px solid #4a4132;border-radius:6px;padding:6px 4px;text-align:center"><div style="font-size:11px;color:#aa9">${label}</div><div style="font-size:14px;color:#e8dfc8;font-weight:bold">${val}</div></div>`;
       body += `<div style="display:flex;gap:6px;flex-wrap:wrap;margin:4px 0">` +
         card('도시', s.cities) + card('무장', s.officers) + card('주둔 병력', fmt(s.garrison)) + card('포로', s.captives ?? 0) + // R111: 억류 포로 수 (매뉴얼 捕虜)
-        card('출진', `${s.fieldUnits}부대·병력 ${fmt(s.fieldTroops)}명`) + card('금', fmt(s.gold)) + card('군량', fmt(s.food)) + `</div>`; // R120/R121: 출진 카드 단위 명확화 (R120은 행말 주석이 금·군량 카드까지 삼키는 결함 — R121에서 복구)
+        card('출진', `${s.fieldUnits}부대·${fmt(s.fieldTroops)}명`) + card('금', fmt(s.gold)) + card('군량', fmt(s.food)) + `</div>`; // R120/R121: 출진 카드 단위 명확화 (R120은 행말 주석이 금·군량 카드까지 삼키는 결함 — R121에서 복구) / R131b: '병력' 중복 라벨 제거·카드 값 14px — 모바일 99px 카드 경계 붙음 (11/1 실측)
       body += `<p style="margin:2px 0;color:#aa9;font-size:12px">기교P ${fmt(s.techP)} · 습득 기교 ${s.arts}종</p>`;
       const net = s.goldIn - s.sal; // R99: 수입·지출·순수지를 분리 표기 — +금/봉록 나열이 순수지인지 모호하다는 지적 반영
       body += sec('월 예상 수지 (정산 산식 기준 예상치)',
