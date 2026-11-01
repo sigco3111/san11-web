@@ -6,6 +6,7 @@ const SUITES = [
   'tools/smoke-r126-bandit.mjs', // R126 적(賊) 1게이트
   'tools/smoke-r127-trade.mjs',  // R127 상인 거래 실패 사유 1게이트
   'tools/smoke-r128-joinpersist.mjs', // R128 참가 요청 영속 1게이트
+  'tools/smoke-r129-fog.mjs',     // R129 위임 정지 안개 재적용 1게이트
 ];
 let failed = 0;
 for (const f of SUITES) {
