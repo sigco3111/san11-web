@@ -1,12 +1,12 @@
 // 진입점: 화면 전환·UI·지도 연결
-import { Map3D, toWorld } from './map3d.js?v=r126';
-import { Game, SAVE_KEY, RULES, forceColor, UNIT_TYPES, ARTS, OFFICES, restoreOfficer, FIELD_FACS, TRAPS, SHIP_TYPES, TAC_SHIP_OK, josa, josaRo, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL, AB_PICK } from './game.js?v=r126';
-import { aiThink } from './ai.js?v=r126';
+import { Map3D, toWorld } from './map3d.js?v=r128';
+import { Game, SAVE_KEY, RULES, forceColor, UNIT_TYPES, ARTS, OFFICES, restoreOfficer, FIELD_FACS, TRAPS, SHIP_TYPES, TAC_SHIP_OK, josa, josaRo, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL, AB_PICK } from './game.js?v=r128';
+import { aiThink } from './ai.js?v=r128';
 
 const $ = id => document.getElementById(id);
 let DATA = null, game = null, map = null, selectedUnit = null, autoTimer = null, pendingFire = null; // R15: 직접 전법·계략 대기
 
-const BUILD_ID = 'r126'; // 빌드 ID (index.html의 meta[name=build]와 같아야 함 - 오래된 캐시된 index와 새 스크립트의 혼합 감지)
+const BUILD_ID = 'r128'; // 빌드 ID (index.html의 meta[name=build]와 같아야 함 - 오래된 캐시된 index와 새 스크립트의 혼합 감지)
 function checkBuildSkew() {
   const idx = document.querySelector('meta[name="build"]')?.content;
   if (idx === BUILD_ID) { sessionStorage.removeItem('cheonha-xi-web.skew'); return; } // 일치하면 재시도 표식 해제
@@ -19,7 +19,7 @@ checkBuildSkew();
 async function loadData() {
   const [officers, skills, portraits, s184, s190, s251] = await Promise.all(
     ['data/officers670.json','data/skills.json','data/portraits.json','data/scenario-184.json','data/scenario-190.json','data/scenario-251.json']
-      .map(u => fetch(u + '?v=r126').then(r => r.json())));
+      .map(u => fetch(u + '?v=r128').then(r => r.json())));
   const byIdx = {};
   for (const o of officers) byIdx[o.idx] = o;
   DATA = { officers: byIdx, skills, portraits, scenarios: { '184': s184, '190': s190, '251': s251 } };
@@ -804,6 +804,7 @@ function showCityPanel(c) {
   if (join) join.onclick = () => {
     game.pendingJoin = c.force;
     game.log(`${game.forceName(c.force)}에 참가 요청 — 이번 턴이 끝나면 인계됩니다.`, true);
+    game.autosave(); // R128: 결정 즉시 영속 (R122 패턴) — 턴 경계 전 reload 시 요청 소실 방지
     $('panel').classList.add('hidden'); refreshLog();
   };
 }
@@ -922,7 +923,7 @@ async function boot() {
       const d = JSON.parse(localStorage.getItem(SAVE_KEY));
       const g = new Game(DATA.scenarios[d.scenId], DATA.officers, DATA.skills, d.playerForce);
       window.__game = g; // 테스트 훅
-      Object.assign(g, { year: d.year, month: d.month, dan: d.dan, turn: d.turn, cities: d.cities, forces: d.forces, units: d.units, nextUnitId: d.nextUnitId, fieldFacs: d.fieldFacs ?? [], nextFacId: d.nextFacId ?? 1, playerForce: d.playerForce, delegated: d.delegated, logs: d.logs, deadAck: d.deadAck, chronicle: d.chronicle ?? [], pendingDiplo: d.pendingDiplo ?? [], /* R123: 구 저장은 빈 큐 (호환) */ over: d.over ?? false, unified: d.unified ?? d.over ?? false, econGraceUntil: d.econGraceUntil ?? null, econV: d.econV ?? 1 }); // R14: over로 저장된 통일 세이브 호환 / 병량 유예 복원 / econV 없는 구 저장은 구 경제 규칙 보존
+      Object.assign(g, { year: d.year, month: d.month, dan: d.dan, turn: d.turn, cities: d.cities, forces: d.forces, units: d.units, nextUnitId: d.nextUnitId, fieldFacs: d.fieldFacs ?? [], nextFacId: d.nextFacId ?? 1, playerForce: d.playerForce, delegated: d.delegated, logs: d.logs, deadAck: d.deadAck, chronicle: d.chronicle ?? [], pendingDiplo: d.pendingDiplo ?? [], /* R123: 구 저장은 빈 큐 (호환) */ pendingJoin: d.pendingJoin ?? null, /* R128: 구 저장은 null (호환). 무효 요청은 아래에서 정리 */ over: d.over ?? false, unified: d.unified ?? d.over ?? false, econGraceUntil: d.econGraceUntil ?? null, econV: d.econV ?? 1 }); // R14: over로 저장된 통일 세이브 호환 / 병량 유예 복원 / econV 없는 구 저장은 구 경제 규칙 보존
       g.cityById = {}; g.cities.forEach(c => g.cityById[c.id] = c);
       for (const c of g.cities) { c.officers = [...new Set(c.officers ?? [])]; c.captives = c.captives ?? []; } // 레거시 세이브 중복 무장 정리 / R111: 억류 명단 필드 호환 (정합은 _reconcileOfficerRosters)
       g.diplo = d.diplo ?? {};
@@ -931,6 +932,7 @@ async function boot() {
       for (const o of Object.values(g.officers)) { o.state.items = o.state.items ?? []; if (o.state.status === 'free' && o.state.found === undefined) o.state.found = true; } // 기존 세이브의 재야는 발견 상태 유지
       for (const f of Object.values(g.forces)) { f.advisor = f.advisor ?? null; f.legions = f.legions ?? []; } // 군사·군단 필드 호환 // 외교 상태 복원 (레거시 세이브는 공백)
       for (const [i, st] of Object.entries(d.officerStates)) if (DATA.officers[i]) restoreOfficer(DATA.officers[i], st); // R84: 복원 공통화 (R13 연구 + 관직 능력 가산 재적용)
+      if (g.pendingJoin != null && (!g.forces[g.pendingJoin]?.alive || g.pendingJoin === g.playerForce)) { g.log(`참가 요청한 ${josa('【' + g.forceName(g.pendingJoin) + '】군', ['이','가'])} 멸망하여 참가 요청이 취소되었습니다. 다른 세력을 선택해 주세요.`, true); g.pendingJoin = null; } // R128: 로드 시 무효 참가 요청 정리 — 중복 인계 없음 (인계는 턴 경계 1회)
       g._reconcileOfficerRosters(); // R96: 구 저장의 로스터 누락·타 세력 로스터 잔류 무장 복귀 (멱등)
       game = g; enterGame(); refreshAll(); checkGameOver(); // R14: 저장 시점이 종료 상태면 모달 재표시
       if ((game.pendingDiplo ?? []).length) showDiploIn(); // R123: 저장 시점의 보류 제안은 효과 재적용 없이 결정 모달만 복원
