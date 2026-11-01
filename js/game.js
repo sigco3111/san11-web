@@ -1169,9 +1169,12 @@ export class Game {
     const ship = SHIP_TYPES.has(u.type);
     const st = 0.15, lon0 = 100, lat0 = 20, W = 226, H = 146;
     const ci = x => Math.round((x - lon0) / st), cj = z => Math.round((z - lat0) / st);
-    const pass = (i, j) => ship ? this._rw(lon0 + i * st, lat0 + j * st) : !isSeaAt(lon0 + i * st, lat0 + j * st); // R68: 수군 중간 경로도 렌더링된 수로만 — 격자 수로(isWaterAt)는 화면상 육지를 지나는 항로를 만들어 라이브에서 좌초했음
+    const passRaw = (i, j) => ship ? this._rw(lon0 + i * st, lat0 + j * st) : !isSeaAt(lon0 + i * st, lat0 + j * st); // R68: 수군 중간 경로도 렌더링된 수로만 — 격자 수로(isWaterAt)는 화면상 육지를 지나는 항로를 만들어 라이브에서 좌초했음
     const art = !!this.forces[u.force]?.arts?.['난소행군'];
-    const stepCost = (i, j) => { if (ship) return 1; const x = lon0 + i * st, z = lat0 + j * st; if (!isRiverAt(x, z)) return this.passAt(x, z) ? (art ? 1.3 : 2.2) : 1; return art ? 1.25 : (isFordAt(x, z) ? 1.7 : 2.9); }; // R23: 여울 우선 도하, 난소행군 시 완화
+    const stepCostRaw = (i, j) => { if (ship) return 1; const x = lon0 + i * st, z = lat0 + j * st; if (!isRiverAt(x, z)) return this.passAt(x, z) ? (art ? 1.3 : 2.2) : 1; return art ? 1.25 : (isFordAt(x, z) ? 1.7 : 2.9); }; // R23: 여울 우선 도하, 난소행군 시 완화
+    const passMemo = new Map(), costMemo = new Map(); // R160: 한 탐색 안에서 같은 셀 판정만 재사용. 경로·지형·난소행군 규칙 불변
+    const pass = (i, j) => { const k = i * 1000 + j; if (!passMemo.has(k)) passMemo.set(k, passRaw(i, j)); return passMemo.get(k); };
+    const stepCost = (i, j) => { const k = i * 1000 + j; if (!costMemo.has(k)) costMemo.set(k, stepCostRaw(i, j)); return costMemo.get(k); };
     const snap = (i, j) => { // 가장 가까운 통과 가능 셀 (반경 8)
       if (i >= 0 && i <= W && j >= 0 && j <= H && pass(i, j)) return [i, j];
       for (let r = 1; r <= 8; r++) for (let di = -r; di <= r; di++) for (let dj = -r; dj <= r; dj++) {
