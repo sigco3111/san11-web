@@ -49,10 +49,12 @@ select { background:#3a3226; color:#e8e0d0; border:1px solid #6b5d43; font-famil
   #hud-top { font-size:12px; gap:8px; padding:6px 8px; }
   #hud-top button { padding:5px 10px; font-size:12px; }
   h1 { font-size:34px; letter-spacing:4px; }
+  /* R131: 모바일 — 일기토·설전 모달 inline min-width:420px가 390px 뷰포트에서 좌우 15px 클리핑 (실측 11/1) */
+  #modal .box { min-width:0 !important; }
 }
 
 /* R103: 모바일 — 패널을 하단 시트로 (390px 폭에서 우측 패널이 지도 전면을 가려 목표 탭 명령 불가하던 문제) */
 @media (max-width: 480px) {
   #panel { top:auto; bottom:0; left:0; right:0; width:100%; max-height:46vh; max-height:46dvh; border-radius:8px 8px 0 0; }
   #panel:not(.hidden) + #panel-x { top:auto; bottom:calc(46vh + 4px); bottom:calc(46dvh + 4px); }
-}
+  }
