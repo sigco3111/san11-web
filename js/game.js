@@ -299,6 +299,7 @@ export class Game {
     this.over = false;
     this.unified = false; // R14: 통일 1회 판정 (관전 계속 중 재발동 방지)
     this.chronicle = []; // R14: 연감 — 【】 주요 사건 기록
+    this._reconcileOfficerRosters(); // R158: 소재지 없는 재직 무장도 기존 로드와 같은 정합화로 배치. 새게임/이어하기 명단 일치
   }
   log(msg, mine=false) {
     this.logs.push({ t: `${this.year}년 ${this.month}월`, msg, mine }); if (this.logs.length > 200) this.logs.shift();
