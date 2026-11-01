@@ -1,5 +1,5 @@
 // R135 게이트: 도시 내정 시설 지도 표시 (시각 전용) — 정적 대조 + 규칙 불변 확인. 렌더 픽셀 검증은 실UI 캡처가 담당 (map3d는 THREE 의존이라 node 실행 불가)
-import { FACILITIES } from '../js/game.js';
+import { Game, FACILITIES } from '../js/game.js';
 import { readFileSync } from 'fs';
 let fail = 0; const ok = (name, cond) => { console.log((cond ? 'PASS' : 'FAIL') + ' ' + name); if (!cond) fail++; };
 const m = readFileSync('js/map3d.js', 'utf8'), mn = readFileSync('js/main.js', 'utf8');
@@ -35,5 +35,11 @@ const rc={force:1,gold:500,facilities:[]}, rg={forces:{1:{alive:true,ap:30}},_bl
 const why=new Function('game','c','return '+reasonExpr)(rg,rc);
 ok('R142 실행: 가능/금부족/AP부족/개발지부족/군단 사유', (()=>{if(why(200,20,true)!=='')return false;rc.gold=0;if(!why(200,20,true).includes('금'))return false;rc.gold=500;rg.forces[1].ap=0;if(!why(200,20,true).includes('행동력'))return false;rg.forces[1].ap=30;rc.facilities=Array(8).fill({});if(why(200,20,true)!=='개발지 부족')return false;rc.facilities=[];rg._blocked=()=>true;return why(200,20,true)==='군단 위임 중'})());
 ok('R142 sticky 헤더·행별 사유·최초 진입 상단', /fac-status/.test(mn) && /fac-why/.test(mn) && /if \(reopening\) p.scrollTop = 0/.test(mn) && /position:sticky/.test(readFileSync('css/style.css','utf8')));
+// R143: 군단 해산 후 새 편성 식별자 충돌 회귀
+const roster={};for(const o of JSON.parse(readFileSync('data/officers670.json')))roster[o.idx]=o;
+const lg=new Game(JSON.parse(readFileSync('data/scenario-184.json')),roster,{},28), lc=lg.forceCities(28), gov=Object.values(lg.officers).find(o=>o.state?.force===28).idx;
+lg.createLegion(gov,[lc[0].id],'delegate');lg.createLegion(gov,[lc[1].id],'delegate');lg.disbandLegion(28,2);lg.createLegion(gov,[lc[2].id],'attack_city',1);
+ok('R143 군단2해산후3/4 고유id·대상해산 정확성', lg.forces[28].legions.map(l=>l.id).join(',')==='3,4' && lg.disbandLegion(28,4) && lg.forces[28].legions[0].id===3 && lg.cityLegion(lc[2].id)===null);
+ok('R143 재렌더 시 최신 직할 도시 계산', /const render = \(\) => \{\s+const free = own.filter/.test(mn));
 console.log(fail ? 'R135 ' + fail + ' FAIL' : 'R135 ALL PASS');
 process.exit(fail ? 1 : 0);
