@@ -516,7 +516,7 @@ function onPick(nx, ny) {
   selectedUnit = null;
   showCityPanel(c);
 }
-function showAdvisor(c) { $('panel').dataset.view='advisor'; // 군사 임명: 지력 70 이상만 (설계안 명시)
+function showAdvisor(c) { const reopening = $('panel').dataset.view !== 'advisor', oldScroll = $('panel').scrollTop; $('panel').dataset.view='advisor'; // 군사 임명: 지력 70 이상만 (설계안 명시)
   const p = $('panel');
   const f = game.forces[c.force];
   const serving = Object.values(DATA.officers).filter(o => o.state?.force === c.force && ['ruler', 'taesu', 'serving'].includes(o.state.status)).sort((a, b) => b.int - a.int);
@@ -530,7 +530,7 @@ function showAdvisor(c) { $('panel').dataset.view='advisor'; // 군사 임명: �
     html += `<div class="officer"><div><div class="nm">${o.name_ko} <span class="st">지력 ${o.int}${advisor?.idx === o.idx ? ' · 현 군사' : ''}</span></div></div>${ok && advisor?.idx !== o.idx ? `<button class="cmd cmd-adv" data-i="${o.idx}">임명</button>` : ''}</div>`;
   }
   html += `<button class="cmd" id="adv-back">← 도시 패널로</button>`;
-  p.innerHTML = html;
+  p.innerHTML = html; p.scrollTop = reopening ? 0 : oldScroll;
   p.querySelectorAll('.cmd-adv').forEach(b => b.onclick = () => { game.appointAdvisor(Number(b.dataset.i)); refreshAll(); showAdvisor(c); });
   $('adv-back').onclick = () => showCityPanel(c);
 }
