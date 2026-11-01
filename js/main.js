@@ -1,12 +1,12 @@
 // 진입점: 화면 전환·UI·지도 연결
-import { Map3D, toWorld } from './map3d.js?v=r146';
-import { Game, SAVE_KEY, RULES, forceColor, UNIT_TYPES, ARTS, OFFICES, restoreOfficer, FIELD_FACS, TRAPS, SHIP_TYPES, TAC_SHIP_OK, josa, josaRo, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL, AB_PICK } from './game.js?v=r146';
-import { aiThink } from './ai.js?v=r146';
+import { Map3D, toWorld } from './map3d.js?v=r147';
+import { Game, SAVE_KEY, RULES, forceColor, UNIT_TYPES, ARTS, OFFICES, restoreOfficer, FIELD_FACS, TRAPS, SHIP_TYPES, TAC_SHIP_OK, josa, josaRo, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL, AB_PICK } from './game.js?v=r147';
+import { aiThink } from './ai.js?v=r147';
 
 const $ = id => document.getElementById(id);
 let DATA = null, game = null, map = null, selectedUnit = null, autoTimer = null, pendingFire = null; // R15: 직접 전법·계략 대기
 
-const BUILD_ID = 'r146'; // 빌드 ID (index.html의 meta[name=build]와 같아야 함 - 오래된 캐시된 index와 새 스크립트의 혼합 감지)
+const BUILD_ID = 'r147'; // 빌드 ID (index.html의 meta[name=build]와 같아야 함 - 오래된 캐시된 index와 새 스크립트의 혼합 감지)
 function checkBuildSkew() {
   const idx = document.querySelector('meta[name="build"]')?.content;
   if (idx === BUILD_ID) { sessionStorage.removeItem('cheonha-xi-web.skew'); return; } // 일치하면 재시도 표식 해제
@@ -19,7 +19,7 @@ checkBuildSkew();
 async function loadData() {
   const [officers, skills, portraits, s184, s190, s251] = await Promise.all(
     ['data/officers670.json','data/skills.json','data/portraits.json','data/scenario-184.json','data/scenario-190.json','data/scenario-251.json']
-      .map(u => fetch(u + '?v=r146').then(r => r.json())));
+      .map(u => fetch(u + '?v=r147').then(r => r.json())));
   const byIdx = {};
   for (const o of officers) byIdx[o.idx] = o;
   DATA = { officers: byIdx, skills, portraits, scenarios: { '184': s184, '190': s190, '251': s251 } };
@@ -640,18 +640,36 @@ function showFacilities(c) {
     html += '<h3 style="margin-top:10px">흡수합병 <small>(같은 시설 2개 → Lv+1 · 금 200·AP 10 · 개발지 1개 회수, 최대 Lv3)</small></h3>';
     for (const [t, v] of mergePairs) { const why = facReason(200, 10); html += `<div class="officer"><div><div class="nm">${t} × ${v.length}</div><div class="st">${FACILITIES[t].desc}</div></div><button class="cmd cmd-merge" data-t="${t}"${btnState(why)}>합병</button>${why ? `<small class="fac-why">${why}</small>` : ''}</div>`; }
   }
-  html += '<h3 style="margin-top:10px">건설</h3>';
-  const polTop = [...new Set(c.officers)].sort((a, b) => (DATA.officers[b]?.pol ?? 0) - (DATA.officers[a]?.pol ?? 0)).slice(0, 3);
+  const availableBuilders = [...new Set(c.officers)];
+  const polTop = availableBuilders.slice().sort((a, b) => (game.officers[b]?.pol ?? 0) - (game.officers[a]?.pol ?? 0)).slice(0, 3);
+  const previous = reopening ? polTop : JSON.parse(p.dataset.builders ?? JSON.stringify(polTop));
+  let selectedBuilders = previous.filter(i => availableBuilders.includes(i)).slice(0, 3);
+  const keepBuilders = () => { p.dataset.builders = JSON.stringify(selectedBuilders); };
+  keepBuilders();
+  html += '<h3 style="margin-top:10px">건설 담당 <small>(최대 3명)</small></h3>';
+  html += availableBuilders.map(i => `<label style="display:block"><input type="checkbox" class="fac-builder" value="${i}"${selectedBuilders.includes(i) ? ' checked' : ''}> ${game.officers[i].name_ko} (정치 ${game.officers[i].pol})</label>`).join('') || '<p class="st">주둔 무장 없음</p>';
+  html += '<p id="fac-builder-status" class="st" role="status"></p><h3 style="margin-top:10px">건설</h3>';
   for (const [t, spec] of Object.entries(FACILITIES)) {
     const why = facReason(spec.cost, 20, true);
     html += `<div class="officer"><div><div class="nm">${t} <span class="st">금${spec.cost} · 공기 ${spec.turns}턴</span></div><div class="st">${spec.desc}</div></div><button class="cmd cmd-build" data-t="${t}"${btnState(why)}>건설</button>${why ? `<small class="fac-why">${why}</small>` : ''}</div>`;
   }
-  html += `<p class="st">담당 무장 자동 배정 (정치 상위 3명: ${polTop.map(i => DATA.officers[i]?.name_ko).join('·') || '없음'}) · 정치 합산 250 이상이면 공기 2배</p>`;
+  html += `<p class="st">첫 진입 시 정치 상위 3명 선택. 선택한 담당은 새 건설에만 적용됩니다. 정치 합산 250 이상이면 턴당 공기 2, 미만이면 1 진행합니다.</p>`;
   html += `<button class="cmd" id="cmd-fac-back">← 도시 패널로</button>`;
   p.innerHTML = html;
   if (reopening) p.scrollTop = 0;
+  const refreshBuilders = () => {
+    const polSum = selectedBuilders.reduce((sum, i) => sum + (game.officers[i]?.pol ?? 0), 0);
+    $('fac-builder-status').textContent = '선택 ' + selectedBuilders.length + '/3명 · 정치 합산 ' + polSum + ' · 턴당 공기 ' + (polSum >= 250 ? 2 : 1) + (selectedBuilders.length ? '' : ' (담당 없음)');
+    p.querySelectorAll('.fac-builder').forEach(cb => { cb.disabled = selectedBuilders.length >= 3 && !cb.checked; });
+    keepBuilders();
+  };
+  p.querySelectorAll('.fac-builder').forEach(cb => cb.onchange = () => {
+    selectedBuilders = [...p.querySelectorAll('.fac-builder:checked')].map(x => Number(x.value)).slice(0, 3);
+    refreshBuilders();
+  });
+  refreshBuilders();
   p.querySelectorAll('.cmd-build').forEach(btn => btn.onclick = () => {
-    if (game.buildFacility(c.id, btn.dataset.t, polTop)) { refreshAll(); showFacilities(c); }
+    if (game.buildFacility(c.id, btn.dataset.t, selectedBuilders)) { refreshAll(); showFacilities(c); }
   });
   p.querySelectorAll('.cmd-demol').forEach(btn => btn.onclick = () => {
     if (game.demolishFacility(c.id, Number(btn.dataset.i))) { refreshAll(); showFacilities(c); }
