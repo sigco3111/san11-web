@@ -288,12 +288,12 @@ export class Map3D {
   setSeason(month) { // R16: 사계절 표현 (설계안 지도) — 월에 따라 지형 색조 변경
     if (!this.terrainMesh || !this.baseColors || this.season === month) return;
     this.season = month;
-    const tint = month >= 3 && month <= 5 ? [1.0, 1.03, 0.95] : month >= 6 && month <= 8 ? [0.9, 1.06, 0.88] : month >= 9 && month <= 11 ? [1.1, 0.97, 0.8] : [1.15, 1.15, 1.2]; // 봄·여름·가을·겨울
+    const tint = month >= 3 && month <= 5 ? [1.0, 1.03, 0.95] : month >= 6 && month <= 8 ? [0.9, 1.06, 0.88] : month >= 9 && month <= 11 ? [1.25, 1.0, 0.62] : [1.38, 1.4, 1.55]; // 봄·여름·가을·겨울 — R131c: 가을·겨울 틴트 강화 (구값은 월 전환 시 식별 어려움, 11/1 실측 ΔRGB 평균 15~25)
     const winter = tint[0] > 1.1;
     const col = new THREE.Color(), snow = new THREE.Color(0.93, 0.95, 1.0);
     for (let i = 0; i < this.baseColors.length / 3; i++) {
       col.setRGB(Math.min(1, this.baseColors[i*3] * tint[0]), Math.min(1, this.baseColors[i*3+1] * tint[1]), Math.min(1, this.baseColors[i*3+2] * tint[2]));
-      if (winter) col.lerp(snow, 0.28);
+      if (winter) col.lerp(snow, 0.45); // R131c: 설원 식별성 강화 (구 0.28은 '약간 밝음' 수준)
       this.terrainMesh.setColorAt(i, col);
     }
     this.terrainMesh.instanceColor.needsUpdate = true;
