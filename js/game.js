@@ -1585,7 +1585,7 @@ export class Game {
     }
     if (u.tx == null) return;
     // 요격: 인접한 적 부대가 있으면 진격 정지 (아군 도시로의 퇴각은 허용)
-    const engaged = this.units.some(v => v !== u && v.force !== u.force && Math.hypot(v.x-u.x, v.z-u.z) < 2.2);
+    const engaged = this.units.some(v => v !== u && v.force !== u.force && (v.force < 0 || !this.isPeace(u.force, v.force)) && Math.hypot(v.x-u.x, v.z-u.z) < 2.2);
     if (engaged) {
       const tgt = u.targetCity != null ? this.cityById[u.targetCity] : null;
       if (!tgt || tgt.force !== u.force) return;
