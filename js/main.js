@@ -209,6 +209,7 @@ function doTurn() {
     if (c && c.force === game.playerForce) { const st = $('panel').scrollTop; showFacilities(c); $('panel').scrollTop = st; }
     else $('panel').classList.add('hidden');
   }
+  if ($('panel').dataset.view === 'move' && !$('panel').classList.contains('hidden')) $('panel').refreshMove?.();
   checkGameOver();
   if (game.pendingDuel) showDuel(); // R10: 일기토 모달
   if (game.pendingDebate) showDebate(); // R11: 설전 모달
@@ -960,7 +961,7 @@ function showMove(c) {
   const p = $('panel'); p.dataset.view = 'move'; p.scrollTop = 0;
   const mine = game.forceCities(game.playerForce).filter(x => x.id !== c.id);
   p.innerHTML = `<h3>${c.name_ko} → 무장 이동</h3>
-    <p class="st">행동력 ${game.forces[c.force].ap} · 이동 비용 ${Math.ceil(20 * game.apMult(c, 'personnel'))}</p>
+    <p id="mv-status" class="st">행동력 ${game.forces[c.force].ap} · 이동 비용 ${Math.ceil(20 * game.apMult(c, 'personnel'))}</p>
     ${c.officers.map(i => `<label style="display:block"><input type="checkbox" class="mv-off" value="${i}"> ${DATA.officers[i].name_ko}</label>`).join('')}
     <p>목적지: <select id="mv-to">${mine.map(x => `<option value="${x.id}">${x.name_ko}</option>`).join('')}</select></p>
     <p id="mv-why" role="status" style="color:#d9a18a;font-size:12px"></p>
@@ -968,11 +969,13 @@ function showMove(c) {
   $('mv-back').onclick = () => showCityPanel(c);
   const selected = () => [...p.querySelectorAll('.mv-off:checked')].map(x => Number(x.value));
   const refreshMove = () => {
+    $('mv-status').textContent = '행동력 ' + game.forces[c.force].ap + ' · 이동 비용 ' + Math.ceil(20 * game.apMult(c, 'personnel'));
     const why = moveUiWhy(game, c, game.cityById[Number($('mv-to').value)], selected());
     $('mv-go').disabled = !!why; $('mv-go').title = why; $('mv-why').textContent = why;
   };
   p.querySelectorAll('.mv-off').forEach(cb => cb.onchange = refreshMove);
   $('mv-to').onchange = refreshMove;
+  p.refreshMove = refreshMove;
   refreshMove();
   $('mv-go').onclick = () => {
     refreshMove(); if ($('mv-go').disabled) return;
