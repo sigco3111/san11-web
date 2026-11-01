@@ -1400,7 +1400,7 @@ export class Game {
           if (!st || (st.status !== 'serving' && st.status !== 'taesu')) continue;
           if ((st.loyal ?? 70) <= 25 && Math.random() < 0.15) {
             this._clearOffice(this.officers[i]); // R163: 하야도 멸망과 같은 해임 경로, 저장 전후 능력 정합
-            st.status = 'free'; st.force = null; st.city = null; st.found = false;
+            st.status = 'free'; st.force = null; st.city = c.id; st.found = false; // R177: 하야 후에도 현재 도시에 미발견 재야로 남아 수색·등용 가능
             c.officers = c.officers.filter(x => x !== i);
             this.log(`【하야】${josa(this.officers[i].name_ko, ['이','가'])} 충성이 낮아 【${this.forceName(c.force)}】${josa(this.forceName(c.force), ['을','를']).slice(-1)} 떠났습니다`, true);
           }
