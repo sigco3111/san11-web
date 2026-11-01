@@ -58,3 +58,4 @@
 <script type="module" src="js/main.js?v=r172"></script>
 </body>
 </html>
+<button id="prepare" style="position:fixed;bottom:0;right:0;z-index:100">Fixture: pending envoy</button><script type="module">document.querySelector('#prepare').onclick=()=>{const d=JSON.parse(localStorage.getItem('cheonha-xi-web.save.v1'));d.delegated=true;d.pendingDiplo=[{id:9991,kind:'envoy',fid:0,tid:d.playerForce,gain:5,cityId:12}];localStorage.setItem('cheonha-xi-web.save.v1',JSON.stringify(d));location.reload()};</script>
