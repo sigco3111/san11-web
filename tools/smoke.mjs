@@ -958,10 +958,13 @@ if (g.units.find(u => u.id === 9999) && g.units.find(u => u.id === 9999).qi === 
   c14.facilities.push({ type: '군사부', progress: 3, builders: [], done: true });
   f14.ap = 200; g14.recruit(c14.id); const apRecruit2 = 200 - f14.ap;
   if (apRecruit !== 30 || apRecruit2 !== 23) { console.log('FAIL: R13 군사부', apRecruit, apRecruit2); process.exit(1); }
-  const c14b = g14.cities.find(c => c.force === g14.playerForce && c.id !== c14.id) ?? c14; // 이동 대상 도시
-  c14.facilities.push({ type: '인재부', progress: 3, builders: [], done: true });
-  f14.ap = 100; g14.moveOfficers(c14.id, c14b.id, [c14.officers[0]]); const apMove = 100 - f14.ap;
-  if (apMove !== 15) { console.log('FAIL: R13 인재부', apMove); process.exit(1); }
+  // R168: 비용 시험은 별도 정상 두도시/주둔 상태로 격리 (이전 same-city/소실무장 폴백 폐기)
+  const mpScen = JSON.parse(readFileSync('data/scenario-190.json','utf8'));
+  const mpOff = Object.fromEntries(JSON.parse(readFileSync('data/officers670.json','utf8')).map(o=>[o.idx,o]));
+  const mpGame = new Game(mpScen, mpOff, {}, 5), [mpFrom, mpTo] = mpGame.forceCities(5), mpF = mpGame.forces[5];
+  mpFrom.facilities.push({ type: '인재부', done: true }); mpF.ap=100;
+  const mpOk = mpGame.moveOfficers(mpFrom.id, mpTo.id, [mpFrom.officers[0]]), apMove=100-mpF.ap;
+  if (!mpOk || apMove !== 15) { console.log('FAIL: R13 인재부', apMove); process.exit(1); }
   c14.facilities.push({ type: '외교부', progress: 3, builders: [], done: true });
   const tgt = g14.aliveForces().map(x => x.id ?? x).find(x => x !== g14.playerForce);
   f14.ap = 100; c14.gold = 5000; g14.envoy(g14.playerForce, tgt, c14.id); const apEnvoy = 100 - f14.ap;
@@ -2786,4 +2789,4 @@ console.log('sample logs:'); for (const l of g.logs.slice(-8)) console.log(' ', 
     if (!/금이 부족합니다/.test(g.lastRecruitWhy ?? '')) fail('등용 금 안내 없음', g.lastRecruitWhy);
   }
   console.log('R112 시설 소화·비용 안내 게이트 PASS (소화 성공·사거리/미점화 차단·기력 소모·쿨다운·석방 AP·등용 AP/금 안내)');
-    }
+      }
