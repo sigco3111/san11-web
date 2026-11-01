@@ -1,12 +1,12 @@
 // 진입점: 화면 전환·UI·지도 연결
-import { Map3D, toWorld } from './map3d.js?v=r130';
-import { Game, SAVE_KEY, RULES, forceColor, UNIT_TYPES, ARTS, OFFICES, restoreOfficer, FIELD_FACS, TRAPS, SHIP_TYPES, TAC_SHIP_OK, josa, josaRo, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL, AB_PICK } from './game.js?v=r130';
-import { aiThink } from './ai.js?v=r130';
+import { Map3D, toWorld } from './map3d.js?v=r132';
+import { Game, SAVE_KEY, RULES, forceColor, UNIT_TYPES, ARTS, OFFICES, restoreOfficer, FIELD_FACS, TRAPS, SHIP_TYPES, TAC_SHIP_OK, josa, josaRo, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL, AB_PICK } from './game.js?v=r132';
+import { aiThink } from './ai.js?v=r132';
 
 const $ = id => document.getElementById(id);
 let DATA = null, game = null, map = null, selectedUnit = null, autoTimer = null, pendingFire = null; // R15: 직접 전법·계략 대기
 
-const BUILD_ID = 'r130'; // 빌드 ID (index.html의 meta[name=build]와 같아야 함 - 오래된 캐시된 index와 새 스크립트의 혼합 감지)
+const BUILD_ID = 'r132'; // 빌드 ID (index.html의 meta[name=build]와 같아야 함 - 오래된 캐시된 index와 새 스크립트의 혼합 감지)
 function checkBuildSkew() {
   const idx = document.querySelector('meta[name="build"]')?.content;
   if (idx === BUILD_ID) { sessionStorage.removeItem('cheonha-xi-web.skew'); return; } // 일치하면 재시도 표식 해제
@@ -19,7 +19,7 @@ checkBuildSkew();
 async function loadData() {
   const [officers, skills, portraits, s184, s190, s251] = await Promise.all(
     ['data/officers670.json','data/skills.json','data/portraits.json','data/scenario-184.json','data/scenario-190.json','data/scenario-251.json']
-      .map(u => fetch(u + '?v=r130').then(r => r.json())));
+      .map(u => fetch(u + '?v=r132').then(r => r.json())));
   const byIdx = {};
   for (const o of officers) byIdx[o.idx] = o;
   DATA = { officers: byIdx, skills, portraits, scenarios: { '184': s184, '190': s190, '251': s251 } };
@@ -328,6 +328,20 @@ function setAuto(on) {
       if (game.delegated && game.pendingStop) { game.pendingStop = false; game.delegated = false; setAuto(false); refreshAll(); } // R129: 위임 자동 정지 시 안개(시야) 즉시 재적용 — refreshHud만 하면 위임 중 보이던 시야 밖 적 부대가 다음 갱신까지 화면에 남음
     }, Math.max(120, 1400 / speed));
   }
+}
+function showReview() { // R132: 월 결산 — 지난달 보유량 증감 + 그달 주요 기록 (수입·지출 총계가 아닌 총보유량 비교 — 점령·소속 변경 포함. 예상 수지는 세력 현황 참조)
+  const rvw = game.monthlyReview; const m = $('modal'); m.classList.remove('hidden');
+  if (!rvw) { m.innerHTML = `<div class="box"><h3>월 결산</h3><p>아직 결산된 월이 없습니다. 첫 월이 지나면 결산이 표시됩니다.</p><button id="rv-close" style="margin-top:8px">닫기</button></div>`; $('rv-close').onclick = () => m.classList.add('hidden'); return; }
+  const rows = [['금', 'gold'], ['병량', 'food'], ['병사(주둔)', 'troops'], ['병사(출진)', 'field'], ['도시', 'cities'], ['부대', 'units'], ['무장', 'officers']];
+  const tr = ([label, k]) => { const a = rvw.from?.[k], b = rvw.to[k]; if (a == null) return `<tr><td>${label}</td><td colspan="3" style="text-align:right;color:#998">${b.toLocaleString()}</td></tr>`; const d = b - a; const cl = d > 0 ? '#8f8' : d < 0 ? '#f88' : '#998'; return `<tr><td>${label}</td><td style="text-align:right">${a.toLocaleString()}</td><td style="text-align:right">${b.toLocaleString()}</td><td style="text-align:right;color:${cl}">${d > 0 ? '+' : ''}${d.toLocaleString()}</td></tr>`; };
+  const recs = (game.chronicle ?? []).filter(c => c.y === rvw.y && c.m === rvw.m).slice(-8).reverse();
+  m.innerHTML = `<div class="box" style="max-height:72vh;max-width:560px;display:flex;flex-direction:column"><h3>${rvw.y}년 ${rvw.m}월 결산</h3>
+    <p style="font-size:11px;color:#aa9;margin:2px 0">보유량 증감 — 월초 대비 월말 총보유량 비교입니다. 점령·소속 변경도 포함되며 수입·지출 총계가 아닙니다 (예상 수지는 세력 현황 참조).</p>
+    <div style="overflow:auto;flex:1;min-height:0"><table style="width:100%;font-size:13px;border-collapse:collapse"><tr style="color:#998"><td>항목</td><td style="text-align:right">월초</td><td style="text-align:right">월말</td><td style="text-align:right">증감</td></tr>${rows.map(tr).join('')}</table>
+    ${rvw.from ? '' : '<p style="font-size:12px;color:#fc8;margin:6px 0">집계 기준 없음 — 새 게임·세력 전환·구 세이브 이후 첫 결산은 월초 기준이 없어 증감을 계산하지 않습니다.</p>'}
+    ${recs.length ? `<h4 style="margin:8px 0 2px">주요 기록</h4><div style="font-size:12px;color:#cbb">${recs.map(r => `<p style="margin:2px 0">${r.msg}</p>`).join('')}</div>` : ''}</div>
+    <button id="rv-close" style="flex:none;margin-top:8px">닫기</button></div>`;
+  $('rv-close').onclick = () => m.classList.add('hidden');
 }
 function showChronicle() { // R14: 연감 — 【】 주요 사건 기록 (설계안 265행)
   const m = $('modal'); m.classList.remove('hidden');
@@ -939,7 +953,7 @@ async function boot() {
       const d = JSON.parse(localStorage.getItem(SAVE_KEY));
       const g = new Game(DATA.scenarios[d.scenId], DATA.officers, DATA.skills, d.playerForce);
       window.__game = g; // 테스트 훅
-      Object.assign(g, { year: d.year, month: d.month, dan: d.dan, turn: d.turn, cities: d.cities, forces: d.forces, units: d.units, nextUnitId: d.nextUnitId, fieldFacs: d.fieldFacs ?? [], nextFacId: d.nextFacId ?? 1, playerForce: d.playerForce, delegated: d.delegated, logs: d.logs, deadAck: d.deadAck, chronicle: d.chronicle ?? [], pendingDiplo: d.pendingDiplo ?? [], /* R123: 구 저장은 빈 큐 (호환) */ pendingJoin: d.pendingJoin ?? null, /* R128: 구 저장은 null (호환). 무효 요청은 아래에서 정리 */ over: d.over ?? false, unified: d.unified ?? d.over ?? false, econGraceUntil: d.econGraceUntil ?? null, econV: d.econV ?? 1 }); // R14: over로 저장된 통일 세이브 호환 / 병량 유예 복원 / econV 없는 구 저장은 구 경제 규칙 보존
+      Object.assign(g, { year: d.year, month: d.month, dan: d.dan, turn: d.turn, cities: d.cities, forces: d.forces, units: d.units, nextUnitId: d.nextUnitId, fieldFacs: d.fieldFacs ?? [], nextFacId: d.nextFacId ?? 1, playerForce: d.playerForce, delegated: d.delegated, logs: d.logs, deadAck: d.deadAck, chronicle: d.chronicle ?? [], pendingDiplo: d.pendingDiplo ?? [], /* R123: 구 저장은 빈 큐 (호환) */ pendingJoin: d.pendingJoin ?? null, /* R128: 구 저장은 null (호환). 무효 요청은 아래에서 정리 */ monthlyReview: d.monthlyReview ?? null, /* R132: 구 저장은 null (호환) — 첫 결산은 기준 없음으로 표시 */ over: d.over ?? false, unified: d.unified ?? d.over ?? false, econGraceUntil: d.econGraceUntil ?? null, econV: d.econV ?? 1 }); g._reviewBase = d.reviewBase ?? null; // R132 // R14: over로 저장된 통일 세이브 호환 / 병량 유예 복원 / econV 없는 구 저장은 구 경제 규칙 보존
       g.cityById = {}; g.cities.forEach(c => g.cityById[c.id] = c);
       for (const c of g.cities) { c.officers = [...new Set(c.officers ?? [])]; c.captives = c.captives ?? []; } // 레거시 세이브 중복 무장 정리 / R111: 억류 명단 필드 호환 (정합은 _reconcileOfficerRosters)
       g.diplo = d.diplo ?? {};
@@ -972,6 +986,7 @@ async function boot() {
   $('btn-menu').onclick = () => modal('메뉴', [
     ['세력 현황', () => showDashboard()], // R97
     ['연감', () => showChronicle()], // R14
+    ['월 결산', () => showReview()], // R132
     ['저장하고 타이틀로', () => { game?.autosave(); location.reload(); }],
     ['타이틀로 (저장은 자동)', () => location.reload()],
     ['계속', () => {}],
