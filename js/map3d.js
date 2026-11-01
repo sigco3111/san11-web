@@ -1,6 +1,6 @@
 // 3D 저폴리 지도 엔진 (Three.js) - 고정 등각 아이소메트릭 + 계단식 지형 + 성곽/숲
 import * as THREE from 'three';
-import { loadGLBAssets, applyEnvironment } from './assets-3d.js?v=r136';
+import { loadGLBAssets, applyEnvironment } from './assets-3d.js?v=r137';
 
 const LON0 = 100, LON1 = 126.5, LAT0 = 21.5, LAT1 = 43;
 export function toWorld(lon, lat) {
@@ -640,9 +640,14 @@ export class Map3D {
       }, 0);
       let off = 0, best = Infinity;
       for (let k = 0; k < 24; k++) { const s = score(k * Math.PI / 12); if (s < best) { best = s; off = k * Math.PI / 12; } }
+      const nearOther = (px, pz) => others.some(o => Math.hypot(px - o.x, pz - o.z) < 2.2);
       sorted.forEach((f, i) => {
         const a = -Math.PI / 2 + off + i * 2 * Math.PI / n;
-        const px = cf.x + Math.cos(a) * r, pz = cf.z + Math.sin(a) * r;
+        const dock = Map3D.CITY_FAC_STYLE[f.type]?.geo === 'dock';
+        let px = cf.x + Math.cos(a) * r, pz = cf.z + Math.sin(a) * r;
+        // R136b: 슬롯이 나쁜 위치(비조선소 수상·구릉·인접 성곽 침범)면 같은 각도로 안쪽 반경을 걸어 양호 지점 탐색(최소 r=1.7 — 성곽 벽 바깥 유지). 끝까지 없으면 원위치(best-effort)
+        const bad = (x, z) => { const lv = this.levelAtWorld(x, z); return (lv === 0 && !dock) || lv > 1 || nearOther(x, z); };
+        if (bad(px, pz)) for (let rr = r - 0.3; rr >= 1.7 && bad(px, pz); rr -= 0.3) { const nx = cf.x + Math.cos(a) * rr, nz = cf.z + Math.sin(a) * rr; if (!bad(nx, nz)) { px = nx; pz = nz; } }
         const m = this._cityFacModel(f.type, f.done);
         m.position.set(px, Math.max(this.levelAtWorld(px, pz) * STEP, WATER_Y + 0.2), pz);
         this.unitGroup.add(m); meshes.push(m);
