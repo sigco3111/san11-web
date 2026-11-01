@@ -1,4 +1,4 @@
-import { SHIP_TYPES, TRAPS, FIELD_FACS, SIEGE_TYPES } from './game.js?v=r174';
+import { SHIP_TYPES, TRAPS, FIELD_FACS, SIEGE_TYPES } from './game.js?v=r175';
 // 세력 AI — 위임 시 플레이어 세력도 이 AI가 운영 (위임·샌드박스의 실질 주체)
 export function aiThink(game, fid, legion = null) { // legion 지정 시 그 군단 소속 도시만 운영 (도독 위임)
   const f = game.forces[fid];
@@ -174,10 +174,10 @@ export function aiThink(game, fid, legion = null) { // legion 지정 시 그 군
     }
   }
   // 3) 군사: 전방 도시(적과 인접) 병력이 충분하면 공격, 아니면 집결
-  let enemyCities = game.cities.filter(c => c.force !== fid && (c.force == null || !game.isAllied(fid, c.force))); // 동맹국 공격 회피
+  let enemyCities = game.cities.filter(c => c.force !== fid && (c.force == null || !game.isPeace(fid, c.force))); // R175: 동맹·정전 모두 공격 목표에서 제외(엔진 orderUnit/isPeace와 동일)
   if (legion?.policy === 'attack_city' && legion.target != null) {
     const t = game.cityById[legion.target];
-    enemyCities = t && t.force !== fid ? [t] : [];
+    enemyCities = t && t.force !== fid && (t.force == null || !game.isPeace(fid,t.force)) ? [t] : [];
   } else if (legion?.policy === 'attack_force' && legion.target != null) {
     enemyCities = enemyCities.filter(c => c.force === legion.target);
   }
@@ -254,7 +254,7 @@ export function aiThink(game, fid, legion = null) { // legion 지정 시 그 군
       }
       if (bf && game.orderFacAttack(u.id, bf.id)) continue;
     }
-    const foes = game.cities.filter(c => c.force !== fid && (c.force == null || (game.forces[c.force]?.alive && !game.isAllied(fid, c.force))));
+    const foes = game.cities.filter(c => c.force !== fid && (c.force == null || (game.forces[c.force]?.alive && !game.isPeace(fid, c.force))));
     let best = null, bd = 1e9;
     for (const e of foes) { const d = Math.hypot(e.lon - u.x, e.lat - u.z); if (d < bd) { bd = d; best = e; } }
     const homes = cities.slice().sort((a,b) => Math.hypot(a.lon-u.x,a.lat-u.z) - Math.hypot(b.lon-u.x,b.lat-u.z));
