@@ -1,12 +1,12 @@
 // 진입점: 화면 전환·UI·지도 연결
-import { Map3D, toWorld } from './map3d.js?v=r147';
-import { Game, SAVE_KEY, RULES, forceColor, UNIT_TYPES, ARTS, OFFICES, restoreOfficer, FIELD_FACS, TRAPS, SHIP_TYPES, TAC_SHIP_OK, josa, josaRo, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL, AB_PICK } from './game.js?v=r147';
-import { aiThink } from './ai.js?v=r147';
+import { Map3D, toWorld } from './map3d.js?v=r148';
+import { Game, SAVE_KEY, RULES, forceColor, UNIT_TYPES, ARTS, OFFICES, restoreOfficer, FIELD_FACS, TRAPS, SHIP_TYPES, TAC_SHIP_OK, josa, josaRo, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL, AB_PICK } from './game.js?v=r148';
+import { aiThink } from './ai.js?v=r148';
 
 const $ = id => document.getElementById(id);
 let DATA = null, game = null, map = null, selectedUnit = null, autoTimer = null, pendingFire = null; // R15: 직접 전법·계략 대기
 
-const BUILD_ID = 'r147'; // 빌드 ID (index.html의 meta[name=build]와 같아야 함 - 오래된 캐시된 index와 새 스크립트의 혼합 감지)
+const BUILD_ID = 'r148'; // 빌드 ID (index.html의 meta[name=build]와 같아야 함 - 오래된 캐시된 index와 새 스크립트의 혼합 감지)
 function checkBuildSkew() {
   const idx = document.querySelector('meta[name="build"]')?.content;
   if (idx === BUILD_ID) { sessionStorage.removeItem('cheonha-xi-web.skew'); return; } // 일치하면 재시도 표식 해제
@@ -19,7 +19,7 @@ checkBuildSkew();
 async function loadData() {
   const [officers, skills, portraits, s184, s190, s251] = await Promise.all(
     ['data/officers670.json','data/skills.json','data/portraits.json','data/scenario-184.json','data/scenario-190.json','data/scenario-251.json']
-      .map(u => fetch(u + '?v=r147').then(r => r.json())));
+      .map(u => fetch(u + '?v=r148').then(r => r.json())));
   const byIdx = {};
   for (const o of officers) byIdx[o.idx] = o;
   DATA = { officers: byIdx, skills, portraits, scenarios: { '184': s184, '190': s190, '251': s251 } };
@@ -946,19 +946,39 @@ function showDispatch(c) { $('panel').dataset.view='dispatch';
     refreshHud(); refreshLog(); showCityPanel(c);
   };
 }
+// R148: 무장 이동의 기존 비용/권한 조건을 클릭 전에 안내
+function moveUiWhy(game, c, to, offs) {
+  if (!offs.length) return '이동할 무장을 선택하세요';
+  if (!to || to.id === c.id || to.force !== c.force) return '이동할 아군 도시가 없습니다';
+  if (game._blocked(c)) return '군단 소속 도시입니다';
+  const ap = Math.ceil(20 * game.apMult(c, 'personnel'));
+  if (game.forces[c.force].ap < ap) return '행동력 ' + ap + ' 필요';
+  if (offs.some(i => !c.officers.includes(i))) return '주둔 무장이 바뀌었습니다. 다시 선택하세요';
+  return '';
+}
 function showMove(c) {
-  const p = $('panel');
+  const p = $('panel'); p.dataset.view = 'move'; p.scrollTop = 0;
   const mine = game.forceCities(game.playerForce).filter(x => x.id !== c.id);
   p.innerHTML = `<h3>${c.name_ko} → 무장 이동</h3>
+    <p class="st">행동력 ${game.forces[c.force].ap} · 이동 비용 ${Math.ceil(20 * game.apMult(c, 'personnel'))}</p>
     ${c.officers.map(i => `<label style="display:block"><input type="checkbox" class="mv-off" value="${i}"> ${DATA.officers[i].name_ko}</label>`).join('')}
     <p>목적지: <select id="mv-to">${mine.map(x => `<option value="${x.id}">${x.name_ko}</option>`).join('')}</select></p>
+    <p id="mv-why" role="status" style="color:#d9a18a;font-size:12px"></p>
     <p><button class="cmd" id="mv-go">이동</button> <button class="cmd" id="mv-back">취소</button></p>`;
   $('mv-back').onclick = () => showCityPanel(c);
+  const selected = () => [...p.querySelectorAll('.mv-off:checked')].map(x => Number(x.value));
+  const refreshMove = () => {
+    const why = moveUiWhy(game, c, game.cityById[Number($('mv-to').value)], selected());
+    $('mv-go').disabled = !!why; $('mv-go').title = why; $('mv-why').textContent = why;
+  };
+  p.querySelectorAll('.mv-off').forEach(cb => cb.onchange = refreshMove);
+  $('mv-to').onchange = refreshMove;
+  refreshMove();
   $('mv-go').onclick = () => {
-    const offs = [...document.querySelectorAll('.mv-off:checked')].map(x => Number(x.value));
-    const to = Number($('mv-to').value);
-    if (!offs.length || !to) return;
-    game.moveOfficers(c.id, to, offs);
+    refreshMove(); if ($('mv-go').disabled) return;
+    if (!game.moveOfficers(c.id, Number($('mv-to').value), selected())) {
+      refreshMove(); $('mv-why').textContent ||= '이동할 수 없습니다'; return;
+    }
     game.autosave(); // R122: 무장 이동도 실행 직후 영속 (R13 정책 정합)
     refreshHud(); refreshLog(); showCityPanel(c);
   };
