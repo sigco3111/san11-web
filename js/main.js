@@ -125,6 +125,7 @@ function refreshOpenPanel() { // R130: 일기토·설전·수신 외교 결정 �
   const st = p.scrollTop;
   if (p.dataset.view === 'diplo') showDiplomacy(c);
   else if (p.dataset.view === 'city') showCityPanel(c);
+  else if (p.dataset.view === 'facilities') showFacilities(c);
   else return; // 출진·기교 등 입력 중 하위 화면은 덮지 않음 (R108과 동일 기준)
   p.scrollTop = st;
 }
@@ -202,6 +203,11 @@ function doTurn() {
     const c = game.cityById[lastCityId];
     if (c) { const p = $('panel'), st = p.scrollTop; showCityPanel(c); p.scrollTop = st; }
     else { $('panel').classList.add('hidden'); lastCityId = null; }
+  }
+  if ($('panel').dataset.view === 'facilities' && !$('panel').classList.contains('hidden')) {
+    const c = game.cityById[Number($('panel').dataset.city)];
+    if (c && c.force === game.playerForce) { const st = $('panel').scrollTop; showFacilities(c); $('panel').scrollTop = st; }
+    else $('panel').classList.add('hidden');
   }
   checkGameOver();
   if (game.pendingDuel) showDuel(); // R10: 일기토 모달
