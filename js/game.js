@@ -961,7 +961,7 @@ armsInfo(c,key){
  const why=!fac.length?'완성 시설 필요':!chosen?'이번 턴 생산 횟수 소진':f.ap<ap?'행동력 부족':c.gold<gold?'금 부족':'';
  return{why,capacity:fac.length,used:fac.length-available.length,remaining:available.length,gold,ap,amount:500*(chosen?.level??1),facility:s.facility,chosen};
 }
-produceArms(id,key){const g=this;const c=g.cityById[id],a=this.armsInfo(c,key);if(a.why)return false;a.chosen.armsUsedTurn=g.turn;c.gold-=a.gold;g.forces[c.force].ap-=a.ap;c[key]=(c[key]??0)+a.amount;g.autosave();return true;}
+produceArms(id,key){const g=this;const c=g.cityById[id],a=this.armsInfo(c,key);if(a.why)return false;a.chosen.armsUsedTurn=g.turn;c.gold-=a.gold;g.forces[c.force].ap-=a.ap;c[key]=(c[key]??0)+a.amount;g.log(`${c.name_ko}에서 ${ARMS_BUILD[key].name} ${a.amount} 생산 (금 ${a.gold}·AP ${a.ap})`,c.force===g.playerForce);g.autosave();return true;}
 
   // === 내정시설 ===
   facSlots(c) { return c.metropolis ? 12 : 8; } // 개발지 수 (자체 수치)
