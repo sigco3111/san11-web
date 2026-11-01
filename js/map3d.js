@@ -1,6 +1,6 @@
 // 3D 저폴리 지도 엔진 (Three.js) - 고정 등각 아이소메트릭 + 계단식 지형 + 성곽/숲
 import * as THREE from 'three';
-import { loadGLBAssets, applyEnvironment } from './assets-3d.js?v=r139';
+import { loadGLBAssets, applyEnvironment } from './assets-3d.js?v=r140';
 
 // R139: 결정적 전역 시설 배치. 지형·성곽·야전 시설·기배치 시설은 비용이 아닌 제외 조건.
 // 자리가 없으면 도시 상단 요약 표식으로 표현하며 수상에 육상 건물을 강제 배치하지 않는다.
@@ -667,7 +667,12 @@ export class Map3D {
         m = new THREE.Group();
         const count = layout.filter(x => x.cityId === f.cityId && x.summary).indexOf(f);
         const badge = this.makeLabel('성내: ' + f.type + (f.done ? '' : ' 공사'), 0.4);
-        badge.position.set(0, 5 + count * 0.75, 0); m.add(badge);
+        badge.position.set(0, 5 + count * 0.75, 0); badge.userData.summaryDetail = true; m.add(badge);
+        if (count === 0) {
+          const total = layout.filter(x => x.cityId === f.cityId && x.summary).length;
+          const compact = this.makeLabel('성내 ' + total, 0.32); compact.position.y = 5;
+          compact.userData.summaryCompact = true; m.add(compact);
+        }
         m.position.set(f.x, 0, f.z);
       } else {
         m = this._cityFacModel(f.type, f.done); m.scale.setScalar(f.scale);
@@ -773,6 +778,14 @@ export class Map3D {
     this.updateFrustum();
   }
   render() {
+    // R140: 원거리에서 시설명 묶음이 도시/부대 라벨을 가리지 않게 줌별 요약.
+    for (const e of Object.values(this.cityFacMeshes ?? {})) for (const m of e.meshes) {
+      if (!m.userData.cityFacility?.summary) continue;
+      for (const ch of m.children) {
+        if (ch.userData.summaryDetail) ch.visible = this.view <= 32;
+        if (ch.userData.summaryCompact) ch.visible = this.view > 32 && this.view <= 55;
+      }
+    }
     this.time += 0.016;
     if (this.water) this.water.material.opacity = 0.80 + Math.sin(this.time*1.7)*0.05;
     const d = 160;
