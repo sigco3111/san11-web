@@ -2531,7 +2531,7 @@ console.log('sample logs:'); for (const l of g.logs.slice(-8)) console.log(' ', 
   for (const needle of ["card('도시'", "card('무장'", "card('주둔 병력'", "card('포로'", "card('출진'", "card('금'", "card('군량'"]) {
     if (!stripped.includes(needle)) { console.log('FAIL: R121 대시보드 카드 누락(주석 제거 기준) ' + needle); process.exit(1); }
   }
-  if (!stripped.includes('부대·병력')) { console.log('FAIL: R121 출진 카드 단위 표기 누락'); process.exit(1); }
+  if (!/\$\{[^}]*\}부대·\$\{[^}]*\}명/.test(stripped) && !stripped.includes('부대·병력')) { console.log('FAIL: R121 출진 카드 단위 표기 누락'); process.exit(1); } // R131b 이후 표기: 'N부대·M명' (구 표기 'N부대·병력 M명'도 허용)
   // 카드 체인 구조: 출진→금→군량→'</div>'이 하나의 실행 문장으로 이어지는지 (r120 결함 형태 차단)
   if (!/card\('출진'[^;]*card\('금'[^;]*card\('군량'[^;]*['"\`]<\/div>/.test(stripped.replace(/\n/g, ' '))) { console.log('FAIL: R121 카드 체인 구조 이탈'); process.exit(1); }
   console.log('R121 대시보드 카드 구성 게이트 PASS (7종, 주석 제거 기준)');

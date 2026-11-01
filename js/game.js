@@ -304,6 +304,14 @@ export class Game {
   }
   forceName(fid) { const f = this.forces[fid]; return f ? this.officers[f.ruler].name_ko + '군' : '적병'; }
   forceCities(fid) { return this.cities.filter(c => c.force === fid); }
+  _forceSnapshot(fid) { // R132: 월 결산용 보유량 스냅샷 — 총보유량(점령·소속 변경 포함). 수입·지출 총계가 아님
+    let gold = 0, food = 0, troops = 0, cities = 0;
+    for (const c of this.cities) if (c.force === fid) { gold += c.gold; food += c.food; troops += c.troops; cities++; }
+    let field = 0, units = 0;
+    for (const u of this.units) if (u.force === fid) { field += u.troops; units++; }
+    const officers = Object.values(this.officers).filter(o => o.state?.force === fid).length;
+    return { gold, food, troops, field, cities, units, officers };
+  }
   forceOverview(fid) { // R97: 세력 현황 대시보드 데이터. 월 수지는 정산(endTurn dan===3)과 같은 산식을 그대로 재사용한 예상치 — 별도 추정치가 아니며, 시점 사이 AI·전투 변동은 반영되지 않음
     const cities = this.forceCities(fid);
     const cityRows = cities.map(c => {
@@ -1477,7 +1485,16 @@ export class Game {
     }
     this.checkRanks();
     this.dan++;
-    if (this.dan > 3) { this.dan = 1; this.month++; if (this.month > 12) { this.month = 1; this.year++; } }
+    if (this.dan > 3) {
+      this.dan = 1;
+      if (this.playerForce != null && this.forces[this.playerForce]?.alive) { // R132: 월 결산 — 지난달 보유량 증감 기록 (정보 표시 전용, 규칙 변경 없음). 기준월이 없으면(새 게임·세력 전환·구 세이브 첫 월) from=null로 '집계 기준 없음' 표시
+        const s = this._forceSnapshot(this.playerForce);
+        const b = this._reviewBase;
+        this.monthlyReview = { y: this.year, m: this.month, from: (b && b.fid === this.playerForce) ? b.s : null, to: s };
+        this._reviewBase = { fid: this.playerForce, s };
+      }
+      this.month++; if (this.month > 12) { this.month = 1; this.year++; }
+    }
     this.turn++;
     // 세력 전환 인계 (턴 경계)
     if (this.pendingJoin != null) { // R128: 대상 멸망·자기 세력 등 무효 요청은 취소 안내 후 해제 (영구 잔류 방지)
@@ -2509,7 +2526,8 @@ export class Game {
         cities: this.cities, forces: this.forces, units: this.units, nextUnitId: this.nextUnitId, fieldFacs: this.fieldFacs, nextFacId: this.nextFacId,
         playerForce: this.playerForce, delegated: this.delegated, deadAck: this.deadAck, logs: this.logs.slice(-60), diplo: this.diplo, itemPool: this.itemPool, chronicle: this.chronicle, over: this.over, unified: this.unified, // R14
         pendingDiplo: this.pendingDiplo ?? [], // R123: 보류 외교 제안 영속 — reload 후에도 결정 대기 복원 (효과는 resolveDiplo에서만 적용, 복원 시 재적용 없음)
-        pendingJoin: this.pendingJoin ?? null, // R128: 참가 요청 영속 — 턴 경계 전 reload 시 요청 소실 방지 (복원 시 유효성 검증은 로드 경로)
+        pendingJoin: this.pendingJoin ?? null, // R128: 참가 요청 영속
+        monthlyReview: this.monthlyReview ?? null, reviewBase: this._reviewBase ?? null, // R132: 월 결산 영속 — 턴 경계 전 reload 시 요청 소실 방지 (복원 시 유효성 검증은 로드 경로)
         officerStates: Object.fromEntries(Object.entries(this.officers).filter(([,o]) => o.state).map(([i,o]) => [i, o.state])),
       };
       localStorage.setItem(SAVE_KEY, JSON.stringify(data));
