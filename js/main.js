@@ -6,7 +6,7 @@ import { aiThink } from './ai.js?v=r123';
 const $ = id => document.getElementById(id);
 let DATA = null, game = null, map = null, selectedUnit = null, autoTimer = null, pendingFire = null; // R15: 직접 전법·계략 대기
 
-const BUILD_ID = 'r124'; // 빌드 ID (index.html의 meta[name=build]와 같아야 함 - 오래된 캐시된 index와 새 스크립트의 혼합 감지)
+const BUILD_ID = 'r125'; // 빌드 ID (index.html의 meta[name=build]와 같아야 함 - 오래된 캐시된 index와 새 스크립트의 혼합 감지)
 function checkBuildSkew() {
   const idx = document.querySelector('meta[name="build"]')?.content;
   if (idx === BUILD_ID) { sessionStorage.removeItem('cheonha-xi-web.skew'); return; } // 일치하면 재시도 표식 해제
@@ -357,7 +357,13 @@ function showDashboard() { // R97→R99: 세력 현황 대시보드 — 카드�
       for (const r of ov.cities) for (const b of r.building) blds.push(`${r.name}: ${b.type} ${b.progress}/${b.turns ?? '?'}`);
       for (const f of ov.fieldBuilding) blds.push(`야전: ${f.type} (남은 ${f.left}턴)`);
       body += sec('연구 / 건설', research + (blds.length ? blds.map(b => `<p style="margin:2px 0">${b}</p>`).join('') : none('건설 중인 시설 없음')));
-      body += sec('도시', ov.cities.length ? ov.cities.map(r => `<p style="margin:2px 0"><b>${r.name}</b> — 금 ${fmt(r.gold)} · 군량 ${fmt(r.food)} · 병 ${fmt(r.troops)} · 무장 ${r.officers} <span style="color:#aa9">(금 수입 ${fmt(r.goldIn)} − 봉록 ${fmt(r.sal)} · 군량 수입 ${fmt(r.foodIn)} − 소비 ${fmt(r.foodNeed)})</span></p>`).join('') : none('보유 도시 없음'));
+      if (ov.cities.length) { // R125: 도시 목록을 표 형식으로 — 모바일에서도 도시명/병력·무장/금·군량/수지를 열 단위로 비교 가능하게 (기존 한 줄 문장은 밀도 높고 정렬 안 됨)
+        const cth = 'style="padding:2px 6px;text-align:right;white-space:nowrap"', cthl = 'style="padding:2px 6px;text-align:left;white-space:nowrap"';
+        const sgn = n => `<td style="padding:2px 6px;text-align:right;white-space:nowrap;color:${n >= 0 ? '#8d6' : '#e66'}">${n >= 0 ? '+' : ''}${fmt(n)}</td>`;
+        body += sec('도시', `<table style="width:100%;border-collapse:collapse;font-size:12px"><tr style="color:#d4af37"><th ${cthl}>도시</th><th ${cth}>병력</th><th ${cth}>무장</th><th ${cth}>금</th><th ${cth}>군량</th><th ${cth}>금 수지</th><th ${cth}>군량 수지</th></tr>` +
+          ov.cities.map(r => `<tr style="border-top:1px solid #4a4132"><td ${cthl}><b>${r.name}</b></td><td ${cth}>${fmt(r.troops)}</td><td ${cth}>${r.officers}</td><td ${cth}>${fmt(r.gold)}</td><td ${cth}>${fmt(r.food)}</td>${sgn(r.goldIn - r.sal)}${sgn(r.foodIn - r.foodNeed)}</tr>`).join('') + `</table>` +
+          `<p style="margin:2px 0;color:#aa9;font-size:11px">수지 = 월 예상 수입 − 지출 (군량 수입은 1·4·7·10월 분기 입고 기준 예상치)</p>`);
+      } else body += sec('도시', none('보유 도시 없음'));
     } else {
       const rows = game.forceComparison();
       const th = 'style="padding:3px 8px;text-align:right;white-space:nowrap"', thl = 'style="padding:3px 8px;text-align:left;white-space:nowrap"';
