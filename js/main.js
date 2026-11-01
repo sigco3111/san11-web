@@ -1,12 +1,12 @@
 // 진입점: 화면 전환·UI·지도 연결
-import { Map3D, toWorld } from './map3d.js?v=r132';
-import { Game, SAVE_KEY, RULES, forceColor, UNIT_TYPES, ARTS, OFFICES, restoreOfficer, FIELD_FACS, TRAPS, SHIP_TYPES, TAC_SHIP_OK, josa, josaRo, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL, AB_PICK } from './game.js?v=r132';
-import { aiThink } from './ai.js?v=r132';
+import { Map3D, toWorld } from './map3d.js?v=r133';
+import { Game, SAVE_KEY, RULES, forceColor, UNIT_TYPES, ARTS, OFFICES, restoreOfficer, FIELD_FACS, TRAPS, SHIP_TYPES, TAC_SHIP_OK, josa, josaRo, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL, AB_PICK } from './game.js?v=r133';
+import { aiThink } from './ai.js?v=r133';
 
 const $ = id => document.getElementById(id);
 let DATA = null, game = null, map = null, selectedUnit = null, autoTimer = null, pendingFire = null; // R15: 직접 전법·계략 대기
 
-const BUILD_ID = 'r132'; // 빌드 ID (index.html의 meta[name=build]와 같아야 함 - 오래된 캐시된 index와 새 스크립트의 혼합 감지)
+const BUILD_ID = 'r133'; // 빌드 ID (index.html의 meta[name=build]와 같아야 함 - 오래된 캐시된 index와 새 스크립트의 혼합 감지)
 function checkBuildSkew() {
   const idx = document.querySelector('meta[name="build"]')?.content;
   if (idx === BUILD_ID) { sessionStorage.removeItem('cheonha-xi-web.skew'); return; } // 일치하면 재시도 표식 해제
@@ -19,7 +19,7 @@ checkBuildSkew();
 async function loadData() {
   const [officers, skills, portraits, s184, s190, s251] = await Promise.all(
     ['data/officers670.json','data/skills.json','data/portraits.json','data/scenario-184.json','data/scenario-190.json','data/scenario-251.json']
-      .map(u => fetch(u + '?v=r132').then(r => r.json())));
+      .map(u => fetch(u + '?v=r133').then(r => r.json())));
   const byIdx = {};
   for (const o of officers) byIdx[o.idx] = o;
   DATA = { officers: byIdx, skills, portraits, scenarios: { '184': s184, '190': s190, '251': s251 } };
@@ -339,7 +339,7 @@ function showReview() { // R132: 월 결산 — 지난달 보유량 증감 + 그
     <p style="font-size:11px;color:#aa9;margin:2px 0">보유량 증감 — 월초 대비 월말 총보유량 비교입니다. 점령·소속 변경도 포함되며 수입·지출 총계가 아닙니다 (예상 수지는 세력 현황 참조).</p>
     <div style="overflow:auto;flex:1;min-height:0"><table style="width:100%;font-size:13px;border-collapse:collapse"><tr style="color:#998"><td>항목</td><td style="text-align:right">월초</td><td style="text-align:right">월말</td><td style="text-align:right">증감</td></tr>${rows.map(tr).join('')}</table>
     ${rvw.from ? '' : '<p style="font-size:12px;color:#fc8;margin:6px 0">집계 기준 없음 — 새 게임·세력 전환·구 세이브 이후 첫 결산은 월초 기준이 없어 증감을 계산하지 않습니다.</p>'}
-    ${recs.length ? `<h4 style="margin:8px 0 2px">주요 기록</h4><div style="font-size:12px;color:#cbb">${recs.map(r => `<p style="margin:2px 0">${r.msg}</p>`).join('')}</div>` : ''}</div>
+    ${recs.length ? `<h4 style="margin:8px 0 2px">세계 주요 기록(최근 8건)</h4><div style="font-size:12px;color:#cbb">${recs.map(r => `<p style="margin:2px 0">${r.msg}</p>`).join('')}</div>` : ''}</div>
     <button id="rv-close" style="flex:none;margin-top:8px">닫기</button></div>`;
   $('rv-close').onclick = () => m.classList.add('hidden');
 }
@@ -903,7 +903,7 @@ function showUnitPanel(uid) {
     <p>소속: ${game.forceName(u.force)} · 병력 ${u.troops.toLocaleString()}<br>
     부장: ${u.officers.map(i => DATA.officers[i].name_ko).join(', ')}<br>기력 ${u.qi ?? 100} / 100${(u.conf ?? 0) > 0 ? ` · <span style='color:#e66'>혼란 ${u.conf}턴</span>` : ''}${u.food != null ? ` · 병량 ${Math.round(u.food)}${(() => { const eat = u.troops * RULES.garrisonFood / 3; const days = eat > 0 ? Math.round(u.food / eat) * 10 : 999; return days <= 30 ? ` <span style='color:#e66'>(${days}일분!)</span>` : ` (${days}일분)`; })()}` : ''}</p>
     ${mine ? '<p style="color:#ffd700">목표 도시를 클릭하면 이동 명령을 내립니다.</p>' : ''}
-    ${mine && game.tacticInfo?.(u) ? `<p>${game.tacticInfo(u).opts.map(o => `<button class="cmd up-tac" data-tid="${o.id}">전법 ${o.name} (기력 ${o.qi})</button>`).join(' ')}</p>` : ''}
+    ${mine && game.tacticInfo?.(u) ? `<p>${game.tacticInfo(u).opts.map(o => o.block ? `<button class="cmd up-tac" data-tid="${o.id}" disabled style="opacity:.5">전법 ${o.name} (기력 ${o.qi}) — ${o.block}</button>` : `<button class="cmd up-tac" data-tid="${o.id}">전법 ${o.name} (기력 ${o.qi})</button>`).join(' ')}</p>` : ''}
     ${mine && game.canAmbush(u) && game.ambushTarget(u) && (u._stratTurn ?? -1) !== game.turn && (u.qi ?? 100) >= 10 && u.officers.some(i => (DATA.officers[i]?.int ?? 0) >= 60) ? '<p><button class="cmd" id="up-ambush">계략 복병 (기력 10, 숲에서 인접 적 기습)</button></p>' : ''}
     ${mine && (u.burn ?? 0) > 0 && (u._stratTurn ?? -1) !== game.turn && (u.qi ?? 100) >= 10 && u.officers.some(i => (DATA.officers[i]?.int ?? 0) >= 60) ? '<p style="color:#ff9a4a">불이 붙었습니다 (' + u.burn + '턴, 턴당 병력 -4%) <button class="cmd" id="up-douse">계략 소화 (기력 10)</button></p>' : ''}
     ${mine && (u._stratTurn ?? -1) !== game.turn && (u.qi ?? 100) >= 10 && u.officers.some(i => (DATA.officers[i]?.int ?? 0) >= 60) ? (() => { const bc = game.cities.find(c => c.force === u.force && (c.burn ?? 0) > 0 && Math.hypot(c.lon - u.x, c.lat - u.z) < 2.2); return bc ? `<p style="color:#ff9a4a">${bc.name_ko}에 불이 붙었습니다 <button class="cmd" id="up-douse-c" data-c="${bc.id}">계략 소화 — ${bc.name_ko} (기력 10)</button></p>` : ''; })() : ''}
