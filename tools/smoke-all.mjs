@@ -2,6 +2,8 @@
 // 실행: node tools/smoke-all.mjs (repo 루트에서)
 import { spawnSync } from 'child_process';
 const SUITES = [
+  'tools/smoke-r149-arms.mjs',
+  'tools/smoke-r149-merge.mjs',
   'tools/smoke.mjs',             // R1~R112 등 57게이트
   'tools/smoke-r126-bandit.mjs', // R126 적(賊) 1게이트
   'tools/smoke-r127-trade.mjs',  // R127 상인 거래 실패 사유 1게이트
