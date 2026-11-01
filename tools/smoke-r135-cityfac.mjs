@@ -13,5 +13,6 @@ ok('시설 구성 변경 도시만 재구성(sig 비교) + 제거 동기화', /c
 ok('main 동기화 호출: cityVisible 필터(R14 시야 밖 적 도시 제외) + toWorld 변환', /syncCityFacs\?\.\(game\.cities\.filter\(c => game\.cityVisible\(c\)\)/.test(mn) && /facs: \(c\.facilities \?\? \[\]\)\.map/.test(mn));
 ok('규칙 변경 없음: game.js 시설 산식(cityFac·cityFacLv·facSlots) 미수정 — 렌더만 추가', (() => { const g = readFileSync('js/game.js', 'utf8'); return g.includes("cityFac(c, t) { return (c.facilities ?? []).filter(f => f.type === t && f.done); }") && !/syncCityFacs/.test(g); })());
 ok('빌드: BUILD_ID/meta/쿼리 버전 일치', (() => { const idx = readFileSync('index.html', 'utf8'); const bid = (mn.match(/BUILD_ID = '([^']+)'/) ?? [])[1]; const meta = (idx.match(/name="build" content="([^"]+)"/) ?? [])[1]; const refs = new Set([...(mn + idx + readFileSync('js/map3d.js', 'utf8') + readFileSync('js/ai.js', 'utf8')).matchAll(/\?v=(r\d+)/g)].map(x => x[1])); return !!bid && bid === meta && refs.size === 1 && refs.has(bid); })());
+ok('R136 배치 품질: 링 회전 24후보 패널티 스코어링(결정적) + 비조선소 수상 회피(+3) + 조선소 육지 패널티(+1) + 인접 도시 근접 회피(+2) + 지형 레벨 불일치 패널티', /for \(let k = 0; k < 24; k\+\+\)/.test(m) && /lv === 0\) p \+= dock \? 0 : 3/.test(m) && /if \(dock\) p \+= 1/.test(m) && /Math\.hypot\(px - o\.x, pz - o\.z\) < 2\.2\) p \+= 2/.test(m) && /Math\.abs\(lv - 1\)/.test(m));
 console.log(fail ? 'R135 ' + fail + ' FAIL' : 'R135 ALL PASS');
 process.exit(fail ? 1 : 0);
