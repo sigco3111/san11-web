@@ -8,6 +8,7 @@ const SUITES = [
   'tools/smoke-r128-joinpersist.mjs', // R128 참가 요청 영속 1게이트
   'tools/smoke-r129-fog.mjs',     // R129 위임 정지 안개 재적용 1게이트
   'tools/smoke-r132-review.mjs',  // R132 월 결산 16게이트
+  'tools/smoke-r133-verify.mjs',  // R133 미검증 해소: 난소행군·여울/개발지·철거·병장 고정량 22게이트
 ];
 let failed = 0;
 for (const f of SUITES) {
