@@ -1480,9 +1480,14 @@ export class Game {
     if (this.dan > 3) { this.dan = 1; this.month++; if (this.month > 12) { this.month = 1; this.year++; } }
     this.turn++;
     // 세력 전환 인계 (턴 경계)
-    if (this.pendingJoin != null && this.forces[this.pendingJoin]?.alive) {
-      this.playerForce = this.pendingJoin; this.delegated = false; this.pendingJoin = null;
-      this.log(`【${this.forceName(this.playerForce)}】에 참가하여 지휘를 시작합니다.`, true);
+    if (this.pendingJoin != null) { // R128: 대상 멸망·자기 세력 등 무효 요청은 취소 안내 후 해제 (영구 잔류 방지)
+      if (this.forces[this.pendingJoin]?.alive && this.pendingJoin !== this.playerForce) {
+        this.playerForce = this.pendingJoin; this.delegated = false; this.pendingJoin = null;
+        this.log(`【${this.forceName(this.playerForce)}】에 참가하여 지휘를 시작합니다.`, true);
+      } else {
+        this.log(`참가 요청한 【${this.forceName(this.pendingJoin)}】${josa(this.forceName(this.pendingJoin), ['이','가'])} 멸망하여 참가 요청이 취소되었습니다. 다른 세력을 선택해 주세요.`, true);
+        this.pendingJoin = null;
+      }
     }
     // R109: 위임 중 내 도시 포위·함락 위기 감시 (설계안 184행) — 새 위협 에피소드에서만 정지 (같은 적이 계속 근접해 있으면 재정지하지 않아 전선 위임을 방해하지 않음)
     this._siegeWatch = this._siegeWatch ?? {};
@@ -2504,6 +2509,7 @@ export class Game {
         cities: this.cities, forces: this.forces, units: this.units, nextUnitId: this.nextUnitId, fieldFacs: this.fieldFacs, nextFacId: this.nextFacId,
         playerForce: this.playerForce, delegated: this.delegated, deadAck: this.deadAck, logs: this.logs.slice(-60), diplo: this.diplo, itemPool: this.itemPool, chronicle: this.chronicle, over: this.over, unified: this.unified, // R14
         pendingDiplo: this.pendingDiplo ?? [], // R123: 보류 외교 제안 영속 — reload 후에도 결정 대기 복원 (효과는 resolveDiplo에서만 적용, 복원 시 재적용 없음)
+        pendingJoin: this.pendingJoin ?? null, // R128: 참가 요청 영속 — 턴 경계 전 reload 시 요청 소실 방지 (복원 시 유효성 검증은 로드 경로)
         officerStates: Object.fromEntries(Object.entries(this.officers).filter(([,o]) => o.state).map(([i,o]) => [i, o.state])),
       };
       localStorage.setItem(SAVE_KEY, JSON.stringify(data));
