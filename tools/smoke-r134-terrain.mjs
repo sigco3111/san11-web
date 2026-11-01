@@ -71,7 +71,8 @@ const pushSetup = (thirdFid = null, truce = false) => {
 
 // --- ③ 빌드 버전 일치 ---
 { const m = readFileSync('js/main.js', 'utf8'), idx = readFileSync('index.html', 'utf8');
-  const no132 = ['js/main.js', 'js/map3d.js', 'js/ai.js', 'index.html'].every(f => !readFileSync(f, 'utf8').includes('r132'));
-  ok('빌드: BUILD_ID/meta r133 + 캐스케이드 8곳(r132 잔존 0)', /BUILD_ID = 'r133'/.test(m) && /name="build" content="r133"/.test(idx) && no132); }
+  const bid = (m.match(/BUILD_ID = '([^']+)'/) ?? [])[1], meta = (idx.match(/name="build" content="([^"]+)"/) ?? [])[1];
+  const refs = new Set([...(m + idx + readFileSync('js/map3d.js', 'utf8') + readFileSync('js/ai.js', 'utf8')).matchAll(/\?v=(r\d+)/g)].map(x => x[1]));
+  ok('빌드: BUILD_ID/meta/쿼리 버전 일치(' + bid + ')', !!bid && bid === meta && refs.size === 1 && refs.has(bid)); }
 console.log(fail ? 'R134 ' + fail + ' FAIL' : 'R134 ALL PASS');
 process.exit(fail ? 1 : 0);
