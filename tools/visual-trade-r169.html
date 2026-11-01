@@ -58,4 +58,4 @@
 <script type="module" src="js/main.js?v=r169"></script>
 </body>
 </html>
-<button id="prepare" style="position:fixed;bottom:0;right:0;z-index:100">Fixture:190 Dong Zhuo month boundary</button><script type="module">import{Game}from'../js/game.js?v=r169';document.querySelector('#prepare').onclick=async()=>{const s=await(await fetch('../data/scenario-190.json')).json(),off=Object.fromEntries((await(await fetch('../data/officers670.json')).json()).map(o=>[o.idx,o])),g=new Game(s,off,{},5);g.dan=3;g.turn=3;g.autosave();location.reload()};</script>
+<button id="prepare" style="position:fixed;bottom:0;right:0;z-index:100">Fixture:190 Dong Zhuo month boundary</button><script type="module">import{Game}from'./js/game.js?v=r169';document.querySelector('#prepare').onclick=async()=>{const s=await(await fetch('./data/scenario-190.json')).json(),off=Object.fromEntries((await(await fetch('./data/officers670.json')).json()).map(o=>[o.idx,o])),g=new Game(s,off,{},5);g.dan=3;g.turn=3;g.autosave();location.reload()};</script>
