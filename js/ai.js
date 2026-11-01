@@ -1,4 +1,4 @@
-import { SHIP_TYPES, TRAPS, FIELD_FACS, SIEGE_TYPES } from './game.js?v=r137';
+import { SHIP_TYPES, TRAPS, FIELD_FACS, SIEGE_TYPES } from './game.js?v=r138';
 // 세력 AI — 위임 시 플레이어 세력도 이 AI가 운영 (위임·샌드박스의 실질 주체)
 export function aiThink(game, fid, legion = null) { // legion 지정 시 그 군단 소속 도시만 운영 (도독 위임)
   const f = game.forces[fid];
@@ -322,4 +322,4 @@ function legacyPick(game, u, eu, info) {
   const near = game.units.filter(x => x !== eu && x.force !== u.force && !game.isPeace(u.force, x.force) && Math.hypot(x.x - eu.x, x.z - eu.z) < 1.6).length;
   return ex.find(o => o.eff === 'conf' && (eu.conf ?? 0) <= 0)
     || (near >= 1 ? ex.find(o => ['whirl', 'volley', 'side', 'pierce'].includes(o.eff)) : null) || ex.slice().sort((x, y) => y.qi - x.qi)[0];
-}
+                                                                                                                                                                           }
