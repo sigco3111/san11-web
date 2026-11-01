@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head><base href="../">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>삼국지: 천하 (비공식 팬 프로젝트)</title>
+<link rel="stylesheet" href="css/style.css?v=r173">
+<meta name="build" content="r173">
+<script type="importmap">
+{"imports": {"three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js", "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}
+</script>
+</head>
+<body>
+<div id="screen-title" class="screen">
+  <h1>삼국지: 천하</h1>
+  <p class="subtitle">삼국지11 방식의 비공식 팬 제작 웹 시뮬레이션 (제작 중 버전)</p>
+  <div id="title-buttons">
+    <button id="btn-continue" class="big" disabled>이어하기</button>
+    <button id="btn-new" class="big">새 게임</button>
+  </div>
+  <p class="foot">본 게임은 코에이 『삼국지11』의 시스템을 참고한 비공식 독립 팬 프로젝트입니다. 원작 게임 파일·리소스를 포함하지 않습니다.</p>
+</div>
+<div id="screen-scenario" class="screen hidden">
+  <h2>시나리오 선택</h2>
+  <div id="scenario-list"></div>
+  <button class="back">← 타이틀로</button>
+</div>
+<div id="screen-ruler" class="screen hidden">
+  <h2 id="ruler-title">군주 선택</h2>
+  <div id="ruler-list"></div>
+  <button class="back">← 시나리오로</button>
+</div>
+<div id="screen-game" class="hidden">
+  <canvas id="map-canvas"></canvas>
+  <div id="hud-top">
+    <span id="hud-date"></span>
+    <span id="hud-force"></span>
+    <span id="hud-ap"></span>
+    <span id="hud-gold"></span>
+    <span id="hud-food"></span>
+    <button id="btn-endturn">턴 종료</button>
+    <button id="btn-delegate">위임</button>
+    <button id="btn-rot-l" title="왼쪽으로 회전 (Q)">⟲</button>
+    <button id="btn-rot-r" title="오른쪽으로 회전 (E)">⟳</button>
+    <button id="btn-sound" aria-pressed="false">음향 끔</button>
+    <button id="btn-dash">현황</button>
+    <button id="btn-menu">메뉴</button>
+    <div id="hud-speed" class="hidden">
+      자동 진행: <select id="sel-speed"><option value="1">1x</option><option value="4" selected>4x</option><option value="16">16x</option></select>
+      <button id="btn-stop-auto">중단</button>
+    </div>
+  </div>
+  <div id="panel" class="hidden"></div>
+  <button id="panel-x" aria-label="패널 닫기">×</button>
+  <div id="logbox"></div>
+  <div id="modal" class="hidden"></div>
+</div>
+<script type="module" src="js/main.js?v=r173"></script>
+</body>
+</html>
+<button id="prepare" style="position:fixed;bottom:0;right:0;z-index:100">Fixture: surrender decision</button><script type="module">document.querySelector('#prepare').onclick=()=>{const d=JSON.parse(localStorage.getItem('cheonha-xi-web.save.v1'));d.delegated=true;const fid=Object.values(d.forces).find(f=>f.alive&&f.id!==d.playerForce).id;d.pendingDiplo=[{id:'test-surrender',kind:'surrender',fid,tid:d.playerForce,cityId:d.cities.find(c=>c.force===fid).id}];localStorage.setItem('cheonha-xi-web.save.v1',JSON.stringify(d));location.reload()};</script>
