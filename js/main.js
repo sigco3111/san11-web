@@ -1,12 +1,12 @@
 // 진입점: 화면 전환·UI·지도 연결
-import { Map3D, toWorld } from './map3d.js?v=r161';
-import { Game, SAVE_KEY, RULES, forceColor, UNIT_TYPES, ARTS, OFFICES, restoreOfficer, FIELD_FACS, TRAPS, SHIP_TYPES, TAC_SHIP_OK, josa, josaRo, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL, AB_PICK } from './game.js?v=r161';
-import { aiThink } from './ai.js?v=r161';
+import { Map3D, toWorld } from './map3d.js?v=r162';
+import { Game, SAVE_KEY, RULES, forceColor, UNIT_TYPES, ARTS, OFFICES, restoreOfficer, FIELD_FACS, TRAPS, SHIP_TYPES, TAC_SHIP_OK, josa, josaRo, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL, AB_PICK } from './game.js?v=r162';
+import { aiThink } from './ai.js?v=r162';
 
 const $ = id => document.getElementById(id);
 let DATA = null, game = null, map = null, selectedUnit = null, autoTimer = null, pendingFire = null; // R15: 직접 전법·계략 대기
 
-const BUILD_ID = 'r161'; // 빌드 ID (index.html의 meta[name=build]와 같아야 함 - 오래된 캐시된 index와 새 스크립트의 혼합 감지)
+const BUILD_ID = 'r162'; // 빌드 ID (index.html의 meta[name=build]와 같아야 함 - 오래된 캐시된 index와 새 스크립트의 혼합 감지)
 function checkBuildSkew() {
   const idx = document.querySelector('meta[name="build"]')?.content;
   if (idx === BUILD_ID) { sessionStorage.removeItem('cheonha-xi-web.skew'); return; } // 일치하면 재시도 표식 해제
@@ -19,7 +19,7 @@ checkBuildSkew();
 async function loadData() {
   const [officers, skills, portraits, s184, s190, s251] = await Promise.all(
     ['data/officers670.json','data/skills.json','data/portraits.json','data/scenario-184.json','data/scenario-190.json','data/scenario-251.json']
-      .map(u => fetch(u + '?v=r161').then(r => r.json())));
+      .map(u => fetch(u + '?v=r162').then(r => r.json())));
   const byIdx = {};
   for (const o of officers) byIdx[o.idx] = o;
   DATA = { officers: byIdx, skills, portraits, scenarios: { '184': s184, '190': s190, '251': s251 } };
@@ -125,7 +125,8 @@ function refreshOpenPanel() { // R130: 일기토·설전·수신 외교 결정 �
   const c = lastCityId != null ? game.cityById[lastCityId] : null;
   if (!c) return;
   const st = p.scrollTop;
-  if (p.dataset.view === 'diplo') showDiplomacy(c);
+  if (p.dataset.view === 'advisor') showAdvisor(c);
+  else if (p.dataset.view === 'diplo') showDiplomacy(c);
   else if (p.dataset.view === 'city') showCityPanel(c);
   else if (p.dataset.view === 'facilities') showFacilities(c);
   else return; // 출진 등 입력 중 하위 화면은 덮지 않음 (R108과 동일 기준)
@@ -210,6 +211,10 @@ function doTurn() {
     const c = game.cityById[Number($('panel').dataset.city)];
     if (c && c.force === game.playerForce) { const st = $('panel').scrollTop; showFacilities(c); $('panel').scrollTop = st; }
     else $('panel').classList.add('hidden');
+  }
+  if ($('panel').dataset.view === 'advisor' && lastCityId != null && !$('panel').classList.contains('hidden')) {
+    const c = game.cityById[lastCityId];
+    if (c?.force === game.playerForce) showAdvisor(c); else $('panel').classList.add('hidden');
   }
   if ($('panel').dataset.view === 'dispatch' && !$('panel').classList.contains('hidden')) $('panel').refreshDispatch?.();
   if ($('panel').dataset.view === 'move' && !$('panel').classList.contains('hidden')) $('panel').refreshMove?.();
@@ -511,19 +516,21 @@ function onPick(nx, ny) {
   selectedUnit = null;
   showCityPanel(c);
 }
-function showAdvisor(c) { $('panel').dataset.view='advisor'; // 군사 임명: 지력 70 이상만 (설계안 명시)
+function showAdvisor(c) { const reopening = $('panel').dataset.view !== 'advisor', oldScroll = $('panel').scrollTop; $('panel').dataset.view='advisor'; // 군사 임명: 지력 70 이상만 (설계안 명시)
   const p = $('panel');
   const f = game.forces[c.force];
-  const serving = Object.values(DATA.officers).filter(o => o.state?.force === c.force).sort((a, b) => b.int - a.int);
+  const serving = Object.values(DATA.officers).filter(o => o.state?.force === c.force && ['ruler', 'taesu', 'serving'].includes(o.state.status)).sort((a, b) => b.int - a.int);
   let html = `<h3>${game.forceName(c.force)} 군사</h3>`;
-  html += f.advisor != null ? `<p>현재 군사: <b>${DATA.officers[f.advisor].name_ko}</b> (지력 ${DATA.officers[f.advisor].int})</p>` : '<p>현재 군사: 없음</p>';
+  const advisor = game.activeAdvisor(c.force);
+  html += advisor ? `<p>현재 군사: <b>${advisor.name_ko}</b> (지력 ${advisor.int})</p>` : '<p>현재 군사: 없음</p>';
+  if (!advisor && f.advisor != null) html += '<p class=st>이전 임명 무장은 포로·이적 등으로 현재 재직하지 않습니다.</p>';
   html += '<p style="font-size:12px;color:#998">군사는 지력 70 이상만 임명 가능. 적국의 군주·군사 지력이 높을수록 아군 계략 성공률이 낮아집니다.</p>';
   for (const o of serving) {
     const ok = o.int >= 70;
-    html += `<div class="officer"><div><div class="nm">${o.name_ko} <span class="st">지력 ${o.int}${f.advisor === o.idx ? ' · 현 군사' : ''}</span></div></div>${ok && f.advisor !== o.idx ? `<button class="cmd cmd-adv" data-i="${o.idx}">임명</button>` : ''}</div>`;
+    html += `<div class="officer"><div><div class="nm">${o.name_ko} <span class="st">지력 ${o.int}${advisor?.idx === o.idx ? ' · 현 군사' : ''}</span></div></div>${ok && advisor?.idx !== o.idx ? `<button class="cmd cmd-adv" data-i="${o.idx}">임명</button>` : ''}</div>`;
   }
   html += `<button class="cmd" id="adv-back">← 도시 패널로</button>`;
-  p.innerHTML = html;
+  p.innerHTML = html; p.scrollTop = reopening ? 0 : oldScroll;
   p.querySelectorAll('.cmd-adv').forEach(b => b.onclick = () => { game.appointAdvisor(Number(b.dataset.i)); refreshAll(); showAdvisor(c); });
   $('adv-back').onclick = () => showCityPanel(c);
 }

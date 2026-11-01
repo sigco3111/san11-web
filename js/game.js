@@ -664,17 +664,22 @@ export class Game {
   // === 군사·군단 (설계안 96행: 군사 지력70+ 임명 / 군단: 도시 묶음을 도독에게 위임) ===
   appointAdvisor(officerIdx) { // 군사 임명: 지력 70 이상만 (설계안 명시)
     const o = this.officers[officerIdx];
-    if (!o || o.int < 70 || !o.state || o.state.force == null) return false;
+    if (!o || o.int < 70 || !o.state || o.state.force == null || !['ruler', 'taesu', 'serving'].includes(o.state.status)) return false;
     const f = this.forces[o.state.force];
+    if (!f?.alive) return false;
     f.advisor = officerIdx;
     this.log(`【군사】${this.forceName(f.id)}의 군사로 ${josa(o.name_ko, ['을','를'])} 임명했습니다`, f.id === this.playerForce);
     return true;
+  }
+  activeAdvisor(fid) { // R162: 포로·하야·이적 무장은 재직 군사로 취급하지 않음. 저장된 임명 이력은 보존
+    const f = this.forces[fid], o = this.officers[f?.advisor];
+    return f?.alive && o?.state?.force === fid && ['ruler', 'taesu', 'serving'].includes(o.state.status) ? o : null;
   }
   mindDefense(fid) { // 계략 방어: 대상 세력 군주·군사의 지력이 높을수록 계략 성공률 감소 (설계안 79행, 자체 수치)
     const f = this.forces[fid];
     if (!f?.alive) return 0;
     const rulerInt = this.officers[f.ruler]?.int ?? 0;
-    const advInt = f.advisor != null ? (this.officers[f.advisor]?.int ?? 0) : 0;
+    const advInt = this.activeAdvisor(fid)?.int ?? 0;
     return Math.max(rulerInt, advInt) / 500; // 최대 약 -20%
   }
   _blocked(c) { return c && c.force === this.playerForce && !this.delegated && !this._legionActing && !!this.cityLegion(c.id); } // 군단 소속 도시는 수동 명령 불가
