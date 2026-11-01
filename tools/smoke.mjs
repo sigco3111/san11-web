@@ -452,7 +452,12 @@ if (g.units.find(u => u.id === 9999) && g.units.find(u => u.id === 9999).qi === 
     Math.random = () => 0.01; // 0.3 확률 통과
     aiThink(gA, aiF.id);
     Math.random = origRandom;
-    if (gA.relation(aiF.id, gA.playerForce) !== 30 + Math.round((8 + Math.max(50, ...aiCities[0].officers.map(i => gA.officers[i].pol)) / 10) * (aiCities[0].officers.some(i => gA.officers[i].skill === '논객') ? 1.5 : 1))) { console.error('FAIL: AI 친선 사절', gA.relation(aiF.id, gA.playerForce)); process.exit(1); }
+    const expGain = Math.round((8 + Math.max(50, ...aiCities[0].officers.map(i => gA.officers[i].pol)) / 10) * (aiCities[0].officers.some(i => gA.officers[i].skill === '논객') ? 1.5 : 1));
+    const pend = (gA.pendingDiplo ?? []).find(x => x.kind === 'envoy' && x.fid === aiF.id); // R123: 플레이어 수신 사절은 보류 큐 — 효과는 수락 시에만
+    if (!pend) { console.error('FAIL: AI 친선 사절 보류 큐 미도착', gA.pendingDiplo); process.exit(1); }
+    if (gA.relation(aiF.id, gA.playerForce) !== 30) { console.error('FAIL: AI 친선 사절 수락 전 효과 선적용', gA.relation(aiF.id, gA.playerForce)); process.exit(1); }
+    gA.resolveDiplo(pend.id, true);
+    if (gA.relation(aiF.id, gA.playerForce) !== 30 + expGain) { console.error('FAIL: AI 친선 사절 수락 후 관계', gA.relation(aiF.id, gA.playerForce)); process.exit(1); }
   }
   // AI 동맹 제의: 호의 60+ 조건에서 실행 (같은 비용·조건)
   {
@@ -465,7 +470,11 @@ if (g.units.find(u => u.id === 9999) && g.units.find(u => u.id === 9999).qi === 
       Math.random = () => 0.01; // 사절 스킵·동맹 실행·상대 수락
       aiThink(gB, aiF.id);
       Math.random = origRandom;
-      if (!gB.isAllied(aiF.id, gB.playerForce)) { console.error('FAIL: AI 동맹 제의'); process.exit(1); }
+      const pendB = (gB.pendingDiplo ?? []).find(x => x.kind === 'alliance' && x.fid === aiF.id); // R123: 플레이어 수신 동맹 제의는 보류 큐
+      if (!pendB) { console.error('FAIL: AI 동맹 제의 보류 큐 미도착', gB.pendingDiplo); process.exit(1); }
+      if (gB.isAllied(aiF.id, gB.playerForce)) { console.error('FAIL: AI 동맹 제의 수락 전 성립'); process.exit(1); }
+      gB.resolveDiplo(pendB.id, true);
+      if (!gB.isAllied(aiF.id, gB.playerForce)) { console.error('FAIL: AI 동맹 제의 수락 후 미성립'); process.exit(1); }
       // AI 정전: 동맹 해제 후 험악+수세 조건
       const gC = new Game(scen, officers, {}, 0);
       const aF2 = Object.values(gC.forces).find(f => f.alive && f.id !== gC.playerForce && gC.cities.filter(c => c.force === f.id).length >= 1);
@@ -479,7 +488,11 @@ if (g.units.find(u => u.id === 9999) && g.units.find(u => u.id === 9999).qi === 
       Math.random = () => 0.4; // 사절(0.3) 스킵, 동맹(0.2) 스킵, 정전(0.5) 실행
       aiThink(gC, aF2.id);
       Math.random = origRandom;
-      if (!gC.isTruce(aF2.id, gC.playerForce) && gC.relation(aF2.id, gC.playerForce) <= 20) { console.error('FAIL: AI 정전 요청', gC.relation(aF2.id, gC.playerForce)); process.exit(1); }
+      const pendC = (gC.pendingDiplo ?? []).find(x => x.kind === 'truce' && x.fid === aF2.id); // R123: 플레이어 수신 정전 요청은 보류 큐
+      if (!pendC) { console.error('FAIL: AI 정전 요청 보류 큐 미도착', gC.pendingDiplo); process.exit(1); }
+      if (gC.isTruce(aF2.id, gC.playerForce)) { console.error('FAIL: AI 정전 수락 전 성립'); process.exit(1); }
+      gC.resolveDiplo(pendC.id, true);
+      if (!gC.isTruce(aF2.id, gC.playerForce)) { console.error('FAIL: AI 정전 수락 후 미성립', gC.relation(aF2.id, gC.playerForce)); process.exit(1); }
     }
   }
   console.log('외교 확인: 5단계 매핑·친선 사절·동맹(24턴)·동맹 공격 차단·파기·정전(12턴 공격금지·만료 후 공격가능)·항복(도시+무장+야전부대 귀속)·AI 사절/동맹/정전 PASS');
