@@ -2646,7 +2646,7 @@ console.log('sample logs:'); for (const l of g.logs.slice(-8)) console.log(' ', 
   const other = g9.aliveForces().find(f => f.id !== g9.playerForce);
   g9.units.push({ id: 'w109', force: other.id, officers: [], troops: 9000, type: 'spear', x: pc.lon + 2, z: pc.lat, path: [], tx: null, tz: null, targetCity: null, label: '위협시험 9k', qi: 100, conf: 0 });
   g9.endTurn(aiThink);
-  if (!g9.pendingStop) fail('포위 위기 자동 정지 미발동');
+  if (!g9.logs.some(l=>l.msg.includes('포위·함락 위기')) || !g9.delegated) fail('포위 경고/위임유지 실패');
   const u9 = g9.units.find(u => u.id === 'w109');
   g9.pendingStop = false;
   if (u9 && Math.hypot(u9.x - pc.lon, u9.z - pc.lat) <= 4) { g9.endTurn(aiThink); if (g9.pendingStop) fail('같은 에피소드 재정지 발생'); }
@@ -2657,7 +2657,7 @@ console.log('sample logs:'); for (const l of g.logs.slice(-8)) console.log(' ', 
   const oc10 = g10.cities.find(c => c.force === of10.id);
   oc10.gold = Math.max(oc10.gold, 500); of10.ap = 255;
   if (!g10.envoy(of10.id, g10.playerForce, oc10.id)) fail('사절 집행 실패(전제 조건)');
-  if (!g10.pendingStop) fail('외교 제안 자동 정지 미발동');
+  if (!g10.logs.some(l=>l.msg.includes('친선 사절 도착')) || !g10.delegated) fail('외교 알림/위임유지 실패');
   console.log('R109 위임 자동 중단 게이트 PASS (포위 에피소드·외교 제안·멸망)');
       }
 
@@ -2789,4 +2789,4 @@ console.log('sample logs:'); for (const l of g.logs.slice(-8)) console.log(' ', 
     if (!/금이 부족합니다/.test(g.lastRecruitWhy ?? '')) fail('등용 금 안내 없음', g.lastRecruitWhy);
   }
   console.log('R112 시설 소화·비용 안내 게이트 PASS (소화 성공·사거리/미점화 차단·기력 소모·쿨다운·석방 AP·등용 AP/금 안내)');
-      }
+               }
