@@ -1,0 +1,728 @@
+[
+  {
+    "scenId": 184,
+    "seed": 1,
+    "policy": "delegate",
+    "fid": 2,
+    "start": {
+      "city": "하비",
+      "id": 8,
+      "troops": 32000,
+      "target": "소패",
+      "targetCity": 9,
+      "targetForce": 28
+    },
+    "turn": 121,
+    "attempts": 120,
+    "alive": true,
+    "dispatches": [
+      {
+        "turn": 5,
+        "id": 12,
+        "home": 8,
+        "troops": 20000,
+        "target": 9
+      },
+      {
+        "turn": 10,
+        "id": 15,
+        "home": 8,
+        "troops": 9000,
+        "target": 9
+      }
+    ],
+    "captures": [
+      {
+        "turn": 12,
+        "city": "소패",
+        "id": 9,
+        "from": 28
+      }
+    ],
+    "issues": [],
+    "issueCount": 0,
+    "pendingCleared": true,
+    "resourceFixture": false
+  },
+  {
+    "scenId": 184,
+    "seed": 1,
+    "policy": "attack_city",
+    "fid": 2,
+    "start": {
+      "city": "하비",
+      "id": 8,
+      "troops": 32000,
+      "target": "소패",
+      "targetCity": 9,
+      "targetForce": 28
+    },
+    "turn": 121,
+    "attempts": 120,
+    "alive": true,
+    "dispatches": [
+      {
+        "turn": 5,
+        "id": 12,
+        "home": 8,
+        "troops": 20000,
+        "target": 9
+      },
+      {
+        "turn": 10,
+        "id": 15,
+        "home": 8,
+        "troops": 9000,
+        "target": 9
+      }
+    ],
+    "captures": [
+      {
+        "turn": 12,
+        "city": "소패",
+        "id": 9,
+        "from": 28
+      }
+    ],
+    "issues": [],
+    "issueCount": 0,
+    "pendingCleared": true,
+    "resourceFixture": false
+  },
+  {
+    "scenId": 184,
+    "seed": 1,
+    "policy": "attack_force",
+    "fid": 2,
+    "start": {
+      "city": "하비",
+      "id": 8,
+      "troops": 32000,
+      "target": "소패",
+      "targetCity": 9,
+      "targetForce": 28
+    },
+    "turn": 121,
+    "attempts": 120,
+    "alive": true,
+    "dispatches": [
+      {
+        "turn": 5,
+        "id": 12,
+        "home": 8,
+        "troops": 20000,
+        "target": 9
+      },
+      {
+        "turn": 10,
+        "id": 15,
+        "home": 8,
+        "troops": 9000,
+        "target": 9
+      }
+    ],
+    "captures": [
+      {
+        "turn": 12,
+        "city": "소패",
+        "id": 9,
+        "from": 28
+      }
+    ],
+    "issues": [],
+    "issueCount": 0,
+    "pendingCleared": true,
+    "resourceFixture": false
+  },
+  {
+    "scenId": 184,
+    "seed": 7,
+    "policy": "delegate",
+    "fid": 2,
+    "start": {
+      "city": "하비",
+      "id": 8,
+      "troops": 32000,
+      "target": "소패",
+      "targetCity": 9,
+      "targetForce": 28
+    },
+    "turn": 121,
+    "attempts": 120,
+    "alive": true,
+    "dispatches": [
+      {
+        "turn": 5,
+        "id": 7,
+        "home": 8,
+        "troops": 20000,
+        "target": 9
+      },
+      {
+        "turn": 10,
+        "id": 9,
+        "home": 8,
+        "troops": 9000,
+        "target": 9
+      }
+    ],
+    "captures": [
+      {
+        "turn": 12,
+        "city": "소패",
+        "id": 9,
+        "from": 28
+      }
+    ],
+    "issues": [],
+    "issueCount": 0,
+    "pendingCleared": true,
+    "resourceFixture": false
+  },
+  {
+    "scenId": 184,
+    "seed": 7,
+    "policy": "attack_city",
+    "fid": 2,
+    "start": {
+      "city": "하비",
+      "id": 8,
+      "troops": 32000,
+      "target": "소패",
+      "targetCity": 9,
+      "targetForce": 28
+    },
+    "turn": 121,
+    "attempts": 120,
+    "alive": true,
+    "dispatches": [
+      {
+        "turn": 5,
+        "id": 7,
+        "home": 8,
+        "troops": 20000,
+        "target": 9
+      },
+      {
+        "turn": 10,
+        "id": 9,
+        "home": 8,
+        "troops": 9000,
+        "target": 9
+      }
+    ],
+    "captures": [
+      {
+        "turn": 12,
+        "city": "소패",
+        "id": 9,
+        "from": 28
+      }
+    ],
+    "issues": [],
+    "issueCount": 0,
+    "pendingCleared": true,
+    "resourceFixture": false
+  },
+  {
+    "scenId": 184,
+    "seed": 7,
+    "policy": "attack_force",
+    "fid": 2,
+    "start": {
+      "city": "하비",
+      "id": 8,
+      "troops": 32000,
+      "target": "소패",
+      "targetCity": 9,
+      "targetForce": 28
+    },
+    "turn": 121,
+    "attempts": 120,
+    "alive": true,
+    "dispatches": [
+      {
+        "turn": 5,
+        "id": 7,
+        "home": 8,
+        "troops": 20000,
+        "target": 9
+      },
+      {
+        "turn": 10,
+        "id": 9,
+        "home": 8,
+        "troops": 9000,
+        "target": 9
+      }
+    ],
+    "captures": [
+      {
+        "turn": 12,
+        "city": "소패",
+        "id": 9,
+        "from": 28
+      }
+    ],
+    "issues": [],
+    "issueCount": 0,
+    "pendingCleared": true,
+    "resourceFixture": false
+  },
+  {
+    "scenId": 184,
+    "seed": 42,
+    "policy": "delegate",
+    "fid": 2,
+    "start": {
+      "city": "하비",
+      "id": 8,
+      "troops": 32000,
+      "target": "소패",
+      "targetCity": 9,
+      "targetForce": 28
+    },
+    "turn": 121,
+    "attempts": 120,
+    "alive": true,
+    "dispatches": [
+      {
+        "turn": 5,
+        "id": 6,
+        "home": 8,
+        "troops": 20000,
+        "target": 9
+      },
+      {
+        "turn": 10,
+        "id": 8,
+        "home": 8,
+        "troops": 9000,
+        "target": 9
+      }
+    ],
+    "captures": [
+      {
+        "turn": 12,
+        "city": "소패",
+        "id": 9,
+        "from": 28
+      }
+    ],
+    "issues": [],
+    "issueCount": 0,
+    "pendingCleared": true,
+    "resourceFixture": false
+  },
+  {
+    "scenId": 184,
+    "seed": 42,
+    "policy": "attack_city",
+    "fid": 2,
+    "start": {
+      "city": "하비",
+      "id": 8,
+      "troops": 32000,
+      "target": "소패",
+      "targetCity": 9,
+      "targetForce": 28
+    },
+    "turn": 121,
+    "attempts": 120,
+    "alive": true,
+    "dispatches": [
+      {
+        "turn": 5,
+        "id": 6,
+        "home": 8,
+        "troops": 20000,
+        "target": 9
+      },
+      {
+        "turn": 10,
+        "id": 8,
+        "home": 8,
+        "troops": 9000,
+        "target": 9
+      }
+    ],
+    "captures": [
+      {
+        "turn": 12,
+        "city": "소패",
+        "id": 9,
+        "from": 28
+      }
+    ],
+    "issues": [],
+    "issueCount": 0,
+    "pendingCleared": true,
+    "resourceFixture": false
+  },
+  {
+    "scenId": 184,
+    "seed": 42,
+    "policy": "attack_force",
+    "fid": 2,
+    "start": {
+      "city": "하비",
+      "id": 8,
+      "troops": 32000,
+      "target": "소패",
+      "targetCity": 9,
+      "targetForce": 28
+    },
+    "turn": 121,
+    "attempts": 120,
+    "alive": true,
+    "dispatches": [
+      {
+        "turn": 5,
+        "id": 6,
+        "home": 8,
+        "troops": 20000,
+        "target": 9
+      },
+      {
+        "turn": 10,
+        "id": 8,
+        "home": 8,
+        "troops": 9000,
+        "target": 9
+      }
+    ],
+    "captures": [
+      {
+        "turn": 12,
+        "city": "소패",
+        "id": 9,
+        "from": 28
+      }
+    ],
+    "issues": [],
+    "issueCount": 0,
+    "pendingCleared": true,
+    "resourceFixture": false
+  },
+  {
+    "scenId": 190,
+    "seed": 1,
+    "policy": "delegate",
+    "fid": 0,
+    "start": {
+      "city": "진류",
+      "id": 12,
+      "troops": 22000,
+      "target": "복양",
+      "targetCity": 11,
+      "targetForce": 17
+    },
+    "turn": 61,
+    "attempts": 61,
+    "alive": false,
+    "dispatches": [
+      {
+        "turn": 4,
+        "id": 16,
+        "home": 12,
+        "troops": 19000,
+        "target": 11
+      }
+    ],
+    "captures": [],
+    "issues": [],
+    "issueCount": 0,
+    "pendingCleared": true,
+    "resourceFixture": false
+  },
+  {
+    "scenId": 190,
+    "seed": 1,
+    "policy": "attack_city",
+    "fid": 0,
+    "start": {
+      "city": "진류",
+      "id": 12,
+      "troops": 22000,
+      "target": "복양",
+      "targetCity": 11,
+      "targetForce": 17
+    },
+    "turn": 61,
+    "attempts": 61,
+    "alive": false,
+    "dispatches": [
+      {
+        "turn": 4,
+        "id": 16,
+        "home": 12,
+        "troops": 19000,
+        "target": 11
+      }
+    ],
+    "captures": [],
+    "issues": [],
+    "issueCount": 0,
+    "pendingCleared": true,
+    "resourceFixture": false
+  },
+  {
+    "scenId": 190,
+    "seed": 1,
+    "policy": "attack_force",
+    "fid": 0,
+    "start": {
+      "city": "진류",
+      "id": 12,
+      "troops": 22000,
+      "target": "복양",
+      "targetCity": 11,
+      "targetForce": 17
+    },
+    "turn": 61,
+    "attempts": 61,
+    "alive": false,
+    "dispatches": [
+      {
+        "turn": 4,
+        "id": 16,
+        "home": 12,
+        "troops": 19000,
+        "target": 11
+      }
+    ],
+    "captures": [],
+    "issues": [],
+    "issueCount": 0,
+    "pendingCleared": true,
+    "resourceFixture": false
+  },
+  {
+    "scenId": 190,
+    "seed": 7,
+    "policy": "delegate",
+    "fid": 0,
+    "start": {
+      "city": "진류",
+      "id": 12,
+      "troops": 22000,
+      "target": "복양",
+      "targetCity": 11,
+      "targetForce": 17
+    },
+    "turn": 113,
+    "attempts": 113,
+    "alive": false,
+    "dispatches": [
+      {
+        "turn": 4,
+        "id": 14,
+        "home": 12,
+        "troops": 7800,
+        "target": 11
+      },
+      {
+        "turn": 5,
+        "id": 17,
+        "home": 12,
+        "troops": 7800,
+        "target": 11
+      },
+      {
+        "turn": 9,
+        "id": 31,
+        "home": 12,
+        "troops": 3400,
+        "target": 11
+      }
+    ],
+    "captures": [],
+    "issues": [],
+    "issueCount": 0,
+    "pendingCleared": true,
+    "resourceFixture": false
+  },
+  {
+    "scenId": 190,
+    "seed": 7,
+    "policy": "attack_city",
+    "fid": 0,
+    "start": {
+      "city": "진류",
+      "id": 12,
+      "troops": 22000,
+      "target": "복양",
+      "targetCity": 11,
+      "targetForce": 17
+    },
+    "turn": 113,
+    "attempts": 113,
+    "alive": false,
+    "dispatches": [
+      {
+        "turn": 4,
+        "id": 14,
+        "home": 12,
+        "troops": 7800,
+        "target": 11
+      },
+      {
+        "turn": 5,
+        "id": 17,
+        "home": 12,
+        "troops": 7800,
+        "target": 11
+      },
+      {
+        "turn": 9,
+        "id": 31,
+        "home": 12,
+        "troops": 3400,
+        "target": 11
+      }
+    ],
+    "captures": [],
+    "issues": [],
+    "issueCount": 0,
+    "pendingCleared": true,
+    "resourceFixture": false
+  },
+  {
+    "scenId": 190,
+    "seed": 7,
+    "policy": "attack_force",
+    "fid": 0,
+    "start": {
+      "city": "진류",
+      "id": 12,
+      "troops": 22000,
+      "target": "복양",
+      "targetCity": 11,
+      "targetForce": 17
+    },
+    "turn": 113,
+    "attempts": 113,
+    "alive": false,
+    "dispatches": [
+      {
+        "turn": 4,
+        "id": 14,
+        "home": 12,
+        "troops": 7800,
+        "target": 11
+      },
+      {
+        "turn": 5,
+        "id": 17,
+        "home": 12,
+        "troops": 7800,
+        "target": 11
+      },
+      {
+        "turn": 9,
+        "id": 31,
+        "home": 12,
+        "troops": 3400,
+        "target": 11
+      }
+    ],
+    "captures": [],
+    "issues": [],
+    "issueCount": 0,
+    "pendingCleared": true,
+    "resourceFixture": false
+  },
+  {
+    "scenId": 190,
+    "seed": 42,
+    "policy": "delegate",
+    "fid": 0,
+    "start": {
+      "city": "진류",
+      "id": 12,
+      "troops": 22000,
+      "target": "복양",
+      "targetCity": 11,
+      "targetForce": 17
+    },
+    "turn": 121,
+    "attempts": 120,
+    "alive": true,
+    "dispatches": [
+      {
+        "turn": 3,
+        "id": 7,
+        "home": 12,
+        "troops": 19000,
+        "target": 12
+      }
+    ],
+    "captures": [],
+    "issues": [],
+    "issueCount": 0,
+    "pendingCleared": true,
+    "resourceFixture": false
+  },
+  {
+    "scenId": 190,
+    "seed": 42,
+    "policy": "attack_city",
+    "fid": 0,
+    "start": {
+      "city": "진류",
+      "id": 12,
+      "troops": 22000,
+      "target": "복양",
+      "targetCity": 11,
+      "targetForce": 17
+    },
+    "turn": 121,
+    "attempts": 120,
+    "alive": true,
+    "dispatches": [
+      {
+        "turn": 3,
+        "id": 7,
+        "home": 12,
+        "troops": 19000,
+        "target": 12
+      }
+    ],
+    "captures": [],
+    "issues": [],
+    "issueCount": 0,
+    "pendingCleared": true,
+    "resourceFixture": false
+  },
+  {
+    "scenId": 190,
+    "seed": 42,
+    "policy": "attack_force",
+    "fid": 0,
+    "start": {
+      "city": "진류",
+      "id": 12,
+      "troops": 22000,
+      "target": "복양",
+      "targetCity": 11,
+      "targetForce": 17
+    },
+    "turn": 121,
+    "attempts": 120,
+    "alive": true,
+    "dispatches": [
+      {
+        "turn": 3,
+        "id": 7,
+        "home": 12,
+        "troops": 19000,
+        "target": 12
+      }
+    ],
+    "captures": [],
+    "issues": [],
+    "issueCount": 0,
+    "pendingCleared": true,
+    "resourceFixture": false
+  }
+]
