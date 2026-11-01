@@ -637,8 +637,9 @@ function diplomacyUiInfo(g,c,tid,action) {
   }
   return {ap,gold,why};
 }
-function showDiplomacy(c) { $('panel').dataset.view='diplo';
-  const p = $('panel'); p.classList.remove('hidden');
+function showDiplomacy(c) {
+  const p = $('panel'), reopening=p.dataset.view!=='diplo'||p.dataset.city!==String(c.id);
+  p.dataset.view='diplo'; p.dataset.city=String(c.id); p.classList.remove('hidden');
   const myF = game.forces[c.force];
   const others = Object.values(game.forces).filter(f => f.alive && f.id !== c.force);
   let html = `<div class="fac-status"><p class="st">도시 금 ${c.gold.toLocaleString()} · 행동력 ${myF?.ap??0}</p></div><h3>${c.name_ko} 외교 <small>(사절: 이 도시에서 파견)</small></h3>`;
@@ -673,6 +674,7 @@ function showDiplomacy(c) { $('panel').dataset.view='diplo';
     if (game.pendingDebate) showDebate(); // R11: 협상 결렬 시 설전 발동
   });
   $('cmd-diplo-back').onclick = () => showCityPanel(c);
+  if(reopening)p.scrollTop=0;
 }
 function showFacilities(c) {
   const p = $('panel'); p.classList.remove('hidden');
