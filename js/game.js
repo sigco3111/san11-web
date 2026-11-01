@@ -1092,7 +1092,10 @@ export class Game {
     return true;
   }
   moveOfficers(fromCity, toCity, idxs) {
-    const a = this.cityById[fromCity], b = this.cityById[toCity], f = this.forces[a.force];
+    const a = this.cityById[fromCity], b = this.cityById[toCity], f = this.forces[a?.force];
+    if (!a || !b || a.id === b.id || !f?.alive || b.force !== a.force || !Array.isArray(idxs)) return false;
+    idxs = [...new Set(idxs)];
+    if (!idxs.length || idxs.some(i => !a.officers.includes(i) || this.officers[i]?.state?.force !== a.force || this.officers[i]?.state?.city !== a.id || !['ruler','taesu','serving'].includes(this.officers[i]?.state?.status))) return false;
     const apc = Math.ceil(20 * this.apMult(a, 'personnel')); // R13 인재부
     if (f.ap < apc || this._blocked(a)) return false; // 군단 소속 도시는 수동 이동 불가
     f.ap -= apc;
