@@ -89,6 +89,8 @@ export const TACTICS_EX = {
   lou: [{ id: 'ram', name: '격돌', qi: 20, minApt: 2, eff: 'push', n: 1, mult: 2.0 }], // 설계 격돌(누선·투함, 1칸 격퇴, A 이상) 한 항목: 기본 항목과 중복이던 것을 하나로
   dou: [{ id: 'ram', name: '격돌', qi: 20, minApt: 2, eff: 'push', n: 1, mult: 2.0 }],
 };
+// R133: 전법 사용 불가 지형 (설계 34행 '전법 사용 불가 지형이 따로 있고' — 표 자체는 이 게임의 자체 설계, 원작 표 미참조). 시전자 부대의 현재 타일 기준: 기병 전법은 숲·간도 불가, 창병 전법은 숲 불가 (기병 기동·창렬 컨셉 정합). 노병·극병·병기·수군은 금지 없음
+export const TAC_TERRAIN_BLOCK = { spear: ['forest'], cav: ['forest', 'pass'] };
 export const STRATS = {
   fire:    { name: '화계', qi: 10, minInt: 75 },            // 공격측: 수비 병력 추가 소각 (설계 74행 기력 10, r58 정정)
   confuse: { name: '교란', qi: 15, cooldown: 3, minInt: 80, turns: 2 }, // 설계 75행 교란: 기력 15, 적 부대 혼란(행동 불가) (r58 정정, 이전 25·명칭 혼란) // 수비측: 공격 부대 행동 정지
@@ -1859,7 +1861,7 @@ export class Game {
     const AREA = ['whirl', 'volley', 'side', 'pierce'];
     const gap = Math.hypot(eu.x - u.x, eu.z - u.z);
     const canPush = () => { const [ux, uz] = this._tacPushDir(u, eu); const nx = eu.x + ux * 0.4, nz = eu.z + uz * 0.4; return Number.isFinite(nx + nz) && this._tacStandable(eu, nx, nz) && !this.units.some(v => v !== eu && Math.hypot(v.x - nx, v.z - nz) < 0.35); };
-    const ok = info.opts.filter(o => !this._tacTargetOk(u, eu, o) ? false : AREA.includes(o.eff) ? (this._tacHits(u, eu, o) >= 1 || o.mult > 1) : o.eff === 'pull' ? gap > 0.75 : o.eff === 'push' ? canPush() : true); // R74: _tacTargetOk = 격돌 선박 전용·육군 전법 선박 불가 (매뉴얼 대상표) // 실제 효과가 있는 전법만 후보 (광역: 다른 적을 맞히거나 단독 대상에도 배율이 1 초과인 것(옆베기·관통화살). 배율 1 광역(선풍·난사)은 다른 적이 있을 때만, 끌어당김: 거리가 있음, 격퇴: 밀릴 자리가 있음)
+    const ok = info.opts.filter(o => o.block ? false : !this._tacTargetOk(u, eu, o) ? false : AREA.includes(o.eff) ? (this._tacHits(u, eu, o) >= 1 || o.mult > 1) : o.eff === 'pull' ? gap > 0.75 : o.eff === 'push' ? canPush() : true); // R74: _tacTargetOk = 격돌 선박 전용·육군 전법 선박 불가 (매뉴얼 대상표) // 실제 효과가 있는 전법만 후보 (광역: 다른 적을 맞히거나 단독 대상에도 배율이 1 초과인 것(옆베기·관통화살). 배율 1 광역(선풍·난사)은 다른 적이 있을 때만, 끌어당김: 거리가 있음, 격퇴: 밀릴 자리가 있음)
     if (!ok.length) return null;
     return ok.find(o => o.eff === 'conf' && (eu.conf ?? 0) <= 0)
       || ok.filter(o => AREA.includes(o.eff) && this._tacHits(u, eu, o) >= 1).sort((x, y) => this._tacHits(u, eu, y) - this._tacHits(u, eu, x) || y.mult - x.mult)[0]
@@ -1872,7 +1874,9 @@ export class Game {
     const aptLv = u.type === 'sword' ? 1 : APT_LV(lead.apt?.[APT_IDX[u.type]]);
     const opts = [];
     if (tac && aptLv >= (tac.minApt ?? 1) && (u.qi ?? 100) >= tac.qi) opts.push({ id: 'base', ...tac });
-    for (const x of (TACTICS_EX[u.type] || [])) if (aptLv >= x.minApt && (u.qi ?? 100) >= x.qi) opts.push(x);
+    for (const x of (TACTICS_EX[u.type] || [])) if (aptLv >= x.minApt && (u.qi ?? 100) >= x.qi) opts.push({ ...x }); // 복사본: block 등 발동 컨텍스트 속성이 공유 정의를 오염시키지 않도록 (base와 동일 방식)
+    const tb = (TAC_TERRAIN_BLOCK[u.type] ?? []).filter(k => k === 'forest' ? this.forestAt(u.x, u.z) : this.passAt(u.x, u.z)); // R133: 지형 금지 — 제거하지 않고 사유를 남겨 UI가 비활성+사유를 표시 (AI·자동 발동은 block 제외)
+    if (tb.length) { const why = tb.map(k => k === 'forest' ? '숲' : '간도').join('·') + '에서는 이 전법을 쓸 수 없습니다'; for (const o of opts) o.block = why; } // 현재 타일 기준 사유(숲·간도 양쪽이면 둘 다 표기)
     if (!opts.length) return null;
     return { tac: opts.find(o => o.id === 'base') ?? opts[0], lead, opts };
   }
@@ -1895,7 +1899,12 @@ export class Game {
     const hurt = (v, r) => { const a = Math.round(dmg * r); v.troops = Math.max(0, v.troops - a); return a; };
     let note = '';
     if (tac.eff === 'conf') { d.conf = Math.max(d.conf ?? 0, 2); note = ' 혼란 2턴'; }
-    else if (tac.eff === 'push') { const [ux, uz] = this._tacPushDir(u, d); const m = this._tacMove(d, ux, uz, tac.n * 0.9); note = m > 0 ? ' ' + (Math.round(m / 0.9 * 10) / 10) + '칸 격퇴' : ' (밀리지 않음)'; }
+    else if (tac.eff === 'push') { const [ux, uz] = this._tacPushDir(u, d); const want = tac.n * 0.9; const m = this._tacMove(d, ux, uz, want); note = m > 0 ? ' ' + (Math.round(m / 0.9 * 10) / 10) + '칸 격퇴' : ' (밀리지 않음)';
+      // R133: 격퇴 연쇄 충돌 (설계 34행 '격퇴로 아군을 밀어도 피해를 입음') — 격퇴 이동이 타 부대에 막혀 짧아지면 밀린 부대와 충돌 부대 양쪽에 주 전법 피해의 25% 추가 (자체 잠정, 의도된 추가 피해 — 주 피해와 별개의 중복 오류 아님). 충돌 부대는 밀리지 않으므로 1단 종결(무한 연쇄 없음). 최소 1 잔존은 자체 상한: 연쇄 피해만으로는 부대를 멸망시키지 않음(1 잔존 반복 격퇴로는 마무리 불가 — 마무리는 직접 피해로만 가능해 무한 체력 악용 없음)
+      if (m < want - 1e-9) { const px = d.x + ux * 0.4, pz = d.z + uz * 0.4; const cv = this.units.find(v2 => v2 !== d && Math.hypot(v2.x - px, v2.z - pz) < 0.35);
+        if (cv) { const cd = Math.round(dmg * 0.25); d.troops = Math.max(1, d.troops - cd); // 밀린 부대: 전투 대상이므로 항상 적용
+          if (cv.force === u.force || !this.isPeace(u.force, cv.force)) { cv.troops = Math.max(1, cv.troops - cd); note += ` 연쇄 충돌(양측 -${cd})`; } // 아군=시전자와 같은 세력, 적=평화 아닌 세력만 피해 — 동맹·정전·중립 제3자는 보호(공격 금지 우회 방지)
+          else note += ' 연쇄 충돌(평화 세력 피해 없음)'; } } }
     else if (tac.eff === 'pull') { const [ux, uz] = this._tacPushDir(u, d); const gap = Math.hypot(d.x - u.x, d.z - u.z); const m = this._tacMove(d, -ux, -uz, Math.max(0, Math.min(0.9, gap - 0.7))); note = m > 0 ? ' 끌어당김' : ' (끌려오지 않음)'; }
     else if (tac.eff === 'whirl') { let n = 0; for (const v of foes()) if (Math.hypot(v.x - u.x, v.z - u.z) < 2.2) { hurt(v, 0.7); n++; } note = ' 주변 ' + n + '부대 동시 타격'; }
     else if (tac.eff === 'volley') { let n = 0; for (const v of foes()) if (Math.hypot(v.x - d.x, v.z - d.z) < 1.5) { hurt(v, 0.6); n++; } note = ' 주변 ' + n + '부대 난사'; }
@@ -1935,6 +1944,7 @@ export class Game {
     if (!info) return false;
     const lead = info.lead;
     const tac = tid ? info.opts.find(o => o.id === tid) : info.opts.find(o => o.id === 'base');
+    if (tac?.block) { this.log(tac.block, u.force === this.playerForce); return false; } // R133: 지형 불가 전법 직접 발동 거부(사유 안내)
     if (!tac || (tac.id !== 'base' && target.type !== 'unit' && !(target.type === 'fac' && u.type === 'bow'))) return false; // 추가 전법은 부대 대상만 (R76 예외: 노병 관통화살·난사는 시설 대상 가능 — 매뉴얼 대상표 貫矢・乱射 建物 포함)
     const inRange = (x, z) => Math.hypot(x - u.x, z - u.z) < 2.2;
     if (target.type === 'unit') {
