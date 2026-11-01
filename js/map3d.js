@@ -1,6 +1,6 @@
 // 3D 저폴리 지도 엔진 (Three.js) - 고정 등각 아이소메트릭 + 계단식 지형 + 성곽/숲
 import * as THREE from 'three';
-import { loadGLBAssets, applyEnvironment } from './assets-3d.js?v=r133';
+import { loadGLBAssets, applyEnvironment } from './assets-3d.js?v=r135';
 
 const LON0 = 100, LON1 = 126.5, LAT0 = 21.5, LAT1 = 43;
 export function toWorld(lon, lat) {
@@ -585,6 +585,56 @@ export class Map3D {
       // R89: 시각 크기 비례 피킹을 위한 유형별 풋프린트 반경(월드 단위) — 기존 고정 0.06 NDC는 시각 모델(폭 ~0.027)보다 2~4배 넓어 빈 공간 오선택 유발
       const FAC_R = { '토루': 0.9, '진': 0.8, '채': 1.0, '성채': 1.2, '태고대': 0.7, '군악대': 0.7, '석병팔진': 1.0, '석벽': 1.1, '불화살함정': 0.6, '낙석': 0.5 };
       this.fieldMeshes[f.id] = { g, type: f.type, done: f.done, fr: FAC_R[f.type] ?? 0.7 };
+    }
+  }
+  // R135: 도시 내정 시설 지도 표시 — 종류별 낮은 폴리 자체 모델 (시각 체험 개선 전용, 규칙 변경 없음). 시야 밖 적 도시는 main이 목록에서 제외 (R14 cityVisible과 동일 기준)
+  static CITY_FAC_STYLE = { // geo: 형태 분류 8종, col: 종류별 액센트 색
+    '시장': { geo: 'market', col: 0xd4a017 }, '회계청': { geo: 'market', col: 0xe0c060 },
+    '농장': { geo: 'farm', col: 0x3f7a2a }, '곡물창고': { geo: 'barn', col: 0x7a9a3a }, '곡창': { geo: 'barn', col: 0xb08a3a },
+    '조폐': { geo: 'smith', col: 0xc9a86a }, '대장간': { geo: 'smith', col: 0x705040 }, '공방': { geo: 'smith', col: 0x606070 },
+    '병영': { geo: 'barracks', col: 0xa03030 }, '훈련장': { geo: 'barracks', col: 0xc05030 },
+    '마구간': { geo: 'stable', col: 0x8a5a2a }, '조선소': { geo: 'dock', col: 0x3a6a9a },
+    '부절대': { geo: 'gov', col: 0x8a2a8a }, '군사부': { geo: 'gov', col: 0x2a5a8a }, '인재부': { geo: 'gov', col: 0x2a8a5a },
+    '외교부': { geo: 'gov', col: 0xb0a030 }, '감찰소': { geo: 'gov', col: 0x5a5a5a }, '서재': { geo: 'gov', col: 0x7a6ab0 }, '의관': { geo: 'gov', col: 0x4a9a8a },
+  };
+  _cityFacModel(type, done) { // 시설 1개 모델 — 8종 형태 × 종류색 액센트, 공사 중(done=false)은 반투명 (야전 시설 R26과 같은 표기)
+    const st = Map3D.CITY_FAC_STYLE[type] ?? { geo: 'barn', col: 0x9a9a9a };
+    const g = new THREE.Group();
+    const op = { transparent: !done, opacity: done ? 1 : 0.55 };
+    const wood = new THREE.MeshLambertMaterial({ color: 0xb9a47e, ...op });
+    const stone = new THREE.MeshLambertMaterial({ color: 0x8d8d92, ...op });
+    const accent = new THREE.MeshLambertMaterial({ color: st.col, ...op });
+    const box = (w, h, d, x, y, z, mt = wood) => { const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mt); b.position.set(x, y, z); g.add(b); return b; };
+    if (st.geo === 'market') { box(0.7, 0.3, 0.7, 0, 0.15, 0); box(0.85, 0.08, 0.85, 0, 0.42, 0, accent); box(0.08, 0.2, 0.08, -0.3, 0.3, -0.3); box(0.08, 0.2, 0.08, 0.3, 0.3, 0.3); }
+    else if (st.geo === 'farm') { box(0.95, 0.07, 0.95, 0, 0.035, 0, new THREE.MeshLambertMaterial({ color: 0x5a8a3a, ...op })); box(0.9, 0.06, 0.12, 0, 0.1, -0.3, accent); box(0.9, 0.06, 0.12, 0, 0.1, 0, accent); box(0.9, 0.06, 0.12, 0, 0.1, 0.3, accent); }
+    else if (st.geo === 'barn') { box(0.6, 0.45, 0.6, 0, 0.22, 0); box(0.78, 0.22, 0.78, 0, 0.56, 0, accent); }
+    else if (st.geo === 'barracks') { box(0.8, 0.3, 0.5, 0, 0.15, 0); box(0.06, 0.8, 0.06, 0.3, 0.4, 0.18); box(0.35, 0.2, 0.04, 0.5, 0.7, 0.18, accent); }
+    else if (st.geo === 'smith') { box(0.55, 0.4, 0.55, 0, 0.2, 0); const ch = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.09, 0.55, 6), accent); ch.position.set(0.18, 0.55, -0.18); g.add(ch); box(0.3, 0.12, 0.2, -0.25, 0.46, 0.15, stone); }
+    else if (st.geo === 'stable') { box(0.9, 0.18, 0.06, 0, 0.09, -0.45); box(0.9, 0.18, 0.06, 0, 0.09, 0.45); box(0.06, 0.18, 0.9, -0.45, 0.09, 0); box(0.06, 0.18, 0.9, 0.45, 0.09, 0); box(0.5, 0.16, 0.4, 0, 0.3, 0, accent); }
+    else if (st.geo === 'dock') { box(1.1, 0.12, 0.5, 0, 0.06, 0); box(0.6, 0.18, 0.26, 0, 0.2, 0, accent); box(0.06, 0.4, 0.06, 0.2, 0.3, 0); }
+    else { const tw = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.26, 0.8, 8), stone); tw.position.y = 0.4; g.add(tw); box(0.4, 0.25, 0.04, 0.2, 0.85, 0, accent); box(0.05, 0.3, 0.05, 0, 0.95, 0); }
+    return g;
+  }
+  syncCityFacs(list) { // list: {cityId, x, z, facs:[{type, done}]} — 시설 구성이 바뀐 도시만 재구성
+    this.cityFacMeshes = this.cityFacMeshes ?? {};
+    const keep = new Set(list.map(c => c.cityId));
+    for (const id of Object.keys(this.cityFacMeshes)) if (!keep.has(Number(id))) { for (const m of this.cityFacMeshes[id].meshes) this.unitGroup.remove(m); delete this.cityFacMeshes[id]; }
+    for (const cf of list) {
+      const sig = cf.facs.map(f => f.type + (f.done ? 1 : 0)).join(',');
+      const cur = this.cityFacMeshes[cf.cityId];
+      if (cur && cur.sig === sig) continue;
+      if (cur) for (const m of cur.meshes) this.unitGroup.remove(m);
+      const meshes = [];
+      const sorted = [...cf.facs].sort((a, b) => a.type.localeCompare(b.type, 'ko'));
+      const n = sorted.length, r = n <= 6 ? 2.5 : 3.0;
+      sorted.forEach((f, i) => {
+        const a = -Math.PI / 2 + i * 2 * Math.PI / n;
+        const px = cf.x + Math.cos(a) * r, pz = cf.z + Math.sin(a) * r;
+        const m = this._cityFacModel(f.type, f.done);
+        m.position.set(px, Math.max(this.levelAtWorld(px, pz) * STEP, WATER_Y + 0.2), pz);
+        this.unitGroup.add(m); meshes.push(m);
+      });
+      this.cityFacMeshes[cf.cityId] = { meshes, sig };
     }
   }
   removeUnit(id) { const m = this.unitMeshes[id]; if (m) { this.unitGroup.remove(m.group); delete this.unitMeshes[id]; } }

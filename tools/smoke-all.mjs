@@ -10,6 +10,7 @@ const SUITES = [
   'tools/smoke-r132-review.mjs',  // R132 월 결산 16게이트
   'tools/smoke-r133-verify.mjs',  // R133 미검증 해소: 난소행군·여울/개발지·철거·병장 고정량 22게이트
   'tools/smoke-r134-terrain.mjs', // R134 전법 지형 금지·격퇴 연쇄 충돌·월 결산 라벨 21게이트
+  'tools/smoke-r135-cityfac.mjs', // R135 도시 시설 지도 표시 8게이트(정적 대조 — 렌더는 실UI)
 ];
 let failed = 0;
 for (const f of SUITES) {
