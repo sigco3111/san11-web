@@ -1671,34 +1671,36 @@ export class Game {
     this.log(`${josa(u.label, ['이','가'])} ${josa(c.name_ko, ['을','를'])} 공격 (적병 -${troopDmg}, 내구 -${hpDmg}, 아군 -${loss})`, u.force === this.playerForce);
     if (u.troops <= 0) { this._rehomeOfficers(u, c.force); this.units = this.units.filter(x => x !== u); this.log(`${u.label} 부대가 전멸했습니다`, false); return; } // R111: 반격 전멸은 수비측이 포박 판정
     if (c.troops <= 0 || c.hp <= 0) {
-      const old = c.force;
-      c.force = u.force; c.district = null;
-      for (const i of [...(c.captives ?? [])]) { // R111: 함락 시 기존 억류 포로는 혼란 중 탈출해 원 세력 복귀 (매뉴얼 명시 없음 — 자체 규칙). 원 세력 멸망이면 재야
-        const o = this.officers[i]; const st = o?.state;
-        if (!st || st.status !== 'captive') continue;
-        c.captives = c.captives.filter(j => j !== i);
-        delete st.captor; delete st.captiveSince;
-        const orig = st.force;
-        if (orig != null && this.forces[orig]?.alive) { const home0 = this.cities.filter(cc => cc.force === orig).sort((p, q) => Math.hypot(p.lon - c.lon, p.lat - c.lat) - Math.hypot(q.lon - c.lon, q.lat - c.lat))[0]; st.status = 'serving'; st.city = home0?.id ?? null; if (home0 && !home0.officers.includes(i)) home0.officers.push(i); }
-        else { st.status = 'free'; st.force = null; st.found = false; }
-      }
-      if (old != null) { // R96 함락 수비 무장 도주 + R111 포박 (매뉴얼 拠点陥落으로 捕虜 발생 — 기본 25% + 함락 가산 15% = 40%, 자체 수치). 포박 실패·군주는 기존 도주 규칙
-        const home = this.cities.filter(cc => cc.force === old).sort((p, q) => Math.hypot(p.lon - c.lon, p.lat - c.lat) - Math.hypot(q.lon - c.lon, q.lat - c.lat))[0];
-        for (const i of [...c.officers]) {
-          const o = this.officers[i];
-          if (o?.state?.force !== old) continue;
-          c.officers = c.officers.filter(j => j !== i);
-          if (this._captureOfficer(o, u.force, c.lon, c.lat, 0.15)) continue; // 포박 — 억류지는 함락된 이 도시(공격측 최인접)
-          if (home) { if (!home.officers.includes(i)) home.officers.push(i); o.state.city = home.id; }
-        }
-      }
-      c.hp = Math.round(c.maxhp * 0.4);
-      this.gainTechP(u.force, 200); // 도시 함락 기교P
-      for (const i of u.officers) this.gainMerit(i, MERIT.capture);
-      this.log(`【${c.name_ko}】함락! ${old != null ? this.forceName(old) : '공백지'} → ${this.forceName(u.force)}`, true);
-      // 수비 무장 일부 포로/퇴각은 후속 구현 — 일단 공격측 도시에 그대로 둠
-      this._mergeIntoCity(u, c); // R102: 함락 부대 입성 (자체 처리) — 점령 부대의 잔여 병력·무장·휴대 병량이 주둔으로 전량 합류해 신규 도시의 병0 공백 방지. 원작 매뉴얼 명시 없음(자체 규칙)
+      this._captureCity(u, c);
     }
+  }
+  _captureCity(u, c) { // R157: 일반공성·병기전법 함락 모두 포로/도주·공격부대입성 동일처리
+    const old = c.force;
+    c.force = u.force; c.district = null;
+    for (const i of [...(c.captives ?? [])]) { // R111: 함락 시 기존 억류 포로는 혼란 중 탈출해 원 세력 복귀 (매뉴얼 명시 없음 — 자체 규칙). 원 세력 멸망이면 재야
+      const o = this.officers[i]; const st = o?.state;
+      if (!st || st.status !== 'captive') continue;
+      c.captives = c.captives.filter(j => j !== i);
+      delete st.captor; delete st.captiveSince;
+      const orig = st.force;
+      if (orig != null && this.forces[orig]?.alive) { const home0 = this.cities.filter(cc => cc.force === orig).sort((p, q) => Math.hypot(p.lon - c.lon, p.lat - c.lat) - Math.hypot(q.lon - c.lon, q.lat - c.lat))[0]; st.status = 'serving'; st.city = home0?.id ?? null; if (home0 && !home0.officers.includes(i)) home0.officers.push(i); }
+      else { st.status = 'free'; st.force = null; st.found = false; }
+    }
+    if (old != null) { // R96 함락 수비 무장 도주 + R111 포박 (매뉴얼 拠点陥落으로 捕虜 발생 — 기본 25% + 함락 가산 15% = 40%, 자체 수치). 포박 실패·군주는 기존 도주 규칙
+      const home = this.cities.filter(cc => cc.force === old).sort((p, q) => Math.hypot(p.lon - c.lon, p.lat - c.lat) - Math.hypot(q.lon - c.lon, q.lat - c.lat))[0];
+      for (const i of [...c.officers]) {
+        const o = this.officers[i];
+        if (o?.state?.force !== old) continue;
+        c.officers = c.officers.filter(j => j !== i);
+        if (this._captureOfficer(o, u.force, c.lon, c.lat, 0.15)) continue; // 포박 — 억류지는 함락된 이 도시(공격측 최인접)
+        if (home) { if (!home.officers.includes(i)) home.officers.push(i); o.state.city = home.id; }
+      }
+    }
+    c.hp = Math.round(c.maxhp * 0.4);
+    this.gainTechP(u.force, 200); // 도시 함락 기교P
+    for (const i of u.officers) this.gainMerit(i, MERIT.capture);
+    this.log(`【${c.name_ko}】함락! ${old != null ? this.forceName(old) : '공백지'} → ${this.forceName(u.force)}`, true);
+    this._mergeIntoCity(u, c); // R102: 함락 부대 입성 (자체 처리) — 점령 부대의 잔여 병력·무장·휴대 병량이 주둔으로 전량 합류해 신규 도시의 병0 공백 방지. 원작 매뉴얼 명시 없음(자체 규칙)
   }
   _mergeIntoCity(u, c) { // R87: 귀환 병력은 상한 캡으로 증발시키지 않고 전량 합류 (자체 처리: 상한은 징병 등 신규 생성에만 적용, 기존 보유 병력의 귀환 손실 방지). R102: 함락 입성도 같은 규칙 사용
     c.troops += u.troops;
@@ -1982,12 +1984,7 @@ export class Game {
       this.gainTechP(u.force, Math.min(50, Math.floor(dmg / 100)));
       this.log(`【전법】${lead.name_ko}의 ${tac.name}! ${c.name_ko}에 큰 피해 (-${dmg})`, u.force === this.playerForce);
       if (c.troops <= 0 || c.hp <= 0) {
-        c.force = u.force; c.district = null;
-        c.hp = Math.round(c.maxhp * 0.4);
-        this.gainTechP(u.force, 200);
-        for (const i of u.officers) this.gainMerit(i, MERIT.capture);
-        u.tx = null; u.targetCity = null;
-        this.log(`【${c.name_ko}】함락! → ${this.forceName(u.force)}`, true);
+        this._captureCity(u, c);
       }
       this.autosave();
       return true;
