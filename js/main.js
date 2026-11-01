@@ -771,7 +771,7 @@ function personnelUiInfo(game, c, kind, idx) {
 function personnelUiButton(game, c, kind, idx, label) {
   const info = personnelUiInfo(game,c,kind,idx);
   const attrs = kind === 'search' ? 'id="cmd-search"' : 'class="cmd cmd-rec" data-i="'+idx+'"';
-  return `<span class="fac-act"><button ${kind === 'search' ? 'class="cmd" ' : ''}${attrs} ${info.why ? 'disabled' : ''}>${label}·AP${info.ap})</button>${info.why ? `<small class="fac-why" role="status">${info.why}</small>` : ''}</span>`;
+  return `<span style="display:inline-flex;flex-direction:column;vertical-align:top;max-width:100%"><button ${kind === 'search' ? 'class="cmd" ' : ''}${attrs} ${info.why ? 'disabled' : ''}>${label}·AP${info.ap})</button>${info.why ? `<small class="fac-why" role="status">${info.why}</small>` : ''}</span>`;
 }
 function equipmentUiInfo(game, c, family, key) {
   const ship = family === 'ship', spec = (ship ? SHIP_BUILD : SIEGE_BUILD)[key];
