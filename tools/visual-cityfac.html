@@ -1,0 +1,20 @@
+<!doctype html><html lang="ko"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>R139 시설 배치 fixture</title><style>body{margin:0;background:#152936;color:#fff;font:14px sans-serif}nav{position:absolute;z-index:2;background:#152936ee;padding:5px;display:flex;flex-wrap:wrap;gap:4px}button{padding:7px}canvas{display:block;width:100vw;height:100vh}#report{position:absolute;bottom:0;background:#152936dd;margin:0;padding:6px;font-size:11px;pointer-events:none}</style><script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"}}</script><nav><strong>공개 시나리오·인공 시설 fixture</strong><button id="jin">진양</button><button id="ye">업·복양</button><button id="jiang">강주</button><button id="all">19종</button><button id="field">야전시설 추가/제거</button><button id="build">공사/완성/철거</button><button id="hide">복양 시야 토글</button></nav><canvas id="map"></canvas><pre id="report"></pre><script type="module">
+import {Map3D,toWorld} from '../js/map3d.js?v=r139';
+const scenario=await(await fetch('../data/scenario-184.json')).json();
+const cities=Array.isArray(scenario.cities)?scenario.cities:Object.values(scenario.cities);
+const m=new Map3D(document.getElementById('map')); m.syncScenario(cities); for(const c of cities)m.addCity(c,'#ba3333');
+const standard=['공방','농장','대장간','병영','시장','조선소'];
+let hidden=false, military=false, stage=0;
+const sources=[5,6,11,17,38].map(id=>{const c=cities.find(c=>c.id===id),[x,z]=toWorld(c.lon,c.lat);return{cityId:id,x,z,facs:standard.map(type=>({type,done:true}))}});
+let cur=5,clicked='없음';const report=document.getElementById('report');
+function update(){const [fx,fz]=toWorld(cities.find(c=>c.id===6).lon,cities.find(c=>c.id===6).lat);m.syncFieldFacs(military?[{id:1,type:'성채',x:fx-3,z:fz,color:'#00ffff',done:true}]:[]);m.syncCityFacs(sources.filter(c=>!hidden||c.cityId!==11));const fs=Object.values(m.cityFacMeshes).flatMap(e=>e.meshes.map(x=>x.userData.cityFacility));let bad=0;for(const f of fs){if(f.summary)continue;const h=.7*f.scale;if(f.type!=='조선소'&&[-h,0,h].some(dx=>[-h,0,h].some(dz=>m.levelAtWorld(f.x+dx,f.z+dz)!==1)))bad++;}report.textContent=`fixture 시설 ${fs.length} / 성내표식 ${fs.filter(f=>f.summary).length} / 육상 9점 위반 ${bad}\n야전 ${military} / 복양시야 ${!hidden} / 공사단계 ${stage}\n실클릭 선택: ${clicked}`;}
+function focus(id){cur=id;m.focusCity(cities.find(c=>c.id===id));m.view=id===6?24:19;m.el=.95;m.updateFrustum();}
+m.onPick=(x,y)=>{const p=m.pick(x,y);clicked=p?`${p.type} ${p.id}`:'빈 공간';update()};
+document.getElementById('jin').onclick=()=>focus(5);document.getElementById('ye').onclick=()=>focus(6);document.getElementById('jiang').onclick=()=>focus(38);
+document.getElementById('all').onclick=()=>{sources.find(c=>c.cityId===17).facs=Object.keys(Map3D.CITY_FAC_STYLE).map(type=>({type,done:true}));update();focus(17)};
+document.getElementById('field').onclick=()=>{military=!military;update();focus(6)};
+document.getElementById('hide').onclick=()=>{hidden=!hidden;update()};
+document.getElementById('build').onclick=()=>{stage=(stage+1)%3;const s=sources.find(c=>c.cityId===cur);s.facs=s.facs.filter(f=>f.type!=='의관');if(stage)s.facs.push({type:'의관',done:stage===2});update()};
+update();focus(5);function frame(){m.render();requestAnimationFrame(frame)}frame();
+window.fixtureMap=m;
+</script></html>
