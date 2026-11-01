@@ -292,6 +292,7 @@ export class Game {
     this.playerForce = playerForceId;
     this.delegated = false;   // 플레이어 세력 위임 여부
     this.pendingJoin = null;  // 턴 경계에서 인계할 세력
+    this.pendingDiplo = []; // R123: 플레이어 수신 외교 제안 보류 큐 (FIFO, 저장 대상 — reload 후에도 결정 대기 복원)
     this.logs = [];
     this.over = false;
     this.unified = false; // R14: 통일 1회 판정 (관전 계속 중 재발동 방지)
@@ -758,10 +759,14 @@ export class Game {
     const apc = Math.ceil(20 * this.apMult(c, 'diplo')); // R13 외교부
     if (!c || c.force !== fid || !f?.alive || !t?.alive || f.ap < apc || c.gold < 500) return false;
     c.gold -= 500; f.ap -= apc;
-    if (tid === this.playerForce) this._delegateStop(`${this.forceName(fid)}의 친선 사절 도착`); // R109
     const pol = Math.max(50, ...c.officers.map(i => this.officers[i].pol));
     const negotiator = c.officers.some(i => this.officers[i].skill === '논객');
     const gain = Math.round((8 + pol / 10) * (negotiator ? 1.5 : 1));
+    if (tid === this.playerForce) { // R123: 플레이어 수신 사절은 효과 적용 전 보류 — 수락/거절은 플레이어 명시 선택 (자동 확정 없음)
+      this._delegateStop(`${this.forceName(fid)}의 친선 사절 도착`);
+      this._pushDiplo({ kind: 'envoy', fid, tid, cityId, gain });
+      return true;
+    }
     const v = this.changeRelation(fid, tid, gain);
     this.log(`【외교】${this.forceName(fid)} → ${this.forceName(tid)} 친선 사절 (관계 +${gain} → ${v} ${this.relStage(v)}${negotiator ? ', 논객' : ''})`, fid === this.playerForce || tid === this.playerForce);
     return true;
@@ -771,10 +776,15 @@ export class Game {
     if (!c || c.force !== fid || !f?.alive || !t?.alive || f.ap < 23 || c.gold < 1000) return false;
     const d = this.diploOf(fid, tid);
     if (d.v < 60 || this.isAllied(fid, tid)) return false;
+    if (this.turn - (d.failCd?.alliance ?? -99) < 12) return false; // R123: 재제의 쿨다운 12턴 (자체 균형 초기값) — 관계 쌍×제안 종류 단위라 다른 종류·다른 쌍 외교는 막지 않음
     const apc = Math.ceil(30 * this.apMult(c, 'diplo')); // R13 외교부
     if (f.ap < apc) return false;
     c.gold -= 1000; f.ap -= apc;
-    if (tid === this.playerForce) this._delegateStop(`${this.forceName(fid)}의 동맹 제의 도착`); // R109
+    if (tid === this.playerForce) { // R123: 플레이어 수신 제의는 확률 자동 성립 없이 보류 — 수락/거절은 플레이어 명시 선택
+      this._delegateStop(`${this.forceName(fid)}의 동맹 제의 도착`);
+      this._pushDiplo({ kind: 'alliance', fid, tid, cityId });
+      return true;
+    }
     const pol = Math.max(50, ...c.officers.map(i => this.officers[i].pol));
     const p = Math.min(0.9, 0.4 + (d.v - 50) / 100 + pol / 300);
     if (Math.random() < p) {
@@ -782,6 +792,7 @@ export class Game {
       this.log(`【외교】${josa(this.forceName(fid), ['과','와'])} ${josa(this.forceName(tid), ['이','가'])} 24턴 동맹을 맺었습니다!`, true);
       return true;
     }
+    d.failCd = d.failCd ?? {}; d.failCd.alliance = this.turn; // R123: 실패 시 재제의 쿨다운 기록
     this.log(`【외교】${josa(this.forceName(tid), ['이','가'])} ${this.forceName(fid)}의 동맹 제의를 거절했습니다`, fid === this.playerForce || tid === this.playerForce);
     this.tryDebate({ kind: 'alliance', fid, tid, cityId }); // R11: 결렬 시 설전 발동 가능
     return false;
@@ -791,10 +802,15 @@ export class Game {
     if (!c || c.force !== fid || !f?.alive || !t?.alive || f.ap < 23 || c.gold < 2000) return false;
     const d = this.diploOf(fid, tid);
     if (d.v > 39) return false;
+    if (this.turn - (d.failCd?.truce ?? -99) < 12) return false; // R123: 재제의 쿨다운 12턴 (자체 균형 초기값, 쌍×종류 단위)
     const apc = Math.ceil(30 * this.apMult(c, 'diplo')); // R13 외교부
     if (f.ap < apc) return false;
     c.gold -= 2000; f.ap -= apc;
-    if (tid === this.playerForce) this._delegateStop(`${this.forceName(fid)}의 정전 요청 도착`); // R109
+    if (tid === this.playerForce) { // R123: 플레이어 수신 요청은 확률 자동 성립 없이 보류
+      this._delegateStop(`${this.forceName(fid)}의 정전 요청 도착`);
+      this._pushDiplo({ kind: 'truce', fid, tid, cityId });
+      return true;
+    }
     const pol = Math.max(50, ...c.officers.map(i => this.officers[i].pol));
     if (Math.random() < Math.min(0.8, 0.3 + pol / 300 + d.v / 200)) {
       d.truceUntil = this.turn + 12; // 정전 12턴간 양측 공격 금지 (자체 수치)
@@ -802,6 +818,7 @@ export class Game {
       this.log(`【외교】${josa(this.forceName(fid), ['과','와'])} ${josa(this.forceName(tid), ['이','가'])} 정전했습니다 (12턴간 공격 금지, 관계 → ${v} ${this.relStage(v)})`, true);
       return true;
     }
+    d.failCd = d.failCd ?? {}; d.failCd.truce = this.turn; // R123
     this.log(`【외교】${josa(this.forceName(tid), ['이','가'])} 정전 요청을 거절했습니다`, fid === this.playerForce || tid === this.playerForce);
     this.tryDebate({ kind: 'truce', fid, tid, cityId }); // R11: 결렬 시 설전 발동 가능
     return false;
@@ -819,16 +836,16 @@ export class Game {
     const apc = Math.ceil(30 * this.apMult(c, 'diplo')); // R13 외교부
     if (f.ap < apc) return false;
     c.gold -= 1000; f.ap -= apc;
-    if (tid === this.playerForce) this._delegateStop(`${this.forceName(fid)}의 항복 권고 도착`); // R109
+    if (tid === this.playerForce) { // R123: 플레이어 수신 항복 권고는 확률 자동 성립 없이 보류 — 수락 시에만 세력 귀속
+      this._delegateStop(`${this.forceName(fid)}의 항복 권고 도착`);
+      this._pushDiplo({ kind: 'surrender', fid, tid, cityId });
+      return true;
+    }
     const chr = Math.max(50, ...c.officers.map(i => this.officers[i].chr));
     const myN = this.cities.filter(x => x.force === fid).length;
     const p = Math.min(0.5, 0.05 + (chr - 50) / 200 + (myN - tCities.length) * 0.05 + (this.cityHasSkill(c, '귀납') ? 0.1 : 0)); // R17: 귀납 특기 +0.1 (자체 수치)
     if (Math.random() < p) {
-      for (const tc of tCities) { tc.force = fid; }
-      for (const u of this.units) if (u.force === tid) u.force = fid; // 야전 부대도 귀속
-      for (const o of Object.values(this.officers)) if (o.state?.force === tid) { o.state.force = fid; if (o.state.city != null) { const nc = this.cityById[o.state.city]; if (nc && !nc.officers.includes(o.idx)) nc.officers.push(o.idx); } }
-      t.alive = false;
-      this.log(`【항복】${josa(this.forceName(tid), ['이','가'])} ${this.forceName(fid)}에 항복했습니다! 도시 ${tCities.length}개와 무장이 귀속됩니다`, true);
+      this._applySurrender(fid, tid); // R123: 적용 경로 공통화
       return true;
     }
     this.changeRelation(fid, tid, -20);
@@ -843,12 +860,64 @@ export class Game {
     const src = this.cities.filter(x => x.force === tid && x.troops >= 6000).sort((a, b) => b.troops - a.troops)[0];
     if (!src) return false;
     f.ap -= 20;
+    if (tid === this.playerForce) { // R123: 병력 3000 지원은 수락 시에만 차감 — 보류 중 자원 소속 불변
+      this._delegateStop(`${this.forceName(fid)}의 원군 요청 도착`);
+      this._pushDiplo({ kind: 'aid', fid, tid, cityId, srcId: src.id });
+      return true;
+    }
     src.troops -= 3000;
-    if (tid === this.playerForce) this._delegateStop(`${this.forceName(fid)}의 원군 요청 도착`); // R109
     const dst = this.cities.filter(x => x.force === fid).sort((a, b) => a.troops - b.troops)[0];
     dst.troops = Math.min(dst.metropolis ? 150000 : 100000, dst.troops + 3000);
     d.aidTurn = this.turn;
     this.log(`【외교】동맹국 ${josa(this.forceName(tid), ['이','가'])} 원군 3000을 ${dst.name_ko}에 보냈습니다`, true);
+    return true;
+  }
+  _pushDiplo(item) { // R123: 수신 제안 보류 큐 — 한 턴 복수 AI 제의도 덮어쓰지 않음 (FIFO). id는 처리·중복 수락 방지용
+    this.pendingDiplo = this.pendingDiplo ?? [];
+    do { this._dipSeq = (this._dipSeq ?? 0) + 1; item.id = `pd${this.turn}_${this._dipSeq}_${item.kind}_${item.fid}`; } while (this.pendingDiplo.some(x => x.id === item.id)); // reload 후 seq 리셋·설전 재심 즉시 재보류 등 드문 충돌 방지
+    this.pendingDiplo.push(item);
+    const label = { alliance: '동맹 제의', truce: '정전 요청', surrender: '항복 권고', aid: '원군 요청', envoy: '친선 사절' }[item.kind] ?? '외교 제안';
+    this.log(`【외교】${this.forceName(item.fid)}의 ${josa(label, ['이','가'])} 도착했습니다 — 수락 여부를 결정해 주세요`, true);
+  }
+  _applySurrender(fid, tid) { // R123: 항복 수용 적용 공통화 (AI 확률 성공·플레이어 수락 공용)
+    const t = this.forces[tid];
+    const tCities = this.cities.filter(x => x.force === tid);
+    for (const tc of tCities) { tc.force = fid; }
+    for (const u of this.units) if (u.force === tid) u.force = fid; // 야전 부대도 귀속
+    for (const o of Object.values(this.officers)) if (o.state?.force === tid) { o.state.force = fid; if (o.state.city != null) { const nc = this.cityById[o.state.city]; if (nc && !nc.officers.includes(o.idx)) nc.officers.push(o.idx); } }
+    t.alive = false;
+    this.log(`【항복】${josa(this.forceName(tid), ['이','가'])} ${this.forceName(fid)}에 항복했습니다! 도시 ${tCities.length}개와 무장이 귀속됩니다`, true);
+  }
+  resolveDiplo(id, accept) { // R123: 보류 제안 수락/거절 — 처리된 id는 큐에서 제거되어 중복 수락 불가
+    const q = this.pendingDiplo ?? [];
+    const it = q.find(x => x.id === id);
+    if (!it) return false;
+    this.pendingDiplo = q.filter(x => x.id !== id);
+    const d = this.diploOf(it.fid, it.tid), fn = this.forceName(it.fid);
+    if (it.kind === 'envoy') {
+      if (accept) { const v = this.changeRelation(it.fid, it.tid, it.gain); this.log(`【외교】${fn}의 친선 사절을 받았습니다 (관계 +${it.gain} → ${v} ${this.relStage(v)})`, true); }
+      else this.log(`【외교】${fn}의 친선 사절을 돌려보냈습니다`, true);
+    } else if (it.kind === 'alliance') {
+      if (accept) { d.allianceUntil = this.turn + 24; this.log(`【외교】${josa(fn, ['과','와'])} 24턴 동맹을 맺었습니다!`, true); }
+      else { d.failCd = d.failCd ?? {}; d.failCd.alliance = this.turn; this.log(`【외교】${fn}의 동맹 제의를 거절했습니다`, true); this.tryDebate({ kind: 'alliance', fid: it.fid, tid: it.tid, cityId: it.cityId, reoffer: true }); } // R123: 거절 시 상대 설전 도전 가능 — 승리해도 자동 성립이 아니라 재결정(reoffer)
+    } else if (it.kind === 'truce') {
+      if (accept) { d.truceUntil = this.turn + 12; const v = this.changeRelation(it.fid, it.tid, 30); this.log(`【외교】${josa(fn, ['과','와'])} 정전했습니다 (12턴간 공격 금지, 관계 → ${v} ${this.relStage(v)})`, true); }
+      else { d.failCd = d.failCd ?? {}; d.failCd.truce = this.turn; this.log(`【외교】${fn}의 정전 요청을 거절했습니다`, true); this.tryDebate({ kind: 'truce', fid: it.fid, tid: it.tid, cityId: it.cityId, reoffer: true }); } // R123
+    } else if (it.kind === 'surrender') {
+      if (accept) { this._applySurrender(it.fid, it.tid); }
+      else { const v = this.changeRelation(it.fid, it.tid, -20); this.log(`【외교】${fn}의 항복 권고를 거부했습니다 (관계 → ${v} ${this.relStage(v)})`, true); }
+    } else if (it.kind === 'aid') {
+      if (accept) {
+        const src = this.cityById[it.srcId];
+        if (src && src.force === it.tid && src.troops >= 3000) {
+          src.troops -= 3000;
+          const dst = this.cities.filter(x => x.force === it.fid).sort((a, b) => a.troops - b.troops)[0];
+          if (dst) { dst.troops = Math.min(dst.metropolis ? 150000 : 100000, dst.troops + 3000); d.aidTurn = this.turn; this.log(`【외교】동맹국에 원군 3000을 ${dst.name_ko}에 보냈습니다 (${src.name_ko} 차출)`, true); }
+          else this.log(`【외교】원군을 보낼 대상 도시가 없어 요청에 응하지 못했습니다`, true);
+        } else this.log(`【외교】원군을 보낼 병력이 부족해 요청에 응하지 못했습니다`, true);
+      } else { d.aidTurn = this.turn; this.log(`【외교】${fn}의 원군 요청을 거절했습니다`, true); } // 거절도 18턴 쿨 공유 — 같은 요청 연발 방지 (자체)
+    }
+    this.autosave(); // R122 패턴: 결정 즉시 영속
     return true;
   }
   breakAlliance(fid, tid) { // 동맹 파기: 관계 -40
@@ -1192,7 +1261,7 @@ export class Game {
   // === 턴 진행 ===
   endTurn(aiThink) {
     if (this.over) return; // R14: 게임 종료 후 턴 진행 불가
-    if (this.pendingDuel || this.pendingDebate) return; // R10/R11: 일기토·설전 결판 전 턴 진행 불가
+    if (this.pendingDuel || this.pendingDebate || (this.pendingDiplo ?? []).length) return; // R10/R11/R123: 일기토·설전·보류 외교 제안 결판 전 턴 진행 불가
     // 전 부대 기력 회복
     for (const u of this.units) { // R13: 훈련장 주둔 부대 +5
       const home = this.cities.find(c => c.force != null && c.force === u.force && c.lon === u.x && c.lat === u.z);
@@ -2386,7 +2455,11 @@ export class Game {
     d.winner = w;
     const ctx = d.ctx ?? {};
     if (w === 'a') {
-      if (ctx.kind === 'alliance') { const dd = this.diploOf(ctx.fid, ctx.tid); dd.allianceUntil = this.turn + 24; this.log(`【설전】${josa(an, ['이','가'])} ${josa(bn, ['을','를'])} 논파! ${josa(this.forceName(ctx.fid), ['과','와'])} ${josa(this.forceName(ctx.tid), ['이','가'])} 24턴 동맹을 맺었습니다!`, true); }
+      if (ctx.reoffer && (ctx.kind === 'alliance' || ctx.kind === 'truce') && (ctx.fid === this.playerForce || ctx.tid === this.playerForce)) { // R123: 플레이어가 거절한 협상의 설전 패배는 자동 성립이 아니라 재심(재결정)으로 보류 — 사용자 선택 우회 금지
+        this.log(`【설전】${josa(an, ['이','가'])} ${josa(bn, ['을','를'])} 논파! ${ctx.kind === 'alliance' ? '동맹' : '정전'} 재심 — 수락 여부를 다시 결정해 주세요`, true);
+        this._pushDiplo({ kind: ctx.kind, fid: ctx.fid, tid: ctx.tid, cityId: ctx.cityId });
+      }
+      else if (ctx.kind === 'alliance') { const dd = this.diploOf(ctx.fid, ctx.tid); dd.allianceUntil = this.turn + 24; this.log(`【설전】${josa(an, ['이','가'])} ${josa(bn, ['을','를'])} 논파! ${josa(this.forceName(ctx.fid), ['과','와'])} ${josa(this.forceName(ctx.tid), ['이','가'])} 24턴 동맹을 맺었습니다!`, true); }
       else if (ctx.kind === 'truce') { const dd = this.diploOf(ctx.fid, ctx.tid); dd.truceUntil = this.turn + 12; const v = this.changeRelation(ctx.fid, ctx.tid, 30); this.log(`【설전】${josa(an, ['이','가'])} ${josa(bn, ['을','를'])} 논파! 정전 성립 (12턴간 공격 금지, 관계 → ${v})`, true); }
       else if (ctx.kind === 'recruit') { const c = this.cityById[ctx.cityId], t = this.officers[ctx.officerIdx]; if (c && t?.state && t.state.force == null) { t.state.status = 'serving'; t.state.force = c.force; if (!c.officers.includes(t.idx)) c.officers.push(t.idx); this.gainMerit(d.a.o, MERIT.recruit); this.log(`【설전】${an}의 설파 끝에 ${josa(t.name_ko, ['이','가'])} 【${this.forceName(c.force)}】에 등용되었습니다! (${c.name_ko})`, true); } }
     } else if (w === 'b') {
@@ -2428,6 +2501,7 @@ export class Game {
         saveV: 2, econV: this.econV, scenId: this.scenId, year: this.year, month: this.month, dan: this.dan, turn: this.turn, emperor: this.emperor, econGraceUntil: this.econGraceUntil, // saveV 2: 병량 경제 마이그레이션 판별 / R17: 옹립 상태 영속 (구 세이브는 생성자 기본값으로 복원)
         cities: this.cities, forces: this.forces, units: this.units, nextUnitId: this.nextUnitId, fieldFacs: this.fieldFacs, nextFacId: this.nextFacId,
         playerForce: this.playerForce, delegated: this.delegated, deadAck: this.deadAck, logs: this.logs.slice(-60), diplo: this.diplo, itemPool: this.itemPool, chronicle: this.chronicle, over: this.over, unified: this.unified, // R14
+        pendingDiplo: this.pendingDiplo ?? [], // R123: 보류 외교 제안 영속 — reload 후에도 결정 대기 복원 (효과는 resolveDiplo에서만 적용, 복원 시 재적용 없음)
         officerStates: Object.fromEntries(Object.entries(this.officers).filter(([,o]) => o.state).map(([i,o]) => [i, o.state])),
       };
       localStorage.setItem(SAVE_KEY, JSON.stringify(data));
