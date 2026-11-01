@@ -53,5 +53,7 @@ const dg={turn:14,officers:{1:{state:{}}},forces:{28:{ap:50}},dispatchCap:()=>3,
 const dc={force:28,troops:13000,spears:3900,junks:1};
 ok('R146 출진 사유 8조건 실행', (()=>{if(dw(dg,dc,5000,'spear',[1])!=='창병 병장 부족 (보유 3,900 / 필요 5,000)')return false;if(dw(dg,dc,3000,'spear',[1])!=='')return false;if(dw(dg,dc,5000,'sword',[])!=='무장을 선택하세요')return false;if(!dw(dg,dc,-1,'sword',[1]).includes('500명'))return false;if(!dw(dg,dc,14000,'sword',[1]).includes('상한'))return false;if(!dw(dg,dc,500,'ship',[1]).includes('수로'))return false;dg.officers[1].state.injuredUntil=15;if(!dw(dg,dc,500,'sword',[1]).includes('부상'))return false;dg.officers[1].state.injuredUntil=0;dg.forces[28].ap=0;return dw(dg,dc,500,'sword',[1])==='행동력 40 필요'})());
 ok('R146 입력/병종/무장 변경시 사유 갱신·출진 전 재검사', /oninput = refreshDispatch/.test(mn) && /onchange = refreshDispatch/.test(mn) && /refreshCap\(\); refreshDispatch\(\);/.test(mn) && /refreshDispatch\(\); if \(\$\('dsp-go'\).disabled\) return/.test(mn));
+ok('R147 담당선택 기본3명/최대3명/정치합 안내·선택 페이로드 연결', /availableBuilders.slice\(\).sort/.test(mn) && /let selectedBuilders = previous.filter/.test(mn) && /selectedBuilders.length >= 3 && !cb.checked/.test(mn) && /buildFacility\(c.id, btn.dataset.t, selectedBuilders\)/.test(mn) && /정치 합산/.test(mn));
+ok('R147 상태보존과 현재무장 정치 사용', /p.dataset.builders = JSON.stringify\(selectedBuilders\)/.test(mn) && /reopening \? polTop/.test(mn) && /game.officers\[i\]\?\.pol/.test(mn));
 console.log(fail ? 'R135 ' + fail + ' FAIL' : 'R135 ALL PASS');
 process.exit(fail ? 1 : 0);
