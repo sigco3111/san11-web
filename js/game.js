@@ -1702,6 +1702,7 @@ export class Game {
     for (const i of u.officers) this.gainMerit(i, MERIT.capture);
     this.log(`【${c.name_ko}】함락! ${old != null ? this.forceName(old) : '공백지'} → ${this.forceName(u.force)}`, true);
     this._mergeIntoCity(u, c); // R102: 함락 부대 입성 (자체 처리) — 점령 부대의 잔여 병력·무장·휴대 병량이 주둔으로 전량 합류해 신규 도시의 병0 공백 방지. 원작 매뉴얼 명시 없음(자체 규칙)
+    this._restoreUnrosteredOfficers(u.force); // R159: 본거지를 되찾으면 명단 밖 대기 무장 복귀. 도시0 대기·타부대합류·멸망규칙은 불변
   }
   _mergeIntoCity(u, c) { // R87: 귀환 병력은 상한 캡으로 증발시키지 않고 전량 합류 (자체 처리: 상한은 징병 등 신규 생성에만 적용, 기존 보유 병력의 귀환 손실 방지). R102: 함락 입성도 같은 규칙 사용
     c.troops += u.troops;
@@ -1752,10 +1753,13 @@ export class Game {
       if (st && svc(st.status) && st.force === c.force && st.city === c.id) continue;
       c.officers = c.officers.filter(j => j !== i);
     }
+    this._restoreUnrosteredOfficers();
+  }
+  _restoreUnrosteredOfficers(fid = null) { // R159: 기존 로드 복귀 경로 재사용. fid 지정 시 그 세력만
     const inUnit = new Set(); for (const u of this.units) for (const i of u.officers) inUnit.add(i);
     for (const o of Object.values(this.officers)) {
-      const st = o?.state; if (!st || st.force == null) continue;
-      if (!svc(st.status)) continue;
+      const st = o?.state; if (!st || st.force == null || (fid != null && st.force !== fid)) continue;
+      if (!['ruler', 'taesu', 'serving'].includes(st.status)) continue;
       if (inUnit.has(o.idx) || this.cities.some(c => c.officers.includes(o.idx))) continue;
       const recorded = st.city != null && this.cityById[st.city]?.force === st.force ? this.cityById[st.city] : null; // R105: 기록된 소재 도시가 같은 세력이면 그대로 복귀 (무관한 첫 도시 이동 방지)
       const home = recorded ?? this.cities.filter(c => c.force === st.force).sort((p, q) => p.id - q.id)[0];
