@@ -1,12 +1,12 @@
 // 진입점: 화면 전환·UI·지도 연결
-import { Map3D, toWorld } from './map3d.js?v=r151';
-import { Game, SAVE_KEY, RULES, forceColor, UNIT_TYPES, ARTS, OFFICES, restoreOfficer, FIELD_FACS, TRAPS, SHIP_TYPES, TAC_SHIP_OK, josa, josaRo, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL, AB_PICK } from './game.js?v=r151';
-import { aiThink } from './ai.js?v=r151';
+import { Map3D, toWorld } from './map3d.js?v=r152';
+import { Game, SAVE_KEY, RULES, forceColor, UNIT_TYPES, ARTS, OFFICES, restoreOfficer, FIELD_FACS, TRAPS, SHIP_TYPES, TAC_SHIP_OK, josa, josaRo, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL, AB_PICK } from './game.js?v=r152';
+import { aiThink } from './ai.js?v=r152';
 
 const $ = id => document.getElementById(id);
 let DATA = null, game = null, map = null, selectedUnit = null, autoTimer = null, pendingFire = null; // R15: 직접 전법·계략 대기
 
-const BUILD_ID = 'r151'; // 빌드 ID (index.html의 meta[name=build]와 같아야 함 - 오래된 캐시된 index와 새 스크립트의 혼합 감지)
+const BUILD_ID = 'r152'; // 빌드 ID (index.html의 meta[name=build]와 같아야 함 - 오래된 캐시된 index와 새 스크립트의 혼합 감지)
 function checkBuildSkew() {
   const idx = document.querySelector('meta[name="build"]')?.content;
   if (idx === BUILD_ID) { sessionStorage.removeItem('cheonha-xi-web.skew'); return; } // 일치하면 재시도 표식 해제
@@ -19,7 +19,7 @@ checkBuildSkew();
 async function loadData() {
   const [officers, skills, portraits, s184, s190, s251] = await Promise.all(
     ['data/officers670.json','data/skills.json','data/portraits.json','data/scenario-184.json','data/scenario-190.json','data/scenario-251.json']
-      .map(u => fetch(u + '?v=r151').then(r => r.json())));
+      .map(u => fetch(u + '?v=r152').then(r => r.json())));
   const byIdx = {};
   for (const o of officers) byIdx[o.idx] = o;
   DATA = { officers: byIdx, skills, portraits, scenarios: { '184': s184, '190': s190, '251': s251 } };
@@ -756,6 +756,15 @@ function officerRow(idx) {
 }
 let lastCityId = null;
 // R151: 기존 내정 명령 조건의 안내만. 금/AP/효과 산식은 엔진 그대로.
+// R152: 공방/조선소 기존 생산 조건만 안내. 기교·턴당 횟수 제한 신설 없음.
+function equipmentUiInfo(game, c, family, key) {
+  const ship = family === 'ship', spec = (ship ? SHIP_BUILD : SIEGE_BUILD)[key];
+  if (!c || c.force == null || !game.forces[c.force] || !spec) return { why: '도시/종류 없음' };
+  const gold = Math.round(spec.gold * ((c.specialty ?? []).includes(ship ? '선박' : '병기') ? 0.75 : 1));
+  const ap = Math.ceil(10 * game.apMult(c, 'military'));
+  const why = game._blocked(c) ? '군단 소속 도시입니다' : !game.cityFac(c, ship ? '조선소' : '공방').length ? '완성 시설 필요' : game.forces[c.force].ap < ap ? `행동력 ${ap} 필요` : c.gold < gold ? `금 ${gold} 필요` : '';
+  return { gold, ap, why };
+}
 function domesticUiWhy(game, c, kind) {
   if (!c || c.force == null || !game.forces[c.force]) return '도시/세력 없음';
   if (game._blocked(c)) return '군단 소속 도시입니다';
@@ -804,16 +813,12 @@ function showCityPanel(c) {
     상업 ${c.commerce} · 농업 ${c.farm}${c.metropolis ? ' · 대도시' : ''}${c.specialty.length ? ' · 특색: '+c.specialty.join(',') : ''} · 치안 ${c.security ?? 80}${c.disaster ? ` <span style="color:#f66">재해: ${c.disaster.type}</span>` : ''}<br>
     병장: 창${c.spears} 극${c.pikes} 노${c.bows} 군마${c.horses} · 병기: 충거${c.rams ?? 0} 정란${c.towers ?? 0} 목수${c.beasts ?? 0} 투석${c.catapults ?? 0} · 선박: 주가${c.junks ?? 0} 누선${c.lous ?? 0} 투함${c.dous ?? 0}</p>`;
   if (mine) {
-    if (game.cityFac(c, '공방').length) {
-      html += `<p style="font-size:12px">병기 생산 (공방): ` + Object.entries(SIEGE_BUILD).map(([k, s]) => {
-        const cost = Math.round(s.gold * ((c.specialty ?? []).includes('병기') ? 0.75 : 1));
-        return `<button class="cmd cmd-siege" data-k="${k}">${s.name} (금${cost})</button>`;
-      }).join(' ') + '</p>';
-    }
-    if (game.cityFac(c, '조선소').length) {
-      html += `<p style="font-size:12px">선박 건조 (조선소): ` + Object.entries(SHIP_BUILD).map(([k, s]) => {
-        const cost = Math.round(s.gold * ((c.specialty ?? []).includes('선박') ? 0.75 : 1));
-        return `<button class="cmd cmd-ship" data-k="${k}">${s.name} (금${cost})</button>`;
+    for (const family of ['siege', 'ship']) {
+      const ship = family === 'ship', specs = ship ? SHIP_BUILD : SIEGE_BUILD;
+      if (!game.cityFac(c, ship ? '조선소' : '공방').length) continue;
+      html += `<p style="font-size:12px">${ship ? '선박 건조 (조선소)' : '병기 생산 (공방)'}: ` + Object.entries(specs).map(([k, spec]) => {
+        const a = equipmentUiInfo(game, c, family, k);
+        return `<span style="display:inline-flex;flex-direction:column;vertical-align:top;max-width:100%"><button class="cmd cmd-${family}" data-k="${k}"${a.why ? ` disabled title="${a.why}"` : ''}>${spec.name} (금${a.gold}·AP${a.ap})</button>${a.why ? `<small class="fac-why">${a.why}</small>` : ''}</span>`;
       }).join(' ') + '</p>';
     }
   }
@@ -881,8 +886,8 @@ function showCityPanel(c) {
     $('cmd-dev-f').onclick = () => { if (!domesticUiWhy(game,c,'farm')) game.develop(c.id, 'farm'); refreshAll(); showCityPanel(c); };
     $('cmd-recruit').onclick = () => { if (!domesticUiWhy(game,c,'recruit')) game.recruit(c.id); refreshAll(); showCityPanel(c); };
     $('cmd-patrol').onclick = () => { if (!domesticUiWhy(game,c,'patrol')) game.patrol(c.id); refreshAll(); showCityPanel(c); };
-    p.querySelectorAll('.cmd-siege').forEach(b => b.onclick = () => { game.produceSiege(c.id, b.dataset.k); refreshAll(); showCityPanel(c); });
-    p.querySelectorAll('.cmd-ship').forEach(b => b.onclick = () => { game.produceShip(c.id, b.dataset.k); refreshAll(); showCityPanel(c); });
+    p.querySelectorAll('.cmd-siege').forEach(b => b.onclick = () => { if (!equipmentUiInfo(game,c,'siege',b.dataset.k).why) game.produceSiege(c.id, b.dataset.k); refreshAll(); showCityPanel(c); });
+    p.querySelectorAll('.cmd-ship').forEach(b => b.onclick = () => { if (!equipmentUiInfo(game,c,'ship',b.dataset.k).why) game.produceShip(c.id, b.dataset.k); refreshAll(); showCityPanel(c); });
     $('cmd-dispatch').onclick = () => showDispatch(c);
     $('cmd-move').onclick = () => showMove(c);
     $('cmd-tech').onclick = () => showTech();
