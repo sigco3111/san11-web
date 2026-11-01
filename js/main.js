@@ -1,12 +1,12 @@
 // 진입점: 화면 전환·UI·지도 연결
-import { Map3D, toWorld } from './map3d.js?v=r168';
-import { Game, SAVE_KEY, RULES, forceColor, UNIT_TYPES, ARTS, OFFICES, restoreOfficer, FIELD_FACS, TRAPS, SHIP_TYPES, TAC_SHIP_OK, josa, josaRo, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL, AB_PICK } from './game.js?v=r168';
-import { aiThink } from './ai.js?v=r168';
+import { Map3D, toWorld } from './map3d.js?v=r169';
+import { Game, SAVE_KEY, RULES, forceColor, UNIT_TYPES, ARTS, OFFICES, restoreOfficer, FIELD_FACS, TRAPS, SHIP_TYPES, TAC_SHIP_OK, josa, josaRo, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL, AB_PICK } from './game.js?v=r169';
+import { aiThink } from './ai.js?v=r169';
 
 const $ = id => document.getElementById(id);
 let DATA = null, game = null, map = null, selectedUnit = null, autoTimer = null, pendingFire = null; // R15: 직접 전법·계략 대기
 
-const BUILD_ID = 'r168'; // 빌드 ID (index.html의 meta[name=build]와 같아야 함 - 오래된 캐시된 index와 새 스크립트의 혼합 감지)
+const BUILD_ID = 'r169'; // 빌드 ID (index.html의 meta[name=build]와 같아야 함 - 오래된 캐시된 index와 새 스크립트의 혼합 감지)
 function checkBuildSkew() {
   const idx = document.querySelector('meta[name="build"]')?.content;
   if (idx === BUILD_ID) { sessionStorage.removeItem('cheonha-xi-web.skew'); return; } // 일치하면 재시도 표식 해제
@@ -19,7 +19,7 @@ checkBuildSkew();
 async function loadData() {
   const [officers, skills, portraits, s184, s190, s251] = await Promise.all(
     ['data/officers670.json','data/skills.json','data/portraits.json','data/scenario-184.json','data/scenario-190.json','data/scenario-251.json']
-      .map(u => fetch(u + '?v=r168').then(r => r.json())));
+      .map(u => fetch(u + '?v=r169').then(r => r.json())));
   const byIdx = {};
   for (const o of officers) byIdx[o.idx] = o;
   DATA = { officers: byIdx, skills, portraits, scenarios: { '184': s184, '190': s190, '251': s251 } };
@@ -122,6 +122,7 @@ function refreshOpenPanel() { // R130: 일기토·설전·수신 외교 결정 �
   }
   if (p.dataset.view === 'dispatch') { p.refreshDispatch?.(); return; }
   if (p.dataset.view === 'move') { p.refreshMove?.(); return; }
+  if (p.dataset.view === 'trade') { p.refreshTrade?.(); return; }
   if (p.dataset.view === 'tech') { showTech(); return; } // R156: 연구는 입력폼 없음, 자원·가능상태와 스크롤 갱신
   const c = lastCityId != null ? game.cityById[lastCityId] : null;
   if (!c) return;
@@ -219,6 +220,7 @@ function doTurn() {
   }
   if ($('panel').dataset.view === 'dispatch' && !$('panel').classList.contains('hidden')) $('panel').refreshDispatch?.();
   if ($('panel').dataset.view === 'move' && !$('panel').classList.contains('hidden')) $('panel').refreshMove?.();
+  if ($('panel').dataset.view === 'trade' && !$('panel').classList.contains('hidden')) $('panel').refreshTrade?.();
   if ($('panel').dataset.view === 'tech' && !$('panel').classList.contains('hidden')) showTech(); // R156: 턴 후 연구비·기교P·가능상태 갱신, showTech가 스크롤 보존
   checkGameOver();
   if (game.pendingDuel) showDuel(); // R10: 일기토 모달
@@ -575,26 +577,34 @@ function showLegions(c) { $('panel').dataset.view='legion'; // 군단 편성: �
   };
   render();
 }
-function showTrade(c) { $('panel').dataset.view='trade'; // 상인: 월별 환율, 금↔병량 (자체 수치)
+function tradeUiWhy(game, c, dir, lots) {
+  if (!c || c.force !== game.playerForce || game.delegated) return '현재 직접 지휘하는 도시가 아닙니다';
+  if (!game.forces[c.force]?.alive) return '세력 정보 없음';
+  if (game._blocked(c)) return '군단 소속 도시입니다';
+  if (game.forces[c.force].ap < 10) return '행동력 10 필요';
+  if (dir === 'buy' && c.gold < 1000 * lots) return '금 ' + (1000 * lots).toLocaleString() + ' 필요';
+  if (dir === 'sell' && c.food < game.tradeRate() * lots) return '병량 ' + (game.tradeRate() * lots).toLocaleString() + ' 필요';
+  return '';
+}
+function showTrade(c) { $('panel').dataset.view='trade';
   const p = $('panel');
-  const rate = game.tradeRate();
-  const myF = game.forces[c.force];
-  const render = () => {
-    p.innerHTML = `<h3>${c.name_ko} 상인</h3>
-      <p>이번 달 환율: 금 1000 ↔ 병량 ${rate.toLocaleString()} (매월 변동)</p>
-      <p>보유: 금 ${c.gold.toLocaleString()} · 병량 ${c.food.toLocaleString()} · 행동력 ${myF.ap}</p>
-      <p>거래량 (롯트): <select id="trd-lots">${[1,2,3,4,5].map(n => `<option value="${n}">${n}</option>`).join('')}</select></p>
-      <p><button class="cmd" id="trd-buy">병량 매입 (금→병량)</button>
-      <button class="cmd" id="trd-sell">병량 매각 (병량→금)</button>
-      <button class="cmd" id="trd-back">← 도시 패널로</button></p>`;
-    const applyLots = () => { const lots = Number($('trd-lots').value); $('trd-buy').disabled = myF.ap < 10 || c.gold < 1000 * lots; $('trd-sell').disabled = myF.ap < 10 || c.food < rate * lots; }; // R127: 롯트별 가능 여부
-    applyLots();
-    $('trd-lots').onchange = applyLots;
-    $('trd-buy').onclick = () => { if (!game.trade(c.id, 'buy', Number($('trd-lots').value)) && game.lastTradeWhy) { game.log(game.lastTradeWhy, true); } refreshAll(); render(); }; // R127: 실패 사유 안내
-    $('trd-sell').onclick = () => { if (!game.trade(c.id, 'sell', Number($('trd-lots').value)) && game.lastTradeWhy) { game.log(game.lastTradeWhy, true); } refreshAll(); render(); }; // R127
-    $('trd-back').onclick = () => showCityPanel(c);
+  p.innerHTML = `<h3>${c.name_ko} 상인</h3>
+    <p id="trd-rate"></p><p id="trd-stock"></p>
+    <p>거래량 (롯트): <select id="trd-lots">${[1,2,3,4,5].map(n => `<option value="${n}">${n}</option>`).join('')}</select></p>
+    <p><button class="cmd" id="trd-buy">병량 매입 (금→병량)</button> <span id="trd-buy-why" class="fac-why"></span></p>
+    <p><button class="cmd" id="trd-sell">병량 매각 (병량→금)</button> <span id="trd-sell-why" class="fac-why"></span></p>
+    <p id="trd-total" class="st"></p><button class="cmd" id="trd-back">← 도시 패널로</button>`;
+  const refreshTrade = () => {
+    const rate = game.tradeRate(), lots = Number($('trd-lots').value), f = game.forces[c.force];
+    $('trd-rate').textContent = '이번 달 환율: 금 1000 ↔ 병량 ' + rate.toLocaleString() + ' (매월 변동)';
+    $('trd-stock').textContent = '보유: 금 ' + c.gold.toLocaleString() + ' · 병량 ' + c.food.toLocaleString() + ' · 행동력 ' + (f?.ap ?? 0);
+    $('trd-total').textContent = lots + '롯트: 금 ' + (1000 * lots).toLocaleString() + ' ↔ 병량 ' + (rate * lots).toLocaleString() + ' · 행동력 10';
+    for (const dir of ['buy','sell']) { const why = tradeUiWhy(game,c,dir,lots); $('trd-'+dir).disabled = !!why; $('trd-'+dir).title = why; $('trd-'+dir+'-why').textContent = why; }
   };
-  render();
+  p.refreshTrade = refreshTrade; refreshTrade();
+  $('trd-lots').onchange = refreshTrade;
+  for (const dir of ['buy','sell']) $('trd-'+dir).onclick = () => { refreshTrade(); if ($('trd-'+dir).disabled) return; if (!game.trade(c.id,dir,Number($('trd-lots').value)) && game.lastTradeWhy) game.log(game.lastTradeWhy,true); refreshAll(); refreshTrade(); };
+  $('trd-back').onclick = () => showCityPanel(c);
 }
 function showDiplomacy(c) { $('panel').dataset.view='diplo';
   const p = $('panel'); p.classList.remove('hidden');
