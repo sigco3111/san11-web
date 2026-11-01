@@ -1,12 +1,12 @@
 // 진입점: 화면 전환·UI·지도 연결
-import { Map3D, toWorld } from './map3d.js?v=r145';
-import { Game, SAVE_KEY, RULES, forceColor, UNIT_TYPES, ARTS, OFFICES, restoreOfficer, FIELD_FACS, TRAPS, SHIP_TYPES, TAC_SHIP_OK, josa, josaRo, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL, AB_PICK } from './game.js?v=r145';
-import { aiThink } from './ai.js?v=r145';
+import { Map3D, toWorld } from './map3d.js?v=r146';
+import { Game, SAVE_KEY, RULES, forceColor, UNIT_TYPES, ARTS, OFFICES, restoreOfficer, FIELD_FACS, TRAPS, SHIP_TYPES, TAC_SHIP_OK, josa, josaRo, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL, AB_PICK } from './game.js?v=r146';
+import { aiThink } from './ai.js?v=r146';
 
 const $ = id => document.getElementById(id);
 let DATA = null, game = null, map = null, selectedUnit = null, autoTimer = null, pendingFire = null; // R15: 직접 전법·계략 대기
 
-const BUILD_ID = 'r145'; // 빌드 ID (index.html의 meta[name=build]와 같아야 함 - 오래된 캐시된 index와 새 스크립트의 혼합 감지)
+const BUILD_ID = 'r146'; // 빌드 ID (index.html의 meta[name=build]와 같아야 함 - 오래된 캐시된 index와 새 스크립트의 혼합 감지)
 function checkBuildSkew() {
   const idx = document.querySelector('meta[name="build"]')?.content;
   if (idx === BUILD_ID) { sessionStorage.removeItem('cheonha-xi-web.skew'); return; } // 일치하면 재시도 표식 해제
@@ -19,7 +19,7 @@ checkBuildSkew();
 async function loadData() {
   const [officers, skills, portraits, s184, s190, s251] = await Promise.all(
     ['data/officers670.json','data/skills.json','data/portraits.json','data/scenario-184.json','data/scenario-190.json','data/scenario-251.json']
-      .map(u => fetch(u + '?v=r145').then(r => r.json())));
+      .map(u => fetch(u + '?v=r146').then(r => r.json())));
   const byIdx = {};
   for (const o of officers) byIdx[o.idx] = o;
   DATA = { officers: byIdx, skills, portraits, scenarios: { '184': s184, '190': s190, '251': s251 } };
@@ -857,6 +857,26 @@ function showCityPanel(c) {
     $('panel').classList.add('hidden'); refreshLog();
   };
 }
+// R146: 출진 편성의 기존 엔진 조건을 클릭 전에 안내 (비용·효과 규칙은 그대로)
+function dispatchUiWhy(game, c, troops, type, offs) {
+  if (!offs.length) return '무장을 선택하세요';
+  if (offs.length > game.dispatchCap(c.force)) return '무장 ' + game.dispatchCap(c.force) + '명까지 편성 가능';
+  if (offs.some(i => (game.officers[i]?.state?.injuredUntil ?? 0) > game.turn)) return '부상 무장은 출진할 수 없습니다';
+  if (!Number.isFinite(troops) || troops < 500 || !Number.isInteger(troops)) return '병사는 500명 이상의 정수로 입력하세요';
+  const cap = Math.min(c.troops, game.unitTroopCap(c.force) + (OFFICES[game.officeOf(offs[0])]?.cmd ?? 0));
+  if (troops > cap) return '병력 상한 ' + cap.toLocaleString() + '명';
+  if (game._blocked(c)) return '군단 소속 도시입니다';
+  const ap = Math.ceil(40 * game.apMult(c, 'military'));
+  if (game.forces[c.force].ap < ap) return '행동력 ' + ap + ' 필요';
+  const ut = UNIT_TYPES[type];
+  if (!ut) return '병종을 선택하세요';
+  for (const [key, per] of Object.entries(ut.cost)) {
+    const need = ut.perUnit ? per : per * troops;
+    if ((c[key] ?? 0) < need) return ut.name + ' 병장 부족 (보유 ' + (c[key] ?? 0).toLocaleString() + ' / 필요 ' + need.toLocaleString() + ')';
+  }
+  if (SHIP_TYPES.has(type) && !game.nearestWater(c.lon, c.lat)) return '인접 수로가 없어 선박을 띄울 수 없습니다';
+  return '';
+}
 function showDispatch(c) { $('panel').dataset.view='dispatch';
   const p = $('panel');
   const capBase = game.unitTroopCap(c.force); // 기본 상한 (군제개혁 +3000 포함)
@@ -873,17 +893,24 @@ function showDispatch(c) { $('panel').dataset.view='dispatch';
     }).join('')}</select></p>
     <p>부장 (최대 3):</p>
     ${c.officers.map(i => `<label style="display:block"><input type="checkbox" class="dsp-off" value="${i}"> ${DATA.officers[i].name_ko} (무${DATA.officers[i].war}/통${DATA.officers[i].ldr})</label>`).join('')}
-    <p><button class="cmd" id="dsp-go">출진</button> <button class="cmd" id="dsp-back">취소</button></p>
+    <p id="dsp-why" role="status" style="color:#d9a18a;font-size:12px"></p><p><button class="cmd" id="dsp-go">출진</button> <button class="cmd" id="dsp-back">취소</button></p>
     <p style="font-size:12px;color:#998">출진 후 부대를 선택하고 목표 도시를 클릭하면 이동합니다.</p>`;
   $('dsp-back').onclick = () => showCityPanel(c);
+  const selectedOffs = () => [...document.querySelectorAll('.dsp-off:checked')].map(x => Number(x.value));
+  const refreshDispatch = () => {
+    const why = dispatchUiWhy(game, c, Number($('dsp-troops').value), $('dsp-type').value, selectedOffs());
+    $('dsp-go').disabled = !!why; $('dsp-go').title = why; $('dsp-why').textContent = why;
+  };
   const refreshCap = () => { // R84: 주장 선택 변경 시 관직 가산 포함 상한 재계산·표기
     const t = Math.min(c.troops, capTotal()), ofc = leadOf() >= 0 ? (OFFICES[game.officeOf(leadOf())]?.cmd ?? 0) : 0;
     const inp = $('dsp-troops'); inp.max = t; if (Number(inp.value) > t) inp.value = t;
     $('dsp-cap').textContent = `상한 ${t.toLocaleString()} = 기본 ${capBase.toLocaleString()}(군제 포함) + 주장 관직 +${ofc.toLocaleString()}`;
   };
-  document.querySelectorAll('.dsp-off').forEach(cb => cb.onchange = () => { const lim = game.dispatchCap(c.force); if (document.querySelectorAll('.dsp-off:checked').length > lim) { cb.checked = false; game.log(`한 부대에는 무장 ${lim}명까지 편성할 수 있습니다.`, true); refreshLog(); } refreshCap(); }); // 3명 제한: 체크 단계에서 거부·안내
-  refreshCap();
+  document.querySelectorAll('.dsp-off').forEach(cb => cb.onchange = () => { const lim = game.dispatchCap(c.force); if (document.querySelectorAll('.dsp-off:checked').length > lim) { cb.checked = false; game.log(`한 부대에는 무장 ${lim}명까지 편성할 수 있습니다.`, true); refreshLog(); } refreshCap(); refreshDispatch(); }); // 3명 제한: 체크 단계에서 거부·안내
+  refreshCap(); refreshDispatch();
+  $('dsp-troops').oninput = refreshDispatch; $('dsp-type').onchange = refreshDispatch;
   $('dsp-go').onclick = () => {
+    refreshDispatch(); if ($('dsp-go').disabled) return;
     const troops = Math.min(Math.min(c.troops, capTotal()), Number($('dsp-troops').value));
     const type = $('dsp-type').value;
     const offs = [...document.querySelectorAll('.dsp-off:checked')].map(x => Number(x.value)).slice(0, game.dispatchCap(c.force));
