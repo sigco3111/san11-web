@@ -1485,7 +1485,7 @@ export class Game {
         this.playerForce = this.pendingJoin; this.delegated = false; this.pendingJoin = null;
         this.log(`【${this.forceName(this.playerForce)}】에 참가하여 지휘를 시작합니다.`, true);
       } else {
-        this.log(`참가 요청한 【${this.forceName(this.pendingJoin)}】${josa(this.forceName(this.pendingJoin), ['이','가'])} 멸망하여 참가 요청이 취소되었습니다. 다른 세력을 선택해 주세요.`, true);
+        this.log(`참가 요청한 ${josa('【' + this.forceName(this.pendingJoin) + '】군', ['이','가'])} 멸망하여 참가 요청이 취소되었습니다. 다른 세력을 선택해 주세요.`, true);
         this.pendingJoin = null;
       }
     }
