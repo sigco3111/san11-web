@@ -1,6 +1,41 @@
 // 3D 저폴리 지도 엔진 (Three.js) - 고정 등각 아이소메트릭 + 계단식 지형 + 성곽/숲
 import * as THREE from 'three';
-import { loadGLBAssets, applyEnvironment } from './assets-3d.js?v=r138';
+import { loadGLBAssets, applyEnvironment } from './assets-3d.js?v=r139';
+
+// R139: 결정적 전역 시설 배치. 지형·성곽·야전 시설·기배치 시설은 비용이 아닌 제외 조건.
+// 자리가 없으면 도시 상단 요약 표식으로 표현하며 수상에 육상 건물을 강제 배치하지 않는다.
+export function layoutCityFacilities(list, centers, fields, levelAt) {
+  const placed = [], out = [];
+  for (const cf of [...list].sort((a, b) => a.cityId - b.cityId)) {
+    const facs = [...cf.facs].sort((a, b) => a.type.localeCompare(b.type, 'ko'));
+    facs.forEach((f, i) => {
+      const dock = f.type === '조선소', ideal = -Math.PI / 2 + i * 2 * Math.PI / facs.length;
+      let best = null, bestScore = Infinity;
+      for (const scale of [1, 0.8, 0.65]) {
+        const half = 0.7 * scale, rad = 0.9 * scale;
+        for (let ri = 0; ri <= 12; ri++) {
+          const r = 2.4 + ri * 0.3;
+          for (let k = 0; k < 72; k++) {
+            const a = ideal + k * Math.PI / 36, x = cf.x + Math.cos(a) * r, z = cf.z + Math.sin(a) * r;
+            const lv = levelAt(x, z);
+            if (dock ? lv > 1 : lv !== 1) continue;
+            if (!dock && [-half, 0, half].some(dx => [-half, 0, half].some(dz => levelAt(x + dx, z + dz) !== 1))) continue;
+            if (centers.some(c => Math.hypot(x - c.x, z - c.z) < 2.2 + rad)) continue;
+            if (fields.some(c => Math.hypot(x - c.x, z - c.z) < c.fr + rad + 0.15)) continue;
+            if (placed.some(c => Math.hypot(x - c.x, z - c.z) < c.rad + rad + 0.12)) continue;
+            const score = ri * 0.2 + Math.min(k, 72 - k) * 0.025 + (dock && lv !== 0 ? 4 : 0);
+            if (score < bestScore) { bestScore = score; best = { cityId: cf.cityId, ...f, x, z, scale, rad, summary: false }; }
+          }
+        }
+        if (best) break;
+      }
+      if (best) placed.push(best);
+      else best = { cityId: cf.cityId, ...f, x: cf.x, z: cf.z, scale: 0.3, summary: true, slot: i };
+      out.push(best);
+    });
+  }
+  return out;
+}
 
 const LON0 = 100, LON1 = 126.5, LAT0 = 21.5, LAT1 = 43;
 export function toWorld(lon, lat) {
@@ -615,54 +650,32 @@ export class Map3D {
     else { const tw = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.26, 0.8, 8), stone); tw.position.y = 0.4; g.add(tw); box(0.4, 0.25, 0.04, 0.2, 0.85, 0, accent); box(0.05, 0.3, 0.05, 0, 0.95, 0); }
     return g;
   }
-  syncCityFacs(list) { // list: {cityId, x, z, facs:[{type, done}]} — 시설 구성이 바뀐 도시만 재구성
+  syncCityFacs(list) { // R139: 모든 도시/야전 시설의 배치 의존성을 함께 무효화
     this.cityFacMeshes = this.cityFacMeshes ?? {};
-    const keep = new Set(list.map(c => c.cityId));
-    for (const id of Object.keys(this.cityFacMeshes)) if (!keep.has(Number(id))) { for (const m of this.cityFacMeshes[id].meshes) this.unitGroup.remove(m); delete this.cityFacMeshes[id]; }
-    for (const cf of list) {
-      const sig = cf.facs.map(f => f.type + (f.done ? 1 : 0)).join(',');
-      const cur = this.cityFacMeshes[cf.cityId];
-      if (cur && cur.sig === sig) continue;
-      if (cur) for (const m of cur.meshes) this.unitGroup.remove(m);
-      const meshes = [];
-      const sorted = [...cf.facs].sort((a, b) => a.type.localeCompare(b.type, 'ko'));
-      const n = sorted.length, r = n <= 6 ? 2.5 : 3.0;
-      // R136: 배치 품질 — 링 회전 오프셋 24후보 중 패널티 최소 선택(결정적, 시각 전용). 비조선소 수상(+3)·지형 레벨 불일치(|lv-1|)·인접 도시 성곽 근접(+2) 회피, 조선소는 수상 선호(육지 +1)
-      const others = list.filter(o => o.cityId !== cf.cityId);
-      const score = (off) => sorted.reduce((pen, f, i) => {
-        const a = -Math.PI / 2 + off + i * 2 * Math.PI / n;
-        const px = cf.x + Math.cos(a) * r, pz = cf.z + Math.sin(a) * r;
-        const lv = this.levelAtWorld(px, pz), dock = Map3D.CITY_FAC_STYLE[f.type]?.geo === 'dock';
-        let p = 0;
-        if (lv === 0) p += dock ? 0 : 3; else { p += Math.abs(lv - 1); if (dock) p += 1; }
-        for (const o of others) if (Math.hypot(px - o.x, pz - o.z) < 2.2) p += 2;
-        return pen + p;
-      }, 0);
-      let off = 0, best = Infinity;
-      for (let k = 0; k < 24; k++) { const s = score(k * Math.PI / 12); if (s < best) { best = s; off = k * Math.PI / 12; } }
-      const nearOther = (px, pz) => others.some(o => Math.hypot(px - o.x, pz - o.z) < 2.2);
-      sorted.forEach((f, i) => {
-        const a = -Math.PI / 2 + off + i * 2 * Math.PI / n;
-        const dock = Map3D.CITY_FAC_STYLE[f.type]?.geo === 'dock';
-        let px = cf.x + Math.cos(a) * r, pz = cf.z + Math.sin(a) * r;
-        // R136b: 슬롯이 나쁜 위치(비조선소 수상·구릉·인접 성곽 침범)면 같은 각도로 안쪽 반경을 걸어 양호 지점 탐색(최소 r=1.7 — 성곽 벽 바깥 유지). 끝까지 없으면 원위치(best-effort)
-        const bad = (x, z) => { const lv = this.levelAtWorld(x, z); return (lv === 0 && !dock) || lv > 1 || nearOther(x, z); };
-        if (bad(px, pz)) for (let rr = r - 0.3; rr >= 1.7 && bad(px, pz); rr -= 0.3) { const nx = cf.x + Math.cos(a) * rr, nz = cf.z + Math.sin(a) * rr; if (!bad(nx, nz)) { px = nx; pz = nz; } }
-        // R136c: 방사 탐색 실패(강변 도시처럼 그 각도 전체가 물이거나 인접 성곽 방향 슬롯)면 ±반슬롯 각도 후보를 같은 방식으로 탐색 — 이미 놓은 시설과 0.9 미만 근접은 제외. 끝까지 없으면 원위치(best-effort)
-        if (bad(px, pz)) {
-          const st = 2 * Math.PI / n;
-          outer: for (const dk of [0.5, -0.5, 1, -1, 1.5, -1.5]) {
-            for (let rr = r; rr >= 1.7; rr -= 0.3) {
-              const aa = a + dk * st, nx = cf.x + Math.cos(aa) * rr, nz = cf.z + Math.sin(aa) * rr;
-              if (!bad(nx, nz) && meshes.every(mm => Math.hypot(mm.position.x - nx, mm.position.z - nz) >= 0.9)) { px = nx; pz = nz; break outer; }
-            }
-          }
-        }
-        const m = this._cityFacModel(f.type, f.done);
-        m.position.set(px, Math.max(this.levelAtWorld(px, pz) * STEP, WATER_Y + 0.2), pz);
-        this.unitGroup.add(m); meshes.push(m);
-      });
-      this.cityFacMeshes[cf.cityId] = { meshes, sig };
+    const centers = this.cityList.map(c => { const [x, z] = toWorld(c.lon, c.lat); return { x, z }; });
+    const fields = Object.values(this.fieldMeshes ?? {}).map(f => ({ x: f.g.position.x, z: f.g.position.z, fr: f.fr }));
+    const sig = JSON.stringify([list, centers, fields]);
+    if (this._cityFacLayoutSig === sig) return;
+    this._cityFacLayoutSig = sig;
+    for (const e of Object.values(this.cityFacMeshes)) for (const m of e.meshes) this.unitGroup.remove(m);
+    this.cityFacMeshes = {};
+    const layout = layoutCityFacilities(list, centers, fields, (x, z) => this.levelAtWorld(x, z));
+    for (const f of layout) {
+      let m;
+      if (f.summary) {
+        // 좁은 지형에서는 건물이 아닌 도시 상단 색 표식. 종류/공사 상태는 도시 상세에 보존.
+        m = new THREE.Group();
+        const count = layout.filter(x => x.cityId === f.cityId && x.summary).indexOf(f);
+        const badge = this.makeLabel('성내: ' + f.type + (f.done ? '' : ' 공사'), 0.4);
+        badge.position.set(0, 5 + count * 0.75, 0); m.add(badge);
+        m.position.set(f.x, 0, f.z);
+      } else {
+        m = this._cityFacModel(f.type, f.done); m.scale.setScalar(f.scale);
+        m.position.set(f.x, Math.max(this.levelAtWorld(f.x, f.z) * STEP, WATER_Y + 0.2), f.z);
+      }
+      m.userData.cityFacility = { ...f };
+      this.unitGroup.add(m);
+      (this.cityFacMeshes[f.cityId] ??= { meshes: [], sig }).meshes.push(m);
     }
   }
   removeUnit(id) { const m = this.unitMeshes[id]; if (m) { this.unitGroup.remove(m.group); delete this.unitMeshes[id]; } }
