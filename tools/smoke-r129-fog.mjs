@@ -1,8 +1,2 @@
-// R129: 위임 자동 정지(pendingStop) 시 안개(시야) 즉시 재적용 — 소스 게이트
-// 결함: setAuto 루프의 pendingStop 분기가 refreshHud()만 호출해 위임 중 보이던 시야 밖 적 부대 메시가 다음 턴 갱신까지 화면에 남았음.
-import { readFileSync } from 'fs';
-const main = readFileSync(new URL('../js/main.js', import.meta.url), 'utf8');
-const m = main.match(/pendingStop = false; game\.delegated = false; setAuto\(false\); (\w+)\(\);/);
-if (!m) { console.error('R129 FAIL: pendingStop 분기를 찾지 못함'); process.exit(1); }
-if (m[1] !== 'refreshAll') { console.error(`R129 FAIL: pendingStop 분기가 ${m[1]}() 호출 (refreshAll 필요)`); process.exit(1); }
-console.log('R129 위임 정지 안개 재적용 게이트 PASS (pendingStop → refreshAll)');
+// R172: 알림만으로 모드가 바뀌지 않음. 명시 직접지휘/중단 시 지도 즉시 갱신은 R165 실행검사에서 확인.
+import{readFileSync}from'node:fs';const src=readFileSync('js/main.js','utf8');if(src.includes('game.pendingStop = false; game.delegated = false;'))throw Error('automatic control transfer remains');if(!src.includes('refreshAll(); refreshOpenPanel();'))throw Error('explicit control refresh missing');console.log('R129/R172 mode fog contract PASS');
