@@ -688,8 +688,10 @@ function showCityPanel(c) {
   const mine = c.force === game.playerForce && !game.delegated && !legion;
   const owner = c.force != null && game.forces[c.force]?.alive ? game.forceName(c.force) : '공백지';
   const legionTag = legion ? ` · <span style="color:#7cf">${legion.name} 소속 (도독 ${DATA.officers[legion.governor]?.name_ko ?? '-'} · 방침 ${{ delegate: '위임', attack_city: '도시공략', attack_force: '세력공략' }[legion.policy]})</span>` : '';
+  const _to = c.taesu != null ? game.officers[c.taesu] : null; /* R124: 태수 표시 유효성 — 소속·재직 도시·재직 상태가 현재와 맞지 않는 구 태수(함락·무장 이동·출진·포박·도주·멸망 후 잔존)는 '미지정' 표시. 정식 배정/계승 규칙은 시나리오 초기 데이터뿐이라 표시 최소 수정만 (자동 임명 같은 새 규칙 아님) */
+  const _taesuName = (_to?.state && _to.state.force === c.force && _to.state.city === c.id && ['ruler','taesu','serving'].includes(_to.state.status)) ? _to.name_ko : '미지정';
   let html = `<h3>${c.name_ko} <small>(${c.name_zh})</small></h3>
-    <p>소속: ${owner}${legionTag} · 태수: ${c.taesu != null ? DATA.officers[c.taesu].name_ko : '-'}<br>
+    <p>소속: ${owner}${legionTag} · 태수: ${_taesuName}<br>
     병사 ${c.troops.toLocaleString()} · 내구 ${c.hp}/${c.maxhp}<br>
     금 ${c.gold.toLocaleString()} · 병량 ${c.food.toLocaleString()}<br>
     상업 ${c.commerce} · 농업 ${c.farm}${c.metropolis ? ' · 대도시' : ''}${c.specialty.length ? ' · 특색: '+c.specialty.join(',') : ''} · 치안 ${c.security ?? 80}${c.disaster ? ` <span style="color:#f66">재해: ${c.disaster.type}</span>` : ''}<br>
