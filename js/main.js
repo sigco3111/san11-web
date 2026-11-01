@@ -932,7 +932,7 @@ async function boot() {
       for (const o of Object.values(g.officers)) { o.state.items = o.state.items ?? []; if (o.state.status === 'free' && o.state.found === undefined) o.state.found = true; } // 기존 세이브의 재야는 발견 상태 유지
       for (const f of Object.values(g.forces)) { f.advisor = f.advisor ?? null; f.legions = f.legions ?? []; } // 군사·군단 필드 호환 // 외교 상태 복원 (레거시 세이브는 공백)
       for (const [i, st] of Object.entries(d.officerStates)) if (DATA.officers[i]) restoreOfficer(DATA.officers[i], st); // R84: 복원 공통화 (R13 연구 + 관직 능력 가산 재적용)
-      if (g.pendingJoin != null && (!g.forces[g.pendingJoin]?.alive || g.pendingJoin === g.playerForce)) { g.log(`참가 요청한 【${g.forceName(g.pendingJoin)}】${josa(g.forceName(g.pendingJoin), ['이','가'])} 멸망하여 참가 요청이 취소되었습니다. 다른 세력을 선택해 주세요.`, true); g.pendingJoin = null; } // R128: 로드 시 무효 참가 요청 정리 — 중복 인계 없음 (인계는 턴 경계 1회)
+      if (g.pendingJoin != null && (!g.forces[g.pendingJoin]?.alive || g.pendingJoin === g.playerForce)) { g.log(`참가 요청한 ${josa('【' + g.forceName(g.pendingJoin) + '】군', ['이','가'])} 멸망하여 참가 요청이 취소되었습니다. 다른 세력을 선택해 주세요.`, true); g.pendingJoin = null; } // R128: 로드 시 무효 참가 요청 정리 — 중복 인계 없음 (인계는 턴 경계 1회)
       g._reconcileOfficerRosters(); // R96: 구 저장의 로스터 누락·타 세력 로스터 잔류 무장 복귀 (멱등)
       game = g; enterGame(); refreshAll(); checkGameOver(); // R14: 저장 시점이 종료 상태면 모달 재표시
       if ((game.pendingDiplo ?? []).length) showDiploIn(); // R123: 저장 시점의 보류 제안은 효과 재적용 없이 결정 모달만 복원
