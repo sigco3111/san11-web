@@ -63,4 +63,4 @@ select { background:#3a3226; color:#e8e0d0; border:1px solid #6b5d43; font-famil
 #panel .fac-status { position:sticky; top:-14px; background:#201c14; z-index:2; padding:8px 0; border-bottom:1px solid #6b5d43; }
 #panel .fac-status h3 { margin:0 0 4px; }
 #panel .fac-why { flex-basis:100%; color:#d9a18a; font-size:11px; text-align:right; }
-#panel[data-view="facilities"] .officer { flex-wrap:wrap; gap:4px 10px; }
+#panel[data-view="facilities"] .officer, #panel[data-view="tech"] .officer { flex-wrap:wrap; gap:4px 10px; }
