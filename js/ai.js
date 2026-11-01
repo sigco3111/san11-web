@@ -320,5 +320,6 @@ export function aiThink(game, fid, legion = null) { // legion 지정 시 그 군
 function legacyPick(game, u, eu, info) {
   const ex = info.opts.filter(o => o.id !== 'base'); if (!ex.length) return null;
   const near = game.units.filter(x => x !== eu && x.force !== u.force && !game.isPeace(u.force, x.force) && Math.hypot(x.x - eu.x, x.z - eu.z) < 1.6).length;
-  return ex.find(o => o.eff === 'conf' && (eu.conf ?? 0) <= 0) || (near >= 1 ? ex.find(o => ['whirl', 'volley', 'side', 'pierce'].includes(o.eff)) : null) || ex.slice().sort((x, y) => y.qi - x.qi)[0];
-                                                                    }
+  return ex.find(o => o.eff === 'conf' && (eu.conf ?? 0) <= 0)
+    || (near >= 1 ? ex.find(o => ['whirl', 'volley', 'side', 'pierce'].includes(o.eff)) : null) || ex.slice().sort((x, y) => y.qi - x.qi)[0];
+}
