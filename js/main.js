@@ -1,12 +1,12 @@
 // 진입점: 화면 전환·UI·지도 연결
-import { Map3D, toWorld } from './map3d.js?v=r129';
-import { Game, SAVE_KEY, RULES, forceColor, UNIT_TYPES, ARTS, OFFICES, restoreOfficer, FIELD_FACS, TRAPS, SHIP_TYPES, TAC_SHIP_OK, josa, josaRo, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL, AB_PICK } from './game.js?v=r129';
-import { aiThink } from './ai.js?v=r129';
+import { Map3D, toWorld } from './map3d.js?v=r130';
+import { Game, SAVE_KEY, RULES, forceColor, UNIT_TYPES, ARTS, OFFICES, restoreOfficer, FIELD_FACS, TRAPS, SHIP_TYPES, TAC_SHIP_OK, josa, josaRo, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL, AB_PICK } from './game.js?v=r130';
+import { aiThink } from './ai.js?v=r130';
 
 const $ = id => document.getElementById(id);
 let DATA = null, game = null, map = null, selectedUnit = null, autoTimer = null, pendingFire = null; // R15: 직접 전법·계략 대기
 
-const BUILD_ID = 'r129'; // 빌드 ID (index.html의 meta[name=build]와 같아야 함 - 오래된 캐시된 index와 새 스크립트의 혼합 감지)
+const BUILD_ID = 'r130'; // 빌드 ID (index.html의 meta[name=build]와 같아야 함 - 오래된 캐시된 index와 새 스크립트의 혼합 감지)
 function checkBuildSkew() {
   const idx = document.querySelector('meta[name="build"]')?.content;
   if (idx === BUILD_ID) { sessionStorage.removeItem('cheonha-xi-web.skew'); return; } // 일치하면 재시도 표식 해제
@@ -19,7 +19,7 @@ checkBuildSkew();
 async function loadData() {
   const [officers, skills, portraits, s184, s190, s251] = await Promise.all(
     ['data/officers670.json','data/skills.json','data/portraits.json','data/scenario-184.json','data/scenario-190.json','data/scenario-251.json']
-      .map(u => fetch(u + '?v=r129').then(r => r.json())));
+      .map(u => fetch(u + '?v=r130').then(r => r.json())));
   const byIdx = {};
   for (const o of officers) byIdx[o.idx] = o;
   DATA = { officers: byIdx, skills, portraits, scenarios: { '184': s184, '190': s190, '251': s251 } };
@@ -111,6 +111,22 @@ function refreshAll() {
   game.autosave(); // R13 회귀 방지: UI에서 실행한 모든 커맨드는 실행 직후 영속 (턴 종료 전 리로드 소실 방지)
 }
 function worldUnit(u) { const [x, z] = toWorld(u.x, u.z); return { id: u.id, x, z, label: u.label, type: u.type }; } // R16: 병종별 모델용 type
+function refreshOpenPanel() { // R130: 일기토·설전·수신 외교 결정 후 열린 패널 정체 방지 (관계 수치 미갱신 관측 결함 수정) — 턴 종료 후속(R108)과 같은 기준으로 현재 보기만 다시 그림
+  const p = $('panel');
+  if (p.classList.contains('hidden')) return;
+  if (p.dataset.view === 'unit') {
+    if (selectedUnit != null && game.units.find(x => x.id === selectedUnit)) showUnitPanel(selectedUnit);
+    else { p.classList.add('hidden'); selectedUnit = null; }
+    return;
+  }
+  const c = lastCityId != null ? game.cityById[lastCityId] : null;
+  if (!c) return;
+  const st = p.scrollTop;
+  if (p.dataset.view === 'diplo') showDiplomacy(c);
+  else if (p.dataset.view === 'city') showCityPanel(c);
+  else return; // 출진·기교 등 입력 중 하위 화면은 덮지 않음 (R108과 동일 기준)
+  p.scrollTop = st;
+}
 function refreshHud() {
   document.documentElement.style.setProperty('--hud-h', ($('hud-top').offsetHeight + 6) + 'px'); // R14: 패널 상단을 실제 HUD 높이 아래로
   const f = game.forces[game.playerForce];
@@ -210,7 +226,7 @@ function showDiploIn() {
   ]);
 }
 function afterDiplo() { // 결정 후속: 로그·HUD 갱신 → 거절에 상대가 설전 도전하면 설전 모달 → 남은 제안 이어서
-  refreshLog(); refreshHud();
+  refreshLog(); refreshHud(); refreshOpenPanel();
   if (game.pendingDebate) { showDebate(); return; }
   if ((game.pendingDiplo ?? []).length) showDiploIn();
 }
@@ -249,7 +265,7 @@ function showDuel() {
   };
   const after = () => {
     if (game.pendingDuel) render();
-    else { m.classList.add('hidden'); refreshAll(); checkGameOver(); }
+    else { m.classList.add('hidden'); refreshAll(); refreshOpenPanel(); checkGameOver(); }
   };
   render();
 }
@@ -298,7 +314,7 @@ function showDebate() { // R11: 설전 모달
   };
   const after = () => {
     if (game.pendingDebate) render();
-    else { m.classList.add('hidden'); refreshAll(); checkGameOver(); }
+    else { m.classList.add('hidden'); refreshAll(); refreshOpenPanel(); checkGameOver(); }
   };
   render();
 }
