@@ -57,4 +57,10 @@ select { background:#3a3226; color:#e8e0d0; border:1px solid #6b5d43; font-famil
 @media (max-width: 480px) {
   #panel { top:auto; bottom:0; left:0; right:0; width:100%; max-height:46vh; max-height:46dvh; border-radius:8px 8px 0 0; }
   #panel:not(.hidden) + #panel-x { top:auto; bottom:calc(46vh + 4px); bottom:calc(46dvh + 4px); }
-  }
+}
+
+/* R142 시설 패널: 스크롤 중에도 현재 개발지/자원 유지 */
+#panel .fac-status { position:sticky; top:-14px; background:#201c14; z-index:2; padding:8px 0; border-bottom:1px solid #6b5d43; }
+#panel .fac-status h3 { margin:0 0 4px; }
+#panel .fac-why { flex-basis:100%; color:#d9a18a; font-size:11px; text-align:right; }
+#panel[data-view="facilities"] .officer { flex-wrap:wrap; gap:4px 10px; }
