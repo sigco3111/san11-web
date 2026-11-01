@@ -688,7 +688,7 @@ export class Game {
     const cities = [...new Set(cityIds)].filter(id => own.has(id) && !this.cityLegion(id));
     if (!cities.length) return false;
     f.legions = f.legions ?? [];
-    const id = f.legions.length + 2; // 제1군단은 군주 직할
+    const id = Math.max(1, ...f.legions.map(l => l.id)) + 1; // R143: 중간 군단 해산 후에도 기존 id와 충돌 금지
     f.legions.push({ id, name: `제${id}군단`, governor: governorIdx, cities, policy, target });
     this.log(`【군단】${this.forceName(fid)} ${`제${id}군단`} 편성 — 도독 ${o.name_ko}, 도시 ${cities.length}개, 방침: ${{ delegate: '위임', attack_city: '도시공략', attack_force: '세력공략' }[policy]}`, fid === this.playerForce);
     return true;
