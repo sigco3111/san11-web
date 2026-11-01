@@ -727,13 +727,15 @@ export class Game {
     const c = this.cityById[cityId], f = this.forces[c?.force];
     if (this._blocked(c)) return false; // 군단 소속
     lots = Math.max(1, Math.min(5, lots | 0));
-    if (!c || c.force == null || !f?.alive || f.ap < 10) return false;
+    this.lastTradeWhy = null;
+    if (!c || c.force == null || !f?.alive) return false;
+    if (f.ap < 10) { this.lastTradeWhy = '행동력이 부족합니다 (상인 거래: AP 10 필요)'; return false; } // R127: 무응답 방지
     const rate = this.tradeRate();
     if (dir === 'buy') { // 금 → 병량
-      if (c.gold < 1000 * lots) return false;
+      if (c.gold < 1000 * lots) { this.lastTradeWhy = `금이 부족합니다 (${lots}롯트: 금 ${1000 * lots} 필요)`; return false; } // R127
       c.gold -= 1000 * lots; c.food += rate * lots;
     } else { // 병량 → 금
-      if (c.food < rate * lots) return false;
+      if (c.food < rate * lots) { this.lastTradeWhy = `병량이 부족합니다 (${lots}롯트: 병량 ${rate * lots} 필요)`; return false; } // R127
       c.food -= rate * lots; c.gold += 1000 * lots;
     }
     f.ap -= 10;
