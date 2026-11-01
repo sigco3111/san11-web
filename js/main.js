@@ -1,12 +1,12 @@
 // 진입점: 화면 전환·UI·지도 연결
-import { Map3D, toWorld } from './map3d.js?v=r122';
-import { Game, SAVE_KEY, RULES, forceColor, UNIT_TYPES, ARTS, OFFICES, restoreOfficer, FIELD_FACS, TRAPS, SHIP_TYPES, TAC_SHIP_OK, josa, josaRo, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL, AB_PICK } from './game.js?v=r122';
-import { aiThink } from './ai.js?v=r122';
+import { Map3D, toWorld } from './map3d.js?v=r123';
+import { Game, SAVE_KEY, RULES, forceColor, UNIT_TYPES, ARTS, OFFICES, restoreOfficer, FIELD_FACS, TRAPS, SHIP_TYPES, TAC_SHIP_OK, josa, josaRo, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL, AB_PICK } from './game.js?v=r123';
+import { aiThink } from './ai.js?v=r123';
 
 const $ = id => document.getElementById(id);
 let DATA = null, game = null, map = null, selectedUnit = null, autoTimer = null, pendingFire = null; // R15: 직접 전법·계략 대기
 
-const BUILD_ID = 'r122'; // 빌드 ID (index.html의 meta[name=build]와 같아야 함 - 오래된 캐시된 index와 새 스크립트의 혼합 감지)
+const BUILD_ID = 'r123'; // 빌드 ID (index.html의 meta[name=build]와 같아야 함 - 오래된 캐시된 index와 새 스크립트의 혼합 감지)
 function checkBuildSkew() {
   const idx = document.querySelector('meta[name="build"]')?.content;
   if (idx === BUILD_ID) { sessionStorage.removeItem('cheonha-xi-web.skew'); return; } // 일치하면 재시도 표식 해제
@@ -19,7 +19,7 @@ checkBuildSkew();
 async function loadData() {
   const [officers, skills, portraits, s184, s190, s251] = await Promise.all(
     ['data/officers670.json','data/skills.json','data/portraits.json','data/scenario-184.json','data/scenario-190.json','data/scenario-251.json']
-      .map(u => fetch(u + '?v=r122').then(r => r.json())));
+      .map(u => fetch(u + '?v=r123').then(r => r.json())));
   const byIdx = {};
   for (const o of officers) byIdx[o.idx] = o;
   DATA = { officers: byIdx, skills, portraits, scenarios: { '184': s184, '190': s190, '251': s251 } };
@@ -176,6 +176,7 @@ function refreshLog() {
 // === 턴·자동 진행 ===
 function doTurn() {
   if (!game || game.over) return;
+  if ((game.pendingDiplo ?? []).length) { game.log('보류 중인 외교 제안을 먼저 결정해 주세요', true); refreshLog(); showDiploIn(); return; } // R123: 보류 중 턴 진행 불가 — 결정 모달 재표시
   game.endTurn(aiThink);
   refreshAll();
   if (selectedUnit != null && !$('panel').classList.contains('hidden')) { // 턴 처리 후 열려 있는 부대 패널 갱신 (건설 완료·병력·기력 반영)
@@ -188,6 +189,30 @@ function doTurn() {
   checkGameOver();
   if (game.pendingDuel) showDuel(); // R10: 일기토 모달
   if (game.pendingDebate) showDebate(); // R11: 설전 모달
+  if ((game.pendingDiplo ?? []).length) showDiploIn(); // R123: 턴 처리 중 도착한 수신 외교 제안
+}
+
+// === R123: 수신 외교 제안 결정 모달 (보류 큐 FIFO — 한 턴 복수 제의도 순서대로 명시 결정) ===
+function showDiploIn() {
+  const it = (game.pendingDiplo ?? [])[0]; if (!it) return;
+  const fn = game.forceName(it.fid);
+  const desc = {
+    alliance: `<b>${fn}</b>의 <b>동맹 제의</b>가 도착했습니다.<br>수락하면 24턴간 서로 공격할 수 없습니다.`,
+    truce: `<b>${fn}</b>의 <b>정전 요청</b>이 도착했습니다.<br>수락하면 12턴간 공격이 금지되고 관계가 개선됩니다.`,
+    surrender: `<b>${fn}</b>의 <b>항복 권고</b>가 도착했습니다.<br><span style="color:#e07070">수락하면 우리 세력 전체(도시·부대·무장)가 ${fn}에 흡수되어 플레이 세력을 잃습니다.</span>`,
+    aid: `<b>${fn}</b>의 <b>원군 요청</b>이 도착했습니다.<br>수락하면 ${game.cityById[it.srcId]?.name_ko ?? '우리 도시'}의 병력 <b>3000</b>을 지원합니다.`,
+    envoy: `<b>${fn}</b>의 <b>친선 사절</b>이 도착했습니다.<br>받으면 관계가 +${it.gain} 개선됩니다.`,
+  }[it.kind] ?? `<b>${fn}</b>의 외교 제안이 도착했습니다.`;
+  const q = (game.pendingDiplo ?? []).length;
+  modal(`${desc}${q > 1 ? `<br><span class="st">외교 제안 ${q}건 대기 중 — 도착 순서대로 결정합니다.</span>` : ''}`, [
+    ['수락', () => { game.resolveDiplo(it.id, true); afterDiplo(); }],
+    ['거절', () => { game.resolveDiplo(it.id, false); afterDiplo(); }],
+  ]);
+}
+function afterDiplo() { // 결정 후속: 로그·HUD 갱신 → 거절에 상대가 설전 도전하면 설전 모달 → 남은 제안 이어서
+  refreshLog(); refreshHud();
+  if (game.pendingDebate) { showDebate(); return; }
+  if ((game.pendingDiplo ?? []).length) showDiploIn();
 }
 // === R10: 일기토 모달 (클릭당 1합 — 실시간은 모달 특성상 수동 진행으로 단순화) ===
 function showDuel() {
@@ -886,7 +911,7 @@ async function boot() {
       const d = JSON.parse(localStorage.getItem(SAVE_KEY));
       const g = new Game(DATA.scenarios[d.scenId], DATA.officers, DATA.skills, d.playerForce);
       window.__game = g; // 테스트 훅
-      Object.assign(g, { year: d.year, month: d.month, dan: d.dan, turn: d.turn, cities: d.cities, forces: d.forces, units: d.units, nextUnitId: d.nextUnitId, fieldFacs: d.fieldFacs ?? [], nextFacId: d.nextFacId ?? 1, playerForce: d.playerForce, delegated: d.delegated, logs: d.logs, deadAck: d.deadAck, chronicle: d.chronicle ?? [], over: d.over ?? false, unified: d.unified ?? d.over ?? false, econGraceUntil: d.econGraceUntil ?? null, econV: d.econV ?? 1 }); // R14: over로 저장된 통일 세이브 호환 / 병량 유예 복원 / econV 없는 구 저장은 구 경제 규칙 보존
+      Object.assign(g, { year: d.year, month: d.month, dan: d.dan, turn: d.turn, cities: d.cities, forces: d.forces, units: d.units, nextUnitId: d.nextUnitId, fieldFacs: d.fieldFacs ?? [], nextFacId: d.nextFacId ?? 1, playerForce: d.playerForce, delegated: d.delegated, logs: d.logs, deadAck: d.deadAck, chronicle: d.chronicle ?? [], pendingDiplo: d.pendingDiplo ?? [], /* R123: 구 저장은 빈 큐 (호환) */ over: d.over ?? false, unified: d.unified ?? d.over ?? false, econGraceUntil: d.econGraceUntil ?? null, econV: d.econV ?? 1 }); // R14: over로 저장된 통일 세이브 호환 / 병량 유예 복원 / econV 없는 구 저장은 구 경제 규칙 보존
       g.cityById = {}; g.cities.forEach(c => g.cityById[c.id] = c);
       for (const c of g.cities) { c.officers = [...new Set(c.officers ?? [])]; c.captives = c.captives ?? []; } // 레거시 세이브 중복 무장 정리 / R111: 억류 명단 필드 호환 (정합은 _reconcileOfficerRosters)
       g.diplo = d.diplo ?? {};
@@ -897,6 +922,7 @@ async function boot() {
       for (const [i, st] of Object.entries(d.officerStates)) if (DATA.officers[i]) restoreOfficer(DATA.officers[i], st); // R84: 복원 공통화 (R13 연구 + 관직 능력 가산 재적용)
       g._reconcileOfficerRosters(); // R96: 구 저장의 로스터 누락·타 세력 로스터 잔류 무장 복귀 (멱등)
       game = g; enterGame(); refreshAll(); checkGameOver(); // R14: 저장 시점이 종료 상태면 모달 재표시
+      if ((game.pendingDiplo ?? []).length) showDiploIn(); // R123: 저장 시점의 보류 제안은 효과 재적용 없이 결정 모달만 복원
       if (game.delegated) setAuto(true);
     };
   }
