@@ -1,12 +1,12 @@
 // 진입점: 화면 전환·UI·지도 연결
-import { Map3D, toWorld } from './map3d.js?v=r160';
-import { Game, SAVE_KEY, RULES, forceColor, UNIT_TYPES, ARTS, OFFICES, restoreOfficer, FIELD_FACS, TRAPS, SHIP_TYPES, TAC_SHIP_OK, josa, josaRo, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL, AB_PICK } from './game.js?v=r160';
-import { aiThink } from './ai.js?v=r160';
+import { Map3D, toWorld } from './map3d.js?v=r161';
+import { Game, SAVE_KEY, RULES, forceColor, UNIT_TYPES, ARTS, OFFICES, restoreOfficer, FIELD_FACS, TRAPS, SHIP_TYPES, TAC_SHIP_OK, josa, josaRo, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL, AB_PICK } from './game.js?v=r161';
+import { aiThink } from './ai.js?v=r161';
 
 const $ = id => document.getElementById(id);
 let DATA = null, game = null, map = null, selectedUnit = null, autoTimer = null, pendingFire = null; // R15: 직접 전법·계략 대기
 
-const BUILD_ID = 'r160'; // 빌드 ID (index.html의 meta[name=build]와 같아야 함 - 오래된 캐시된 index와 새 스크립트의 혼합 감지)
+const BUILD_ID = 'r161'; // 빌드 ID (index.html의 meta[name=build]와 같아야 함 - 오래된 캐시된 index와 새 스크립트의 혼합 감지)
 function checkBuildSkew() {
   const idx = document.querySelector('meta[name="build"]')?.content;
   if (idx === BUILD_ID) { sessionStorage.removeItem('cheonha-xi-web.skew'); return; } // 일치하면 재시도 표식 해제
@@ -19,7 +19,7 @@ checkBuildSkew();
 async function loadData() {
   const [officers, skills, portraits, s184, s190, s251] = await Promise.all(
     ['data/officers670.json','data/skills.json','data/portraits.json','data/scenario-184.json','data/scenario-190.json','data/scenario-251.json']
-      .map(u => fetch(u + '?v=r160').then(r => r.json())));
+      .map(u => fetch(u + '?v=r161').then(r => r.json())));
   const byIdx = {};
   for (const o of officers) byIdx[o.idx] = o;
   DATA = { officers: byIdx, skills, portraits, scenarios: { '184': s184, '190': s190, '251': s251 } };
@@ -120,6 +120,7 @@ function refreshOpenPanel() { // R130: 일기토·설전·수신 외교 결정 �
     else { p.classList.add('hidden'); selectedUnit = null; }
     return;
   }
+  if (p.dataset.view === 'dispatch') { p.refreshDispatch?.(); return; }
   if (p.dataset.view === 'tech') { showTech(); return; } // R156: 연구는 입력폼 없음, 자원·가능상태와 스크롤 갱신
   const c = lastCityId != null ? game.cityById[lastCityId] : null;
   if (!c) return;
@@ -210,6 +211,7 @@ function doTurn() {
     if (c && c.force === game.playerForce) { const st = $('panel').scrollTop; showFacilities(c); $('panel').scrollTop = st; }
     else $('panel').classList.add('hidden');
   }
+  if ($('panel').dataset.view === 'dispatch' && !$('panel').classList.contains('hidden')) $('panel').refreshDispatch?.();
   if ($('panel').dataset.view === 'move' && !$('panel').classList.contains('hidden')) $('panel').refreshMove?.();
   if ($('panel').dataset.view === 'tech' && !$('panel').classList.contains('hidden')) showTech(); // R156: 턴 후 연구비·기교P·가능상태 갱신, showTech가 스크롤 보존
   checkGameOver();
@@ -932,6 +934,8 @@ function showCityPanel(c) {
 }
 // R146: 출진 편성의 기존 엔진 조건을 클릭 전에 안내 (비용·효과 규칙은 그대로)
 function dispatchUiWhy(game, c, troops, type, offs) {
+  if (!c || c.force !== game.playerForce) return '현재 소유한 도시가 아닙니다';
+  if (offs.some(i => !c.officers.includes(i) || game.officers[i]?.state?.force !== c.force)) return '주둔 무장이 바뀌었습니다. 다시 선택하세요';
   if (!offs.length) return '무장을 선택하세요';
   if (offs.length > game.dispatchCap(c.force)) return '무장 ' + game.dispatchCap(c.force) + '명까지 편성 가능';
   if (offs.some(i => (game.officers[i]?.state?.injuredUntil ?? 0) > game.turn)) return '부상 무장은 출진할 수 없습니다';
@@ -952,7 +956,7 @@ function dispatchUiWhy(game, c, troops, type, offs) {
 }
 function showDispatch(c) { $('panel').dataset.view='dispatch';
   const p = $('panel');
-  const capBase = game.unitTroopCap(c.force); // 기본 상한 (군제개혁 +3000 포함)
+  let capBase = game.unitTroopCap(c.force); // 기본 상한 (군제개혁 +3000 포함)
   const leadOf = () => Number(document.querySelector('.dsp-off:checked')?.value ?? -1); // 주장 = DOM 순 첫 번째 선택 무장 (dispatch officerIdxs[0]과 동일 규칙)
   const capTotal = () => capBase + (leadOf() >= 0 ? (OFFICES[game.officeOf(leadOf())]?.cmd ?? 0) : 0); // R84: 관직 지휘 가산 명시 합산 (자체 규칙)
   const cap = Math.min(c.troops, capTotal());
@@ -974,12 +978,22 @@ function showDispatch(c) { $('panel').dataset.view='dispatch';
     const why = dispatchUiWhy(game, c, Number($('dsp-troops').value), $('dsp-type').value, selectedOffs());
     $('dsp-go').disabled = !!why; $('dsp-go').title = why; $('dsp-why').textContent = why;
   };
-  const refreshCap = () => { // R84: 주장 선택 변경 시 관직 가산 포함 상한 재계산·표기
+  const refreshCap = (clamp = true) => { // R84: 주장 선택 변경 시 관직 가산 포함 상한 재계산·표기
     const t = Math.min(c.troops, capTotal()), ofc = leadOf() >= 0 ? (OFFICES[game.officeOf(leadOf())]?.cmd ?? 0) : 0;
-    const inp = $('dsp-troops'); inp.max = t; if (Number(inp.value) > t) inp.value = t;
+    const inp = $('dsp-troops'); inp.max = t; if (clamp && Number(inp.value) > t) inp.value = t;
     $('dsp-cap').textContent = `상한 ${t.toLocaleString()} = 기본 ${capBase.toLocaleString()}(군제 포함) + 주장 관직 +${ofc.toLocaleString()}`;
   };
   document.querySelectorAll('.dsp-off').forEach(cb => cb.onchange = () => { const lim = game.dispatchCap(c.force); if (document.querySelectorAll('.dsp-off:checked').length > lim) { cb.checked = false; game.log(`한 부대에는 무장 ${lim}명까지 편성할 수 있습니다.`, true); refreshLog(); } refreshCap(); refreshDispatch(); }); // 3명 제한: 체크 단계에서 거부·안내
+  p.refreshDispatch = () => { // R161: 입력은 유지하고 턴 후 AP·주둔·병장·상한만 다시 확인
+    if (p.dataset.view !== 'dispatch') return;
+    capBase = game.unitTroopCap(c.force);
+    refreshCap(false);
+    for (const opt of $('dsp-type').options) {
+      const ut = UNIT_TYPES[opt.value], key = Object.keys(ut.cost)[0], have = key ? (c[key] ?? 0) : 1;
+      opt.textContent = ut.name + (key ? ` (보유 ${have})` : ''); opt.disabled = have < 1;
+    }
+    refreshDispatch();
+  };
   refreshCap(); refreshDispatch();
   $('dsp-troops').oninput = refreshDispatch; $('dsp-type').onchange = refreshDispatch;
   $('dsp-go').onclick = () => {
