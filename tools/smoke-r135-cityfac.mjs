@@ -27,5 +27,6 @@ const blocked=layout(cities,centers,fields,()=>0);
 ok('R139 실행: 육지가 없으면 건물 강제배치 아닌 성내 표식', blocked.filter(f=>f.type!=='조선소').every(f=>f.summary));
 const changed=layout(cities,centers,[...fields,{x:ls[0].x,z:ls[0].z,fr:2}],level);
 ok('R139 실행: 야전시설 추가 시 재배치 + 시그니처 필드 의존성', JSON.stringify(changed)!==JSON.stringify(ls) && /JSON.stringify\(\[list, centers, fields\]\)/.test(m));
+ok('R140 줌별 성내 표식: 근접 시설명/중간 수량/원거리 숨김', /this.view <= 32/.test(m) && /this.view > 32 && this.view <= 55/.test(m));
 console.log(fail ? 'R135 ' + fail + ' FAIL' : 'R135 ALL PASS');
 process.exit(fail ? 1 : 0);
