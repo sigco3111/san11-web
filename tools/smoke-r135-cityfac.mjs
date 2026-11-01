@@ -42,5 +42,10 @@ lg.createLegion(gov,[lc[0].id],'delegate');lg.createLegion(gov,[lc[1].id],'deleg
 ok('R143 군단2해산후3/4 고유id·대상해산 정확성', lg.forces[28].legions.map(l=>l.id).join(',')==='3,4' && lg.disbandLegion(28,4) && lg.forces[28].legions[0].id===3 && lg.cityLegion(lc[2].id)===null);
 ok('R143 재렌더 시 최신 직할 도시 계산', /const render = \(\) => \{\s+const free = own.filter/.test(mn));
 ok('R144 군단소속 도시도 관리 진입 가능·수동 명령 차단 유지', /if \(c.force === game.playerForce && !game.delegated\) html \+=.*id="cmd-legion"/.test(mn) && /if \(legManage\) legManage.onclick/.test(mn) && /const mine = c.force === game.playerForce && !game.delegated && !legion/.test(mn));
+const techExpr=mn.match(/const researchWhy = ([^\n]+);/)[1];
+const tf={alive:true,techP:1000},tc={name_ko:'시험',gold:1500};
+const tw=new Function('f','cap','return '+techExpr)(tf,tc);
+ok('R145 연구사유 실행: 가능/P부족/금부족/도시없음/세력없음/능력은금불필요', (()=>{if(tw(1000,1000)!=='')return false;tf.techP=41;if(tw(1000,1000)!=='기교P 1000 필요')return false;tf.techP=1000;tc.gold=0;if(tw(1000,1000)!=='시험 금 1000 필요'||tw(500)!=='')return false;const nc=new Function('f','cap','return '+techExpr)(tf,null);if(nc(1000,1000)!=='연구비를 낼 도시 없음')return false;tf.alive=false;return tw(1)==='세력 정보 없음'})());
+ok('R145 3종연구 disabled/행사유·지불도시헤더·재진입스크롤', (mn.match(/researchBtnState\(why\)/g)||[]).length===3 && (mn.match(/researchReason\(why\)/g)||[]).length===3 && /연구비 부담:/.test(mn) && /p.scrollTop = reopening \? 0 : oldScroll/.test(mn));
 console.log(fail ? 'R135 ' + fail + ' FAIL' : 'R135 ALL PASS');
 process.exit(fail ? 1 : 0);

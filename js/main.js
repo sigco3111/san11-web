@@ -1,12 +1,12 @@
 // 진입점: 화면 전환·UI·지도 연결
-import { Map3D, toWorld } from './map3d.js?v=r144';
-import { Game, SAVE_KEY, RULES, forceColor, UNIT_TYPES, ARTS, OFFICES, restoreOfficer, FIELD_FACS, TRAPS, SHIP_TYPES, TAC_SHIP_OK, josa, josaRo, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL, AB_PICK } from './game.js?v=r144';
-import { aiThink } from './ai.js?v=r144';
+import { Map3D, toWorld } from './map3d.js?v=r145';
+import { Game, SAVE_KEY, RULES, forceColor, UNIT_TYPES, ARTS, OFFICES, restoreOfficer, FIELD_FACS, TRAPS, SHIP_TYPES, TAC_SHIP_OK, josa, josaRo, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL, AB_PICK } from './game.js?v=r145';
+import { aiThink } from './ai.js?v=r145';
 
 const $ = id => document.getElementById(id);
 let DATA = null, game = null, map = null, selectedUnit = null, autoTimer = null, pendingFire = null; // R15: 직접 전법·계략 대기
 
-const BUILD_ID = 'r144'; // 빌드 ID (index.html의 meta[name=build]와 같아야 함 - 오래된 캐시된 index와 새 스크립트의 혼합 감지)
+const BUILD_ID = 'r145'; // 빌드 ID (index.html의 meta[name=build]와 같아야 함 - 오래된 캐시된 index와 새 스크립트의 혼합 감지)
 function checkBuildSkew() {
   const idx = document.querySelector('meta[name="build"]')?.content;
   if (idx === BUILD_ID) { sessionStorage.removeItem('cheonha-xi-web.skew'); return; } // 일치하면 재시도 표식 해제
@@ -19,7 +19,7 @@ checkBuildSkew();
 async function loadData() {
   const [officers, skills, portraits, s184, s190, s251] = await Promise.all(
     ['data/officers670.json','data/skills.json','data/portraits.json','data/scenario-184.json','data/scenario-190.json','data/scenario-251.json']
-      .map(u => fetch(u + '?v=r144').then(r => r.json())));
+      .map(u => fetch(u + '?v=r145').then(r => r.json())));
   const byIdx = {};
   for (const o of officers) byIdx[o.idx] = o;
   DATA = { officers: byIdx, skills, portraits, scenarios: { '184': s184, '190': s190, '251': s251 } };
@@ -663,28 +663,39 @@ function showFacilities(c) {
   });
   $('cmd-fac-back').onclick = () => showCityPanel(c);
 }
-function showTech() { $('panel').dataset.view='tech';
+function showTech() {
+  const reopening = $('panel').dataset.view !== 'tech';
+  const oldScroll = $('panel').scrollTop;
+  $('panel').dataset.view='tech';
   const f = game.forces[game.playerForce];
   const p = $('panel'); p.classList.remove('hidden');
-  let html = `<h3>기교 연구 <small>(기교P ${f?.techP ?? 0}${game.forceHasSkill(game.playerForce, '지도') ? ' · 특기 「지도」: 연구 금 반액' : ''})</small></h3>`;
+  const cap = game.forceCities(game.playerForce).sort((a,b) => b.gold-a.gold)[0]; // 엔진과 같은 최고금 도시가 연구비 부담
+  const researchWhy = (points, gold = 0) => !f?.alive ? '세력 정보 없음' : (f.techP ?? 0) < points ? '기교P ' + points + ' 필요' : gold > 0 && !cap ? '연구비를 낼 도시 없음' : gold > 0 && cap.gold < gold ? cap.name_ko + ' 금 ' + gold + ' 필요' : '';
+  const researchBtnState = why => why ? ' disabled title="' + why + '"' : '';
+  const researchReason = why => why ? `<small class="fac-why">${why}</small>` : '';
+  let html = `<div class="fac-status"><h3>기교 연구 <small>(기교P ${f?.techP ?? 0}${game.forceHasSkill(game.playerForce, '지도') ? ' · 특기 「지도」: 연구 금 반액' : ''})</small></h3><p class="st">연구비 부담: ${cap ? cap.name_ko + ' · 금 ' + cap.gold.toLocaleString() : '도시 없음'}</p></div>`;
   for (const b of TECH_BRANCHES) {
     const lv = game.techLv(game.playerForce, b);
     const done = lv >= 4;
-    html += `<div class="officer"><div><div class="nm">${b} ${'●'.repeat(lv)}${'○'.repeat(4 - lv)}</div><div class="st">${TECH_DESC[b]}</div></div>${done ? '<span class="st">최고 단계</span>' : `<button class="cmd cmd-techr" data-b="${b}">연구 (P${TECH_P[lv]}·금${game.researchGold(game.playerForce, TECH_GOLD[lv])})</button>`}</div>`;
+    const why = done ? '' : researchWhy(TECH_P[lv], game.researchGold(game.playerForce, TECH_GOLD[lv]));
+    html += `<div class="officer"><div><div class="nm">${b} ${'●'.repeat(lv)}${'○'.repeat(4 - lv)}</div><div class="st">${TECH_DESC[b]}</div></div>${done ? '<span class="st">최고 단계</span>' : `<button class="cmd cmd-techr" data-b="${b}"${researchBtnState(why)}>연구 (P${TECH_P[lv]}·금${game.researchGold(game.playerForce, TECH_GOLD[lv])})</button>`}${researchReason(why)}</div>`;
   }
   html += `<h3 style="margin-top:10px">능력연구 <small>(PK — 소속 무장 전원 능력 +2/단계, 3단계 완료 시 특기 습득)</small></h3>`; // R13
   const AB_NM = { '공격': '무력', '방어': '통솔', '계략': '지력', '내정': '정치' };
   for (const b of Object.keys(AB_BRANCHES)) {
     const lv = f?.ab?.[b] ?? 0; const maxed = lv >= 3;
-    html += `<div class="officer"><div><div class="nm">${b}(${AB_NM[b]}) ${'●'.repeat(lv)}${'○'.repeat(3 - lv)}</div><div class="st">${maxed ? '최고 단계' : `기교P ${AB_P[lv]} · 전원 ${AB_NM[b]} +2${lv === 2 ? ' · 완료 시 특기 「' + AB_SKILL[b] + '」' + ((AB_PICK[b]?.length ?? 0) > 1 ? ' (또는 ' + AB_PICK[b].slice(1).join('·') + ' 중 선택)' : '') : ''}`}</div></div>${maxed ? '<span class="st">최고 단계</span>' : `<button class="cmd cmd-abr" data-b="${b}">연구</button>`}</div>`;
+    const why = maxed ? '' : researchWhy(AB_P[lv]);
+    html += `<div class="officer"><div><div class="nm">${b}(${AB_NM[b]}) ${'●'.repeat(lv)}${'○'.repeat(3 - lv)}</div><div class="st">${maxed ? '최고 단계' : `기교P ${AB_P[lv]} · 전원 ${AB_NM[b]} +2${lv === 2 ? ' · 완료 시 특기 「' + AB_SKILL[b] + '」' + ((AB_PICK[b]?.length ?? 0) > 1 ? ' (또는 ' + AB_PICK[b].slice(1).join('·') + ' 중 선택)' : '') : ''}`}</div></div>${maxed ? '<span class="st">최고 단계</span>' : `<button class="cmd cmd-abr" data-b="${b}"${researchBtnState(why)}>연구</button>`}${researchReason(why)}</div>`;
   }
   html += `<h3 style="margin-top:10px">개별 기교 <small>(이 게임 자체 규칙: 비용과 효과는 직접 정한 값)</small></h3>`; // R23
   for (const [nm, a] of Object.entries(ARTS)) {
     const has = !!f?.arts?.[nm];
-    html += `<div class="officer"><div><div class="nm">${nm} ${has ? '●' : '○'}</div><div class="st">${a.desc}${has ? '' : ` · 기교P ${a.p} · 금 ${game.researchGold(game.playerForce, a.gold)}`}</div></div>${has ? '<span class="st">연구 완료</span>' : `<button class="cmd cmd-artr" data-a="${nm}">연구</button>`}</div>`;
+    const why = has ? '' : researchWhy(a.p, game.researchGold(game.playerForce, a.gold));
+    html += `<div class="officer"><div><div class="nm">${nm} ${has ? '●' : '○'}</div><div class="st">${a.desc}${has ? '' : ` · 기교P ${a.p} · 금 ${game.researchGold(game.playerForce, a.gold)}`}</div></div>${has ? '<span class="st">연구 완료</span>' : `<button class="cmd cmd-artr" data-a="${nm}"${researchBtnState(why)}>연구</button>`}${researchReason(why)}</div>`;
   }
   html += `<button class="cmd" id="cmd-tech-back">← 도시 패널로</button>`;
   p.innerHTML = html;
+  p.scrollTop = reopening ? 0 : oldScroll;
   p.querySelectorAll('.cmd-abr').forEach(btn => btn.onclick = () => { // R13
     const b = btn.dataset.b, lvNow = game.forces[game.playerForce]?.ab?.[b] ?? 0;
     const picks = (AB_PICK[b]?.length ?? 0) > 1 ? AB_PICK[b] : null; // R110: 전 계통 선택

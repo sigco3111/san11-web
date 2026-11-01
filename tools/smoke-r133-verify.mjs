@@ -76,19 +76,24 @@ ok('철거 무효 인덱스 실패', g.demolishFacility(city.id, 99) === false);
 city.facilities = [];
 
 // --- 병장 자동생산 고정량(월): 대장간 있으면 창·극·노 각 +100, 특색 도시는 해당 병장 +400 ---
-const c2 = g.forceCities(pf)[1] ?? city;
+// 생산 산식은 전투/AI/보류결정과 격리한다. 기존 테스트는 pending으로 추가호출이
+// 차단된 경우 다음 케이스가 dan1에서 시작해 월생산 없이 비교하는 seed20 오류가 있었다.
+const prodOff = {}; for (const o of JSON.parse(readFileSync('data/officers670.json'))) prodOff[o.idx] = o;
+const prod = new Game(scen, prodOff, {}, pf);
+const c2 = prod.forceCities(pf)[0];
 c2.specialty = [];
 c2.facilities = [{ type: '대장간', progress: 99, builders: [], done: true }];
+function productionMonth() {
+  const beforeMonth = prod.month, beforeTurn = prod.turn;
+  for (let i=0; i<3; i++) { const t=prod.turn; prod.endTurn(()=>{}); if(prod.turn!==t+1) throw new Error('생산 검증 턴 진행 차단'); }
+  if (prod.turn !== beforeTurn+3 || prod.month === beforeMonth) throw new Error('생산 검증 월 경계 미진행');
+}
 const s0 = [c2.spears, c2.pikes, c2.bows];
-// 월 경계까지 진행 (현재 dan 기준 최대 3턴)
-while (g.dan !== 1) { aiThink(g, pf); g.endTurn(aiThink); if (g.pendingDuel) g.duelAuto(g.pendingDuel); if (g.pendingDebate) g.debateAuto(g.pendingDebate); }
-aiThink(g, pf); g.endTurn(aiThink); if (g.pendingDuel) g.duelAuto(g.pendingDuel); if (g.pendingDebate) g.debateAuto(g.pendingDebate);
+productionMonth();
 ok('대장간 보유 도시 월 창·극·노 +100', c2.spears - s0[0] === 100 && c2.pikes - s0[1] === 100 && c2.bows - s0[2] === 100);
-// 특색 도시: 창 특색이면 창만 +400
 c2.specialty = ['창'];
 const s1 = [c2.spears, c2.pikes, c2.bows];
-while (g.dan !== 1) { aiThink(g, pf); g.endTurn(aiThink); if (g.pendingDuel) g.duelAuto(g.pendingDuel); if (g.pendingDebate) g.debateAuto(g.pendingDebate); }
-aiThink(g, pf); g.endTurn(aiThink); if (g.pendingDuel) g.duelAuto(g.pendingDuel); if (g.pendingDebate) g.debateAuto(g.pendingDebate);
+productionMonth();
 ok('특색(창) 도시 월 창 +400·나머지 +0', c2.spears - s1[0] === 400 && c2.pikes - s1[1] === 0 && c2.bows - s1[2] === 0);
 
 console.log(fail ? `FAIL ${fail}` : 'R133 ALL PASS');
