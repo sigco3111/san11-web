@@ -1,6 +1,6 @@
 // 3D 저폴리 지도 엔진 (Three.js) - 고정 등각 아이소메트릭 + 계단식 지형 + 성곽/숲
 import * as THREE from 'three';
-import { loadGLBAssets, applyEnvironment } from './assets-3d.js?v=r135';
+import { loadGLBAssets, applyEnvironment } from './assets-3d.js?v=r136';
 
 const LON0 = 100, LON1 = 126.5, LAT0 = 21.5, LAT1 = 43;
 export function toWorld(lon, lat) {
@@ -627,8 +627,21 @@ export class Map3D {
       const meshes = [];
       const sorted = [...cf.facs].sort((a, b) => a.type.localeCompare(b.type, 'ko'));
       const n = sorted.length, r = n <= 6 ? 2.5 : 3.0;
+      // R136: 배치 품질 — 링 회전 오프셋 24후보 중 패널티 최소 선택(결정적, 시각 전용). 비조선소 수상(+3)·지형 레벨 불일치(|lv-1|)·인접 도시 성곽 근접(+2) 회피, 조선소는 수상 선호(육지 +1)
+      const others = list.filter(o => o.cityId !== cf.cityId);
+      const score = (off) => sorted.reduce((pen, f, i) => {
+        const a = -Math.PI / 2 + off + i * 2 * Math.PI / n;
+        const px = cf.x + Math.cos(a) * r, pz = cf.z + Math.sin(a) * r;
+        const lv = this.levelAtWorld(px, pz), dock = Map3D.CITY_FAC_STYLE[f.type]?.geo === 'dock';
+        let p = 0;
+        if (lv === 0) p += dock ? 0 : 3; else { p += Math.abs(lv - 1); if (dock) p += 1; }
+        for (const o of others) if (Math.hypot(px - o.x, pz - o.z) < 2.2) p += 2;
+        return pen + p;
+      }, 0);
+      let off = 0, best = Infinity;
+      for (let k = 0; k < 24; k++) { const s = score(k * Math.PI / 12); if (s < best) { best = s; off = k * Math.PI / 12; } }
       sorted.forEach((f, i) => {
-        const a = -Math.PI / 2 + i * 2 * Math.PI / n;
+        const a = -Math.PI / 2 + off + i * 2 * Math.PI / n;
         const px = cf.x + Math.cos(a) * r, pz = cf.z + Math.sin(a) * r;
         const m = this._cityFacModel(f.type, f.done);
         m.position.set(px, Math.max(this.levelAtWorld(px, pz) * STEP, WATER_Y + 0.2), pz);
