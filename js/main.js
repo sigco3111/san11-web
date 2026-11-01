@@ -592,7 +592,7 @@ function showArms(c) {
   let html=`<div class="fac-status"><h3>${c.name_ko} 병장 생산</h3><p class="st">도시 금 ${c.gold.toLocaleString()} · 행동력 ${game.forces[c.force]?.ap ?? 0}</p></div><p class="st">완성 대장간 1개당 매턴 창·극·노 중 1회, 마구간은 군마 1회. 생산량 500 × 시설 레벨. 월 자동생산은 별도입니다.</p>`;
   for (const [key,spec] of Object.entries(ARMS_BUILD)) {
     const a=game.armsInfo(c,key);
-    html+=`<div class="officer"><div><div class="nm">${spec.name} · 보유 ${(c[key]??0).toLocaleString()}</div><div class="st">${spec.facility} 남은 ${a.remaining??0}/${a.capacity??0}회 · 생산 ${a.amount??500} · 금${a.gold??200} · AP${a.ap??10}</div>${a.why?`<small class="fac-why">${a.why}</small>`:''}</div><button class="cmd arms-go" data-k="${key}"${a.why?' disabled title="'+a.why+'"':''}>생산</button></div>`;
+    html+=`<div class="officer"><div><div class="nm">${spec.name} · 보유 ${(c[key]??0).toLocaleString()}</div><div class="st">${spec.facility} 남은 ${a.remaining??0}/${a.capacity??0}회 · 생산 ${a.chosen?a.amount:'-'} · 금${a.gold??200} · AP${a.ap??10}</div>${a.why?`<small class="fac-why">${a.why}</small>`:''}</div><button class="cmd arms-go" data-k="${key}"${a.why?' disabled title="'+a.why+'"':''}>생산</button></div>`;
   }
   html+='<p class="st">같은 대장간의 남은 횟수는 창·극·노가 함께 사용합니다. 낮은 레벨 시설부터 사용하며, 당턴 사용한 시설을 합병해도 생산 횟수는 회복되지 않습니다.</p><button class="cmd" id="arms-back">← 도시 패널로</button>';
   p.innerHTML=html;p.scrollTop=0;
