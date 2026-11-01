@@ -1,0 +1,8 @@
+import fs from'node:fs';import{Game}from'../js/game.js';
+const base=JSON.parse(fs.readFileSync('data/officers670.json')),s=JSON.parse(fs.readFileSync('data/scenario-190.json'));globalThis.localStorage={setItem(){}};let n=0;const ok=(msg,v)=>{if(!v)throw Error(msg);console.log('PASS '+msg);n++};
+function setup(kind,dist=3){const off=Object.fromEntries(structuredClone(base).map(o=>[o.idx,o])),g=new Game(s,off,{},5),c=g.forceCities(5)[0],fid=0,h=g.forceCities(fid)[0],i=h.officers[0];g.changeRelation(5,fid,0);const d=g.diplo[g.diploKey(5,fid)];if(kind==='truce')d.truceUntil=30;if(kind==='alliance')d.allianceUntil=30;if(kind==='expired')d.truceUntil=1;h.officers=h.officers.filter(x=>x!==i);off[i].state.city=null;g.units=[{id:9001,force:kind==='bandit'?-1:fid,type:'sword',label:off[i].name_ko,officers:[i],troops:5000,qi:100,x:c.lon+dist,z:c.lat,tx:null,tz:null,targetCity:null,path:[],food:20000}];if(kind==='bandit')g.banditAct=()=>{};g.delegated=true;return g}
+for(const [kind,stop]of [['truce',false],['alliance',false],['enemy',true],['expired',true],['bandit',true]]){const g=setup(kind);g.endTurn(()=>{});ok(kind+' 위협정지 '+stop,!!g.pendingStop===stop);if(!stop)ok(kind+' 오경고없음',!g.logs.some(l=>l.msg.includes('포위·함락 위기')))}
+const far=setup('enemy',10);far.endTurn(()=>{});ok('범위밖 적 정지없음',!far.pendingStop);
+const g=setup('enemy');g.endTurn(()=>{});g.pendingStop=false;const before=g.logs.filter(l=>l.msg.includes('포위·함락 위기')).length;g.endTurn(()=>{});ok('같은 위협 중복정지없음',!g.pendingStop&&g.logs.filter(l=>l.msg.includes('포위·함락 위기')).length===before);
+const t=setup('truce');t.endTurn(()=>{});t.diplo[t.diploKey(5,0)].truceUntil=1;t.endTurn(()=>{});ok('정전끝난후 새위협정지',!!t.pendingStop);
+console.log(`R164 ${n} PASS`);
