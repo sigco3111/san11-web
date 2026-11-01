@@ -289,7 +289,7 @@ export class Map3D {
     if (!this.terrainMesh || !this.baseColors || this.season === month) return;
     this.season = month;
     const tint = month >= 3 && month <= 5 ? [1.0, 1.03, 0.95] : month >= 6 && month <= 8 ? [0.9, 1.06, 0.88] : month >= 9 && month <= 11 ? [1.25, 1.0, 0.62] : [1.38, 1.4, 1.55]; // 봄·여름·가을·겨울 — R131c: 가을·겨울 틴트 강화 (구값은 월 전환 시 식별 어려움, 11/1 실측 ΔRGB 평균 15~25)
-    const winter = tint[0] > 1.1;
+    const winter = month >= 12 || month <= 2; // R131d: 틴트 값이 아닌 월로 겨울 판정 (R131c에서 가을 tint[0]=1.25가 >1.1 조건을 오발동시켜 가을도 설원이 되는 결함 — 라이브 10월 캡처가 겨울색으로 관측됨)
     const col = new THREE.Color(), snow = new THREE.Color(0.93, 0.95, 1.0);
     for (let i = 0; i < this.baseColors.length / 3; i++) {
       col.setRGB(Math.min(1, this.baseColors[i*3] * tint[0]), Math.min(1, this.baseColors[i*3+1] * tint[1]), Math.min(1, this.baseColors[i*3+2] * tint[2]));
