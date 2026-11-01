@@ -1,0 +1,5 @@
+import fs from'node:fs';const src=fs.readFileSync('js/main.js','utf8'),block=src.slice(src.indexOf("  $('btn-delegate').onclick ="),src.indexOf("  $('sel-speed').onchange"));let n=0;const ok=(k,v)=>{if(!v)throw Error(k);console.log('PASS '+k);n++};
+for(const [button,initial,final]of [['btn-delegate',false,true],['btn-delegate',true,false],['btn-stop-auto',true,false]]){const els=Object.fromEntries(['btn-delegate','btn-stop-auto'].map(k=>[k,{}])),g={delegated:initial,turn:10,log(){}},calls=[];let saved=initial,mesh=initial,panel=initial;
+new Function('$','game','refreshAll','refreshOpenPanel','setAuto',block)(k=>els[k],g,()=>{saved=g.delegated;mesh=g.delegated;calls.push('all')},()=>{panel=g.delegated;calls.push('panel')},v=>calls.push('auto'+v));els[button].onclick();ok(button+' mode '+initial,g.delegated===final);ok(button+' save '+initial,saved===final);ok(button+' map/panel '+initial,mesh===final&&panel===final);ok(button+' no turn '+initial,g.turn===10)}
+ok('자동중단 기존refreshAll 유지',src.includes('game.pendingStop = false; game.delegated = false; setAuto(false); refreshAll();'));
+console.log('R165 '+n+' PASS');
