@@ -41,5 +41,6 @@ const lg=new Game(JSON.parse(readFileSync('data/scenario-184.json')),roster,{},2
 lg.createLegion(gov,[lc[0].id],'delegate');lg.createLegion(gov,[lc[1].id],'delegate');lg.disbandLegion(28,2);lg.createLegion(gov,[lc[2].id],'attack_city',1);
 ok('R143 군단2해산후3/4 고유id·대상해산 정확성', lg.forces[28].legions.map(l=>l.id).join(',')==='3,4' && lg.disbandLegion(28,4) && lg.forces[28].legions[0].id===3 && lg.cityLegion(lc[2].id)===null);
 ok('R143 재렌더 시 최신 직할 도시 계산', /const render = \(\) => \{\s+const free = own.filter/.test(mn));
+ok('R144 군단소속 도시도 관리 진입 가능·수동 명령 차단 유지', /if \(c.force === game.playerForce && !game.delegated\) html \+=.*id="cmd-legion"/.test(mn) && /if \(legManage\) legManage.onclick/.test(mn) && /const mine = c.force === game.playerForce && !game.delegated && !legion/.test(mn));
 console.log(fail ? 'R135 ' + fail + ' FAIL' : 'R135 ALL PASS');
 process.exit(fail ? 1 : 0);
