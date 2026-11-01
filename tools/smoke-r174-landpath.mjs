@@ -1,0 +1,11 @@
+import fs from'node:fs';import{Game,isSeaAt,UNIT_TYPES}from'../js/game.js';let n=0;const ok=(k,v)=>{if(!v)throw Error(k);console.log('PASS '+k);n++};const s=JSON.parse(fs.readFileSync('data/scenario-251.json')),off=Object.fromEntries(JSON.parse(fs.readFileSync('data/officers670.json')).map(o=>[o.idx,o]));const saved=JSON.parse(fs.readFileSync('tools/fixture-r174-landpath.json'));const mk=()=>{const g=new Game(s,structuredClone(off),{},null);g.cities=structuredClone(saved.cities);g.cityById=Object.fromEntries(g.cities.map(c=>[c.id,c]));g.forces=structuredClone(saved.forces);g.econV=1;const u=structuredClone(saved.units.find(u=>u.id===1022));g.units=[u];return {g,u}};
+{const{g,u}=mk(),p=g.findPath(u,u.tx,u.tz);ok('해안안전폴백표식',p[0][2]==='land-route');let a=[u.x,u.z],bad=0;for(const b of p){const steps=Math.ceil(Math.hypot(b[0]-a[0],b[1]-a[1])/.005);for(let j=1;j<=steps;j++)if(isSeaAt(a[0]+(b[0]-a[0])*j/steps,a[1]+(b[1]-a[1])*j/steps))bad++;a=b;}ok('모든구간바다0',bad===0);let count=0;while(g.units.includes(u)&&count++<30){g.stepUnit(u);ok('위치바다아님'+count,!isSeaAt(u.x,u.z));}ok('기존빈경로자력복구합류',!g.units.includes(u)&&count>1);}
+{const{g,u}=mk();u.conf=1;const x=u.x,z=u.z;g.stepUnit(u);ok('혼란이동금지',u.x===x&&u.z===z);}
+{const{g,u}=mk();const foe=structuredClone(u);foe.id=9999;foe.force=24;foe.x+=.1;g.units.push(foe);u.targetCity=0;const c=g.cityById[0];u.tx=c.lon;u.tz=c.lat;const x=u.x,z=u.z;g.stepUnit(u);ok('적요격유지',u.x===x&&u.z===z);}
+
+
+{const{g,u}=mk();g.orderUnit(u.id,u.targetCity);g.autosave=Game.prototype.autosave;let saved;globalThis.localStorage={setItem(k,v){saved=JSON.parse(v)}};g.autosave();ok('세밀경로JSON저장',saved.units[0].path[0][2]==='land-route');g.units=JSON.parse(JSON.stringify(saved.units));const v=g.units[0],x=v.x,z=v.z;g.stepUnit(v);const d=Math.hypot(v.x-x,v.z-z);ok('JSON복원후이동',d>0);ok('턴거리예산상한',d<=.55*UNIT_TYPES[v.type].move*1.25*1.15*1.08+1e-8);}
+{const{g,u}=mk();u.x=113;u.z=34;u.tx=112;u.tz=34;const p=g.findPath(u,u.tx,u.tz);ok('안전일반경로형식유지',p?.length&&p.every(x=>x.length===2));}
+
+{const{g,u}=mk();const base=g.cityById[u.targetCity].troops;for(let i=0;i<20&&g.units.includes(u);i++)g.stepUnit(u);ok('합류병력보존',g.cityById[u.targetCity].troops===base+u.troops);}
+console.log('R174 '+n+' PASS');

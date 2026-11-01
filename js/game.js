@@ -1243,6 +1243,23 @@ export class Game {
     for (let k = ship ? 1 : 4; k < cells.length; k += ship ? 1 : 5) pts.push([lon0 + cells[k][0] * st, lat0 + cells[k][1] * st]); // R68: 수군은 매 셀 경유 — 경유지 사이 직선 보간이 렌더 육지를 가로지르지 않게
     if (ship) pts.push([lon0 + tc[0] * st, lat0 + tc[1] * st]); // R64: 수군 목표는 연안 수로 셀 — 도시 좌표(육지)로 직행하면 좌초
     else pts.push([tx, tz]);
+    if (!ship && !isSeaAt(u.x,u.z) && !isSeaAt(tx,tz)) {
+      // R174: A* 격자는 육지여도 5셀 축약 직선은 해안을 가로지를 수 있다.
+      // 기존 안전 경로/도착 속도는 유지하고, 위험한 축약만 매 셀 경유로 되돌린다.
+      const seaFree = points => {
+        let ax = u.x, az = u.z;
+        for (const [bx,bz] of points) {
+          const n = Math.max(1,Math.ceil(Math.hypot(bx-ax,bz-az)/.025));
+          for (let j=1;j<=n;j++) if (isSeaAt(ax+(bx-ax)*j/n,az+(bz-az)*j/n)) return false;
+          ax=bx;az=bz;
+        }
+        return true;
+      };
+      if (!seaFree(pts)) {
+        const dense = cells.map(([i,j])=>[lon0+i*st,lat0+j*st,'land-route']).concat([[tx,tz,'land-route']]);
+        return seaFree(dense) ? dense : null; // 격자 대각선/시작·종료 접속도 검증, 바다 횡단 폴백 금지
+      }
+    }
     return pts;
   }
 
@@ -1593,9 +1610,24 @@ export class Game {
       const tgt = u.targetCity != null ? this.cityById[u.targetCity] : null;
       if (!tgt || tgt.force !== u.force) return;
     }
+    if (u._waterWarn && !u.path?.length && !SHIP_TYPES.has(u.type) && !isSeaAt(u.tx,u.tz) && (this.cityById[u.targetCity] || (this.fieldFacs ?? []).some(f=>f.id===u.targetFac))) {
+      const path = this.findPath(u,u.tx,u.tz);
+      if (path?.[0]?.[2] === 'land-route') u.path=path;
+    }
     const ut = UNIT_TYPES[u.type];
     const spdMult = this.unitHasSkill(u, '질풍') ? 1.25 : (this.unitHasSkill(u, '신행') ? 1.15 : 1); // R17: 신행 = 이동 +15% (자체 재정의 — 야간·날씨 시스템 부재, 질풍 우선)
     let speed = 0.55 * ut.move * spdMult * (this.fieldNear(u, '군악대') ? 1.15 : 1) * (this.elitePike(u) ? 1.08 : 1);
+    if (u.path?.[0]?.[2] === 'land-route') {
+      speed *= this.fieldSlow(u); if(this.passAt(u.x,u.z)) speed *= this.passMult(u); if(isRiverAt(u.x,u.z)) speed *= this.riverMult(u);
+      let rem=speed;
+      while(u.path.length && rem>1e-9) {
+        const p=u.path[0],d0=Math.hypot(p[0]-u.x,p[1]-u.z),take=Math.min(rem,d0),nx=d0>1e-9?u.x+(p[0]-u.x)*take/d0:u.x,nz=d0>1e-9?u.z+(p[1]-u.z)*take/d0:u.z;
+        if(isSeaAt(nx,nz)) { u._waterWarn=true;return; }
+        u.x=nx;u.z=nz;rem-=take;if(d0<=take+1e-9)u.path.shift();
+      }
+      u._waterWarn=false;
+      if(u.path.length)return;
+    }
     if (SHIP_TYPES.has(u.type) && u.path?.length) { // R92fix: 수군은 폴리라인 walk — 턴당 speed 거리만큼만 경로를 따라 진행 (R68 매 셀 경유 경로는 0.15° 간격이라 구 0.35 연쇄 소비가 전 경로를 1턴에 소비해 순간이동·즉시 합류가 발생했음)
       let rem = speed;
       while (u.path.length && rem > 1e-9) {
