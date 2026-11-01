@@ -29,5 +29,11 @@ const changed=layout(cities,centers,[...fields,{x:ls[0].x,z:ls[0].z,fr:2}],level
 ok('R139 실행: 야전시설 추가 시 재배치 + 시그니처 필드 의존성', JSON.stringify(changed)!==JSON.stringify(ls) && /JSON.stringify\(\[list, centers, fields\]\)/.test(m));
 ok('R140 줌별 성내 표식: 근접 시설명/중간 수량/원거리 숨김', /this.view <= 32/.test(m) && /this.view > 32 && this.view <= 55/.test(m));
 ok('R141 레벨 전달·모델 표식·성내 Lv 표시', /level: f.level \?\? 1/.test(mn) && /_cityFacModel\(type, done, level = 1\)/.test(m) && /facilityLevel = level/.test(m) && /' Lv' \+ f.level/.test(m));
+// R142: UI 사유 함수를 동일 소스에서 추출, 엔진 조건을 바꾸지 않는 표시만 검사.
+const reasonExpr = mn.match(/const facReason = ([^\n]+);/)[1];
+const rc={force:1,gold:500,facilities:[]}, rg={forces:{1:{alive:true,ap:30}},_blocked:()=>false,facSlots:()=>8};
+const why=new Function('game','c','return '+reasonExpr)(rg,rc);
+ok('R142 실행: 가능/금부족/AP부족/개발지부족/군단 사유', (()=>{if(why(200,20,true)!=='')return false;rc.gold=0;if(!why(200,20,true).includes('금'))return false;rc.gold=500;rg.forces[1].ap=0;if(!why(200,20,true).includes('행동력'))return false;rg.forces[1].ap=30;rc.facilities=Array(8).fill({});if(why(200,20,true)!=='개발지 부족')return false;rc.facilities=[];rg._blocked=()=>true;return why(200,20,true)==='군단 위임 중'})());
+ok('R142 sticky 헤더·행별 사유·최초 진입 상단', /fac-status/.test(mn) && /fac-why/.test(mn) && /if \(reopening\) p.scrollTop = 0/.test(mn) && /position:sticky/.test(readFileSync('css/style.css','utf8')));
 console.log(fail ? 'R135 ' + fail + ' FAIL' : 'R135 ALL PASS');
 process.exit(fail ? 1 : 0);

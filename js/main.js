@@ -1,12 +1,12 @@
 // 진입점: 화면 전환·UI·지도 연결
-import { Map3D, toWorld } from './map3d.js?v=r141';
-import { Game, SAVE_KEY, RULES, forceColor, UNIT_TYPES, ARTS, OFFICES, restoreOfficer, FIELD_FACS, TRAPS, SHIP_TYPES, TAC_SHIP_OK, josa, josaRo, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL, AB_PICK } from './game.js?v=r141';
-import { aiThink } from './ai.js?v=r141';
+import { Map3D, toWorld } from './map3d.js?v=r142';
+import { Game, SAVE_KEY, RULES, forceColor, UNIT_TYPES, ARTS, OFFICES, restoreOfficer, FIELD_FACS, TRAPS, SHIP_TYPES, TAC_SHIP_OK, josa, josaRo, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL, AB_PICK } from './game.js?v=r142';
+import { aiThink } from './ai.js?v=r142';
 
 const $ = id => document.getElementById(id);
 let DATA = null, game = null, map = null, selectedUnit = null, autoTimer = null, pendingFire = null; // R15: 직접 전법·계략 대기
 
-const BUILD_ID = 'r141'; // 빌드 ID (index.html의 meta[name=build]와 같아야 함 - 오래된 캐시된 index와 새 스크립트의 혼합 감지)
+const BUILD_ID = 'r142'; // 빌드 ID (index.html의 meta[name=build]와 같아야 함 - 오래된 캐시된 index와 새 스크립트의 혼합 감지)
 function checkBuildSkew() {
   const idx = document.querySelector('meta[name="build"]')?.content;
   if (idx === BUILD_ID) { sessionStorage.removeItem('cheonha-xi-web.skew'); return; } // 일치하면 재시도 표식 해제
@@ -19,7 +19,7 @@ checkBuildSkew();
 async function loadData() {
   const [officers, skills, portraits, s184, s190, s251] = await Promise.all(
     ['data/officers670.json','data/skills.json','data/portraits.json','data/scenario-184.json','data/scenario-190.json','data/scenario-251.json']
-      .map(u => fetch(u + '?v=r141').then(r => r.json())));
+      .map(u => fetch(u + '?v=r142').then(r => r.json())));
   const byIdx = {};
   for (const o of officers) byIdx[o.idx] = o;
   DATA = { officers: byIdx, skills, portraits, scenarios: { '184': s184, '190': s190, '251': s251 } };
@@ -617,9 +617,13 @@ function showDiplomacy(c) { $('panel').dataset.view='diplo';
 }
 function showFacilities(c) {
   const p = $('panel'); p.classList.remove('hidden');
+  const reopening = p.dataset.view !== 'facilities' || p.dataset.city !== String(c.id);
+  p.dataset.view = 'facilities'; p.dataset.city = String(c.id);
+  const facReason = (cost, ap, needSlot = false) => !game.forces[c.force]?.alive ? '세력 정보 없음' : game._blocked(c) ? '군단 위임 중' : needSlot && (c.facilities?.length ?? 0) >= game.facSlots(c) ? '개발지 부족' : (game.forces[c.force]?.ap ?? 0) < ap ? '행동력 ' + ap + ' 필요' : c.gold < cost ? '도시 금 ' + cost + ' 필요' : '';
+  const btnState = why => why ? ' disabled title="' + why + '"' : '';
   c.facilities = c.facilities ?? [];
   const slots = game.facSlots(c);
-  let html = `<h3>${c.name_ko} 시설 <small>(개발지 ${c.facilities.length}/${slots})</small></h3>`;
+  let html = `<div class="fac-status"><h3>${c.name_ko} 시설 <small>(개발지 ${c.facilities.length}/${slots})</small></h3><p class="st">도시 금 ${c.gold.toLocaleString()} · 행동력 ${game.forces[c.force]?.ap ?? 0}</p></div>`;
   if (c.facilities.length) {
     html += c.facilities.map((f, i) => {
       const spec = FACILITIES[f.type];
@@ -634,16 +638,18 @@ function showFacilities(c) {
   const mergePairs = Object.entries(mergeable).filter(([, v]) => v.length >= 2);
   if (mergePairs.length) {
     html += '<h3 style="margin-top:10px">흡수합병 <small>(같은 시설 2개 → Lv+1 · 금 200·AP 10 · 개발지 1개 회수, 최대 Lv3)</small></h3>';
-    for (const [t, v] of mergePairs) html += `<div class="officer"><div><div class="nm">${t} × ${v.length}</div><div class="st">${FACILITIES[t].desc}</div></div><button class="cmd cmd-merge" data-t="${t}">합병</button></div>`;
+    for (const [t, v] of mergePairs) { const why = facReason(200, 10); html += `<div class="officer"><div><div class="nm">${t} × ${v.length}</div><div class="st">${FACILITIES[t].desc}</div></div><button class="cmd cmd-merge" data-t="${t}"${btnState(why)}>합병</button>${why ? `<small class="fac-why">${why}</small>` : ''}</div>`; }
   }
   html += '<h3 style="margin-top:10px">건설</h3>';
   const polTop = [...new Set(c.officers)].sort((a, b) => (DATA.officers[b]?.pol ?? 0) - (DATA.officers[a]?.pol ?? 0)).slice(0, 3);
   for (const [t, spec] of Object.entries(FACILITIES)) {
-    html += `<div class="officer"><div><div class="nm">${t} <span class="st">금${spec.cost} · 공기 ${spec.turns}턴</span></div><div class="st">${spec.desc}</div></div><button class="cmd cmd-build" data-t="${t}">건설</button></div>`;
+    const why = facReason(spec.cost, 20, true);
+    html += `<div class="officer"><div><div class="nm">${t} <span class="st">금${spec.cost} · 공기 ${spec.turns}턴</span></div><div class="st">${spec.desc}</div></div><button class="cmd cmd-build" data-t="${t}"${btnState(why)}>건설</button>${why ? `<small class="fac-why">${why}</small>` : ''}</div>`;
   }
   html += `<p class="st">담당 무장 자동 배정 (정치 상위 3명: ${polTop.map(i => DATA.officers[i]?.name_ko).join('·') || '없음'}) · 정치 합산 250 이상이면 공기 2배</p>`;
   html += `<button class="cmd" id="cmd-fac-back">← 도시 패널로</button>`;
   p.innerHTML = html;
+  if (reopening) p.scrollTop = 0;
   p.querySelectorAll('.cmd-build').forEach(btn => btn.onclick = () => {
     if (game.buildFacility(c.id, btn.dataset.t, polTop)) { refreshAll(); showFacilities(c); }
   });
