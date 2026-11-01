@@ -634,11 +634,12 @@ export class Game {
   meritGrade(i) { return Math.min(8, Math.floor((this.officers[i]?.state?.merit ?? 0) / 500)); } // 공적 500당 1등급 (자체 수치)
   rewardOfficers(cityId, idxs) { // 포상(褒賞, 매뉴얼 P.39): 금 100·AP 5/인, 충성 +3 (상승 폭은 매뉴얼 미기재 — 자체 수치). 충성 100 불가·1턴 1인 1회·종군 무장 불가·도시별·복수 동시 가능
     const c = this.cityById[cityId], f = this.forces[c?.force];
-    if (!c || !f) return false;
+    if (!c || !f?.alive || !Array.isArray(idxs)) return false;
+    if (this._blocked(c)) { this.lastRewardWhy = '군단 소속 도시입니다'; return false; }
     const ok = [];
-    for (const i of idxs) {
+    for (const i of new Set(idxs)) {
       const o = this.officers[i], st = o?.state;
-      if (!o || !st || !c.officers.includes(i)) continue;
+      if (!o || !st || !c.officers.includes(i) || st.force !== c.force || st.city !== c.id || !['ruler','taesu','serving'].includes(st.status)) continue;
       if ((st.loyal ?? 70) >= 100) continue; // 매뉴얼: 충성 100에는 실행 불가
       if (st._rewardTurn === this.turn) continue; // 매뉴얼: 1턴 1인 1회
       if (this.units.some(v => v.officers.includes(i))) continue; // 매뉴얼: 종군 무장 불가
