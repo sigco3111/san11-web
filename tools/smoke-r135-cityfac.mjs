@@ -9,12 +9,23 @@ ok('스타일표가 FACILITIES 19종 전체를 커버 (누락: ' + Object.keys(F
 ok('형태 8종 정의(market·farm·barn·barracks·smith·stable·dock·gov)와 매핑 일치', (() => { const geos = new Set([...styleBlock.matchAll(/geo: '([a-z]+)'/g)].map(x => x[1])); return ['market','farm','barn','barracks','smith','stable','dock','gov'].every(g => geos.has(g)) && geos.size === 8; })());
 ok('미지 유형 폴백(?? barn/회색) 존재 — 신규 시설 추가 시 깨지지 않음', /CITY_FAC_STYLE\[type\] \?\?/.test(m));
 ok('공사 중 반투명 표기(done=false → opacity .55, 야전 시설 R26과 동일 관례)', /transparent: !done, opacity: done \? 1 : 0\.55/.test(m));
-ok('시설 구성 변경 도시만 재구성(sig 비교) + 제거 동기화', /cur\.sig === sig/.test(m) && /if \(!keep\.has\(Number\(id\)\)\)/.test(m));
+ok('시설 구성 변경 도시만 재구성(sig 비교) + 제거 동기화', /_cityFacLayoutSig === sig/.test(m) && /this.cityFacMeshes = \{\}/.test(m));
 ok('main 동기화 호출: cityVisible 필터(R14 시야 밖 적 도시 제외) + toWorld 변환', /syncCityFacs\?\.\(game\.cities\.filter\(c => game\.cityVisible\(c\)\)/.test(mn) && /facs: \(c\.facilities \?\? \[\]\)\.map/.test(mn));
 ok('규칙 변경 없음: game.js 시설 산식(cityFac·cityFacLv·facSlots) 미수정 — 렌더만 추가', (() => { const g = readFileSync('js/game.js', 'utf8'); return g.includes("cityFac(c, t) { return (c.facilities ?? []).filter(f => f.type === t && f.done); }") && !/syncCityFacs/.test(g); })());
 ok('빌드: BUILD_ID/meta/쿼리 버전 일치', (() => { const idx = readFileSync('index.html', 'utf8'); const bid = (mn.match(/BUILD_ID = '([^']+)'/) ?? [])[1]; const meta = (idx.match(/name="build" content="([^"]+)"/) ?? [])[1]; const refs = new Set([...(mn + idx + readFileSync('js/map3d.js', 'utf8') + readFileSync('js/ai.js', 'utf8')).matchAll(/\?v=(r\d+)/g)].map(x => x[1])); return !!bid && bid === meta && refs.size === 1 && refs.has(bid); })());
-ok('R136 배치 품질: 링 회전 24후보 패널티 스코어링(결정적) + 비조선소 수상 회피(+3) + 조선소 육지 패널티(+1) + 인접 도시 근접 회피(+2) + 지형 레벨 불일치 패널티', /for \(let k = 0; k < 24; k\+\+\)/.test(m) && /lv === 0\) p \+= dock \? 0 : 3/.test(m) && /if \(dock\) p \+= 1/.test(m) && /Math\.hypot\(px - o\.x, pz - o\.z\) < 2\.2\) p \+= 2/.test(m) && /Math\.abs\(lv - 1\)/.test(m));
-ok('R136b 슬롯 내측 워크: 나쁜 위치(비조선소 수상·구릉·인접 성곽) 시 같은 각도 안쪽 반경 탐색, 최소 1.7·best-effort 원위치', /const bad = \(x, z\) => \{ const lv = this\.levelAtWorld\(x, z\); return \(lv === 0 && !dock\) \|\| lv > 1 \|\| nearOther\(x, z\); \}/.test(m) && /for \(let rr = r - 0\.3; rr >= 1\.7 && bad\(px, pz\); rr -= 0\.3\)/.test(m));
-ok('R136c 각도 폴백: 방사 탐색 실패 시 ±반슬롯 각도 후보 탐색 + 형제 시설 0.9 근접 제외 + best-effort 원위치', /const st = 2 \* Math\.PI \/ n;/.test(m) && /for \(const dk of \[0\.5, -0\.5, 1, -1, 1\.5, -1\.5\]\)/.test(m) && /meshes\.every\(mm => Math\.hypot\(mm\.position\.x - nx, mm\.position\.z - nz\) >= 0\.9\)/.test(m));
+// R139: map3d 전체 대신 외부 의존성이 없는 동일 순수 함수를 추출해 실행한다.
+const layoutSource = m.slice(m.indexOf('export function layoutCityFacilities'), m.indexOf('const LON0')).replace('export ', '');
+const layout = new Function(layoutSource + '; return layoutCityFacilities;')();
+const cities = [{cityId:1, x:0, z:0, facs:[{type:'시장',done:true},{type:'농장',done:false},{type:'조선소',done:true}]}];
+const centers = [{x:0,z:0},{x:3,z:0}], fields = [{x:-3,z:0,fr:1.2}];
+const level = (x,z) => x < -1 ? 0 : 1;
+const ls = layout(cities, centers, fields, level);
+ok('R139 실행: 육상 건물 풋프린트 9점 모두 평지, 모든 성곽/야전 시설과 분리', ls.every(f => f.summary || ((f.type === '조선소' || [-.7*f.scale,0,.7*f.scale].every(dx => [-.7*f.scale,0,.7*f.scale].every(dz => level(f.x+dx,f.z+dz)===1))) && centers.every(c=>Math.hypot(f.x-c.x,f.z-c.z)>=2.2+f.rad) && fields.every(c=>Math.hypot(f.x-c.x,f.z-c.z)>=c.fr+f.rad+.15))));
+ok('R139 실행: 시설 간 풋프린트 분리', ls.every((f,i)=>f.summary || ls.every((h,j)=>j>=i||h.summary||Math.hypot(f.x-h.x,f.z-h.z)>=f.rad+h.rad+.12)));
+ok('R139 실행: 같은 입력 결정적 배치', JSON.stringify(ls)===JSON.stringify(layout(cities,centers,fields,level)));
+const blocked=layout(cities,centers,fields,()=>0);
+ok('R139 실행: 육지가 없으면 건물 강제배치 아닌 성내 표식', blocked.filter(f=>f.type!=='조선소').every(f=>f.summary));
+const changed=layout(cities,centers,[...fields,{x:ls[0].x,z:ls[0].z,fr:2}],level);
+ok('R139 실행: 야전시설 추가 시 재배치 + 시그니처 필드 의존성', JSON.stringify(changed)!==JSON.stringify(ls) && /JSON.stringify\(\[list, centers, fields\]\)/.test(m));
 console.log(fail ? 'R135 ' + fail + ' FAIL' : 'R135 ALL PASS');
 process.exit(fail ? 1 : 0);
