@@ -1,12 +1,12 @@
 // 진입점: 화면 전환·UI·지도 연결
-import { Map3D, toWorld } from './map3d.js?v=r175';
-import { Game, SAVE_KEY, RULES, forceColor, UNIT_TYPES, ARTS, OFFICES, restoreOfficer, FIELD_FACS, TRAPS, SHIP_TYPES, TAC_SHIP_OK, josa, josaRo, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL, AB_PICK } from './game.js?v=r175';
-import { aiThink } from './ai.js?v=r175';
+import { Map3D, toWorld } from './map3d.js?v=r176';
+import { Game, SAVE_KEY, RULES, forceColor, UNIT_TYPES, ARTS, OFFICES, restoreOfficer, FIELD_FACS, TRAPS, SHIP_TYPES, TAC_SHIP_OK, josa, josaRo, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL, AB_PICK } from './game.js?v=r176';
+import { aiThink } from './ai.js?v=r176';
 
 const $ = id => document.getElementById(id);
 let DATA = null, game = null, map = null, selectedUnit = null, autoTimer = null, pendingFire = null; // R15: 직접 전법·계략 대기
 
-const BUILD_ID = 'r175'; // 빌드 ID (index.html의 meta[name=build]와 같아야 함 - 오래된 캐시된 index와 새 스크립트의 혼합 감지)
+const BUILD_ID = 'r176'; // 빌드 ID (index.html의 meta[name=build]와 같아야 함 - 오래된 캐시된 index와 새 스크립트의 혼합 감지)
 function checkBuildSkew() {
   const idx = document.querySelector('meta[name="build"]')?.content;
   if (idx === BUILD_ID) { sessionStorage.removeItem('cheonha-xi-web.skew'); return; } // 일치하면 재시도 표식 해제
@@ -19,7 +19,7 @@ checkBuildSkew();
 async function loadData() {
   const [officers, skills, portraits, s184, s190, s251] = await Promise.all(
     ['data/officers670.json','data/skills.json','data/portraits.json','data/scenario-184.json','data/scenario-190.json','data/scenario-251.json']
-      .map(u => fetch(u + '?v=r175').then(r => r.json())));
+      .map(u => fetch(u + '?v=r176').then(r => r.json())));
   const byIdx = {};
   for (const o of officers) byIdx[o.idx] = o;
   DATA = { officers: byIdx, skills, portraits, scenarios: { '184': s184, '190': s190, '251': s251 } };
@@ -221,6 +221,10 @@ function doTurn() {
   if ($('panel').dataset.view === 'dispatch' && !$('panel').classList.contains('hidden')) $('panel').refreshDispatch?.();
   if ($('panel').dataset.view === 'move' && !$('panel').classList.contains('hidden')) $('panel').refreshMove?.();
   if ($('panel').dataset.view === 'trade' && !$('panel').classList.contains('hidden')) $('panel').refreshTrade?.();
+  if ($('panel').dataset.view === 'diplo' && !$('panel').classList.contains('hidden')) {
+    const c=game.cityById[lastCityId];
+    if(c?.force===game.playerForce){const st=$('panel').scrollTop;showDiplomacy(c);$('panel').scrollTop=st;}else $('panel').classList.add('hidden');
+  }
   if ($('panel').dataset.view === 'tech' && !$('panel').classList.contains('hidden')) showTech(); // R156: 턴 후 연구비·기교P·가능상태 갱신, showTech가 스크롤 보존
   checkGameOver();
   if (game.pendingDuel) showDuel(); // R10: 일기토 모달
@@ -611,11 +615,33 @@ function showTrade(c) { $('panel').dataset.view='trade';
   for (const dir of ['buy','sell']) $('trd-'+dir).onclick = () => { refreshTrade(); if ($('trd-'+dir).disabled) return; if (!game.trade(c.id,dir,Number($('trd-lots').value)) && game.lastTradeWhy) game.log(game.lastTradeWhy,true); refreshAll(); refreshTrade(); };
   $('trd-back').onclick = () => showCityPanel(c);
 }
+function diplomacyUiInfo(g,c,tid,action) {
+  const f=g.forces[c?.force],t=g.forces[tid];
+  const gold={envoy:500,ally:1000,truce:2000,surrender:1000,aid:0,break:0}[action]??0;
+  const base={envoy:20,ally:30,truce:30,surrender:30,aid:20,break:0}[action]??0;
+  const ap=action==='aid'||action==='break'?base:Math.ceil(base*g.apMult(c,'diplo'));
+  let why='';
+  if(!c||c.force!==g.playerForce||!f?.alive||!t?.alive||tid===c.force)why='외교 대상이 유효하지 않습니다';
+  else if(action==='break'&&!g.isAllied(c.force,tid))why='동맹 중이 아닙니다';
+  else if(action==='ally'&&(g.relation(c.force,tid)<60||g.isAllied(c.force,tid)))why='호의 이상·동맹 아닌 세력이 필요합니다';
+  else if(action==='truce'&&g.relation(c.force,tid)>39)why='불화 이하 관계가 필요합니다';
+  else if(action==='surrender'&&g.forceCities(tid).length>2)why='상대 도시 2개 이하가 필요합니다';
+  else if(action==='aid'&&!g.isAllied(c.force,tid))why='동맹 중이 아닙니다';
+  else {
+    const d=g.diploOf(c.force,tid),kind=action==='ally'?'alliance':action==='truce'?'truce':null;
+    const left=kind?12-(g.turn-(d.failCd?.[kind]??-99)):action==='aid'?18-(g.turn-(d.aidTurn??-99)):0;
+    if(left>0)why='재요청까지 '+left+'턴';
+    else if(action==='aid'&&!g.forceCities(tid).some(x=>x.troops>=6000))why='지원 가능한 상대 도시 병력 6000 이상이 없습니다';
+    else if(f.ap<ap)why='행동력 '+ap+' 필요';
+    else if(c.gold<gold)why='도시 금 '+gold+' 필요';
+  }
+  return {ap,gold,why};
+}
 function showDiplomacy(c) { $('panel').dataset.view='diplo';
   const p = $('panel'); p.classList.remove('hidden');
   const myF = game.forces[c.force];
   const others = Object.values(game.forces).filter(f => f.alive && f.id !== c.force);
-  let html = `<h3>${c.name_ko} 외교 <small>(사절: 이 도시에서 파견)</small></h3>`;
+  let html = `<div class="fac-status"><p class="st">도시 금 ${c.gold.toLocaleString()} · 행동력 ${myF?.ap??0}</p></div><h3>${c.name_ko} 외교 <small>(사절: 이 도시에서 파견)</small></h3>`;
   if (!others.length) html += '<p>다른 생존 세력이 없습니다.</p>';
   for (const t of others) {
     const v = game.relation(c.force, t.id);
@@ -627,14 +653,12 @@ function showDiplomacy(c) { $('panel').dataset.view='diplo';
     const aidCool = game.turn - (d.aidTurn ?? -99);
     html += `<div class="officer"><div><div class="nm">${game.forceName(t.id)} <span class="st">${v} ${stage}${allied ? ` · 동맹(${d.allianceUntil - game.turn}턴 남음)` : ''}${truce ? ` · 정전(${d.truceUntil - game.turn}턴)` : ''}</span></div>`;
     html += `<div class="st">`;
-    html += `<button class="cmd dip-act" data-a="envoy" data-t="${t.id}" ${myF.ap < 20 || c.gold < 500 ? 'disabled' : ''}>친선사절(금500)</button> `;
-    if (!allied && v >= 60) html += `<button class="cmd dip-act" data-a="ally" data-t="${t.id}" ${myF.ap < 30 || c.gold < 1000 ? 'disabled' : ''}>동맹 제의(금1000)</button> `;
-    if (v <= 39) html += `<button class="cmd dip-act" data-a="truce" data-t="${t.id}" ${myF.ap < 30 || c.gold < 2000 ? 'disabled' : ''}>정전 요청(금2000)</button> `;
-    if (tCities <= 2) html += `<button class="cmd dip-act" data-a="surrender" data-t="${t.id}" ${myF.ap < 30 || c.gold < 1000 ? 'disabled' : ''}>항복 권고(금1000)</button> `;
-    if (allied) {
-      html += `<button class="cmd dip-act" data-a="aid" data-t="${t.id}" ${aidCool < 18 ? 'disabled' : ''}>원군 요청${aidCool < 18 ? `(${18 - aidCool}턴)` : ''}</button> `;
-      html += `<button class="cmd dip-act" data-a="break" data-t="${t.id}">동맹 파기</button> `;
-    }
+    const actionButton=(action,label)=>{const x=diplomacyUiInfo(game,c,t.id,action);return `<p><button class="cmd dip-act" data-a="${action}" data-t="${t.id}"${x.why?' disabled title="'+x.why+'"':''}>${label}${x.gold?'(금'+x.gold+')':''} · AP${x.ap}</button>${x.why?'<small class="fac-why">'+x.why+'</small>':''}</p>`;};
+    html += actionButton('envoy','친선사절');
+    if(!allied&&v>=60)html+=actionButton('ally','동맹 제의');
+    if(v<=39)html+=actionButton('truce','정전 요청');
+    if(tCities<=2)html+=actionButton('surrender','항복 권고');
+    if(allied){html+=actionButton('aid','원군 요청');html+=actionButton('break','동맹 파기');}
     html += `</div></div></div>`;
   }
   html += `<p class="st">관계: 80+ 친밀 · 60+ 호의 · 40+ 중립 · 20+ 불화 · 미만 험악 — 매달 중립으로 서서히 회귀. 동맹국은 서로 공격하지 않습니다. 협상 결렬·등용 실패 시 30% 확률로 설전이 벌어지며, 승리하면 협상이 재심됩니다. 논객 특기는 성공률과 설전 공격력(+25%)을 보정합니다.</p>`;
@@ -642,6 +666,7 @@ function showDiplomacy(c) { $('panel').dataset.view='diplo';
   p.innerHTML = html;
   p.querySelectorAll('.dip-act').forEach(btn => btn.onclick = () => {
     const tid = Number(btn.dataset.t);
+    if(diplomacyUiInfo(game,c,tid,btn.dataset.a).why){showDiplomacy(c);return;}
     const act = { envoy: 'envoy', ally: 'proposeAlliance', truce: 'requestTruce', surrender: 'demandSurrender', aid: 'requestAid', break: 'breakAlliance' }[btn.dataset.a];
     const r = act === 'breakAlliance' ? game.breakAlliance(c.force, tid) : game[act](c.force, tid, c.id);
     refreshAll(); showDiplomacy(c);
