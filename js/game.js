@@ -848,10 +848,9 @@ export class Game {
     this.tryDebate({ kind: 'truce', fid, tid, cityId }); // R11: 결렬 시 설전 발동 가능
     return false;
   }
-  _delegateStop(reason) { // R109: 위임 자동 중단 조건 (설계안 184행 — 내 도시 포위·함락 위기, 외교 제안, 세력 멸망). 자동 진행 루프(main.js)가 pendingStop을 읽어 위임 해제
+  _delegateStop(reason) { // R172: 사건 알림은 명령권을 바꾸지 않음. 필수결정 대기는 UI 자동루프에서 별도 처리
     if (!this.delegated || this.over) return;
-    this.pendingStop = true;
-    this.log(`【위임】${reason} — 자동 진행을 멈추고 직접 지휘로 전환합니다`, true);
+    this.log(`【위임 알림】${reason} — 위임을 유지합니다`, true);
   }
   demandSurrender(fid, tid, cityId) { // 항복 권고: 대상 도시 2개 이하, 금 1000·AP 30, 매력 보정 (자체 수치)
     const c = this.cityById[cityId], f = this.forces[c?.force], t = this.forces[tid];
