@@ -57,7 +57,7 @@ ok('R147 담당선택 기본3명/최대3명/정치합 안내·선택 페이로�
 ok('R147 상태보존과 현재무장 정치 사용', /p.dataset.builders = JSON.stringify\(selectedBuilders\)/.test(mn) && /reopening \? polTop/.test(mn) && /game.officers\[i\]\?\.pol/.test(mn));
 const moveSrc=mn.slice(mn.indexOf('function moveUiWhy('),mn.indexOf('function showMove('));
 const mw=new Function(moveSrc+';return moveUiWhy')();
-const mg={forces:{1:{ap:20}},apMult:()=>1,_blocked:()=>false},mc={id:1,force:1,officers:[2]},mt={id:2,force:1};
+const mg={playerForce:1,delegated:false,officers:{2:{state:{force:1,city:1,status:'serving'}}},forces:{1:{ap:20}},apMult:()=>1,_blocked:()=>false},mc={id:1,force:1,officers:[2]},mt={id:2,force:1};
 ok('R148 이동 사유 실행: 가능/미선택/목적지없음/AP/군단/로스터',(()=>{if(mw(mg,mc,mt,[2])!=='')return false;if(!mw(mg,mc,mt,[]).includes('선택'))return false;if(!mw(mg,mc,null,[2]).includes('도시'))return false;mg.forces[1].ap=10;if(mw(mg,mc,mt,[2])!=='행동력 20 필요')return false;mg.forces[1].ap=20;if(!mw(mg,mc,mt,[9]).includes('주둔'))return false;mg._blocked=()=>true;return mw(mg,mc,mt,[2])==='군단 소속 도시입니다'})());
 ok('R148 이동 입력연결·사전검사·실패시입력유지', /onchange = refreshMove/.test(mn) && /refreshMove\(\); if \(\$\('mv-go'\).disabled\) return/.test(mn) && /if \(!game.moveOfficers/.test(mn));
 // R156: 연구 화면은 폼 입력이 없으므로 턴/대결 후 상태를 갱신한다.
