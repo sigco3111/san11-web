@@ -1529,7 +1529,7 @@ export class Game {
     if (this.delegated && this.playerForce != null && this.forces[this.playerForce]?.alive) {
       for (const c of this.cities) {
         if (c.force !== this.playerForce) continue;
-        const foe = this.units.find(u => u.force !== this.playerForce && (u.force < 0 || !this.isAllied(u.force, this.playerForce)) && Math.hypot(u.x - c.lon, u.z - c.lat) <= 4);
+        const foe = this.units.find(u => u.force !== this.playerForce && (u.force < 0 || !this.isPeace(u.force, this.playerForce)) && Math.hypot(u.x - c.lon, u.z - c.lat) <= 4);
         if (foe) {
           if (this._siegeWatch[c.id] !== foe.force) { this._siegeWatch[c.id] = foe.force; this._delegateStop(`${c.name_ko}에 적군(【${this.forceName(foe.force)}】${josa(foe.label, ['이','가']).slice(-1)}) 접근 — 포위·함락 위기`); }
         } else delete this._siegeWatch[c.id];
