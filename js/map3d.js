@@ -1,6 +1,6 @@
 // 3D 저폴리 지도 엔진 (Three.js) - 고정 등각 아이소메트릭 + 계단식 지형 + 성곽/숲
 import * as THREE from 'three';
-import { loadGLBAssets, applyEnvironment } from './assets-3d.js?v=r140';
+import { loadGLBAssets, applyEnvironment } from './assets-3d.js?v=r141';
 
 // R139: 결정적 전역 시설 배치. 지형·성곽·야전 시설·기배치 시설은 비용이 아닌 제외 조건.
 // 자리가 없으면 도시 상단 요약 표식으로 표현하며 수상에 육상 건물을 강제 배치하지 않는다.
@@ -632,7 +632,7 @@ export class Map3D {
     '부절대': { geo: 'gov', col: 0x8a2a8a }, '군사부': { geo: 'gov', col: 0x2a5a8a }, '인재부': { geo: 'gov', col: 0x2a8a5a },
     '외교부': { geo: 'gov', col: 0xb0a030 }, '감찰소': { geo: 'gov', col: 0x5a5a5a }, '서재': { geo: 'gov', col: 0x7a6ab0 }, '의관': { geo: 'gov', col: 0x4a9a8a },
   };
-  _cityFacModel(type, done) { // 시설 1개 모델 — 8종 형태 × 종류색 액센트, 공사 중(done=false)은 반투명 (야전 시설 R26과 같은 표기)
+  _cityFacModel(type, done, level = 1) { // 시설 1개 모델 — 8종 형태 × 종류색 액센트, 공사 중(done=false)은 반투명 (야전 시설 R26과 같은 표기)
     const st = Map3D.CITY_FAC_STYLE[type] ?? { geo: 'barn', col: 0x9a9a9a };
     const g = new THREE.Group();
     const op = { transparent: !done, opacity: done ? 1 : 0.55 };
@@ -648,6 +648,9 @@ export class Map3D {
     else if (st.geo === 'stable') { box(0.9, 0.18, 0.06, 0, 0.09, -0.45); box(0.9, 0.18, 0.06, 0, 0.09, 0.45); box(0.06, 0.18, 0.9, -0.45, 0.09, 0); box(0.06, 0.18, 0.9, 0.45, 0.09, 0); box(0.5, 0.16, 0.4, 0, 0.3, 0, accent); }
     else if (st.geo === 'dock') { box(1.1, 0.12, 0.5, 0, 0.06, 0); box(0.6, 0.18, 0.26, 0, 0.2, 0, accent); box(0.06, 0.4, 0.06, 0.2, 0.3, 0); }
     else { const tw = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.26, 0.8, 8), stone); tw.position.y = 0.4; g.add(tw); box(0.4, 0.25, 0.04, 0.2, 0.85, 0, accent); box(0.05, 0.3, 0.05, 0, 0.95, 0); }
+    // R141: 합병 레벨을 모델 위 금색 표식 2/3개로 구분(기본 Lv1은 추가 표식 없음).
+    if (level > 1) for (let i = 0; i < Math.min(3, level); i++) box(0.12, 0.12, 0.12, (i - (level - 1) / 2) * 0.19, 1.25, 0, new THREE.MeshLambertMaterial({ color: 0xe3bd58, ...op }));
+    g.userData.facilityLevel = level;
     return g;
   }
   syncCityFacs(list) { // R139: 모든 도시/야전 시설의 배치 의존성을 함께 무효화
@@ -666,7 +669,7 @@ export class Map3D {
         // 좁은 지형에서는 건물이 아닌 도시 상단 색 표식. 종류/공사 상태는 도시 상세에 보존.
         m = new THREE.Group();
         const count = layout.filter(x => x.cityId === f.cityId && x.summary).indexOf(f);
-        const badge = this.makeLabel('성내: ' + f.type + (f.done ? '' : ' 공사'), 0.4);
+        const badge = this.makeLabel('성내: ' + f.type + ((f.level ?? 1) > 1 ? ' Lv' + f.level : '') + (f.done ? '' : ' 공사'), 0.4);
         badge.position.set(0, 5 + count * 0.75, 0); badge.userData.summaryDetail = true; m.add(badge);
         if (count === 0) {
           const total = layout.filter(x => x.cityId === f.cityId && x.summary).length;
@@ -675,7 +678,7 @@ export class Map3D {
         }
         m.position.set(f.x, 0, f.z);
       } else {
-        m = this._cityFacModel(f.type, f.done); m.scale.setScalar(f.scale);
+        m = this._cityFacModel(f.type, f.done, f.level ?? 1); m.scale.setScalar(f.scale);
         m.position.set(f.x, Math.max(this.levelAtWorld(f.x, f.z) * STEP, WATER_Y + 0.2), f.z);
       }
       m.userData.cityFacility = { ...f };
