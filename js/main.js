@@ -1,12 +1,12 @@
 // 진입점: 화면 전환·UI·지도 연결
-import { Map3D, toWorld } from './map3d.js?v=r152';
-import { Game, SAVE_KEY, RULES, forceColor, UNIT_TYPES, ARTS, OFFICES, restoreOfficer, FIELD_FACS, TRAPS, SHIP_TYPES, TAC_SHIP_OK, josa, josaRo, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL, AB_PICK } from './game.js?v=r152';
-import { aiThink } from './ai.js?v=r152';
+import { Map3D, toWorld } from './map3d.js?v=r153';
+import { Game, SAVE_KEY, RULES, forceColor, UNIT_TYPES, ARTS, OFFICES, restoreOfficer, FIELD_FACS, TRAPS, SHIP_TYPES, TAC_SHIP_OK, josa, josaRo, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL, AB_PICK } from './game.js?v=r153';
+import { aiThink } from './ai.js?v=r153';
 
 const $ = id => document.getElementById(id);
 let DATA = null, game = null, map = null, selectedUnit = null, autoTimer = null, pendingFire = null; // R15: 직접 전법·계략 대기
 
-const BUILD_ID = 'r152'; // 빌드 ID (index.html의 meta[name=build]와 같아야 함 - 오래된 캐시된 index와 새 스크립트의 혼합 감지)
+const BUILD_ID = 'r153'; // 빌드 ID (index.html의 meta[name=build]와 같아야 함 - 오래된 캐시된 index와 새 스크립트의 혼합 감지)
 function checkBuildSkew() {
   const idx = document.querySelector('meta[name="build"]')?.content;
   if (idx === BUILD_ID) { sessionStorage.removeItem('cheonha-xi-web.skew'); return; } // 일치하면 재시도 표식 해제
@@ -19,7 +19,7 @@ checkBuildSkew();
 async function loadData() {
   const [officers, skills, portraits, s184, s190, s251] = await Promise.all(
     ['data/officers670.json','data/skills.json','data/portraits.json','data/scenario-184.json','data/scenario-190.json','data/scenario-251.json']
-      .map(u => fetch(u + '?v=r152').then(r => r.json())));
+      .map(u => fetch(u + '?v=r153').then(r => r.json())));
   const byIdx = {};
   for (const o of officers) byIdx[o.idx] = o;
   DATA = { officers: byIdx, skills, portraits, scenarios: { '184': s184, '190': s190, '251': s251 } };
@@ -757,6 +757,22 @@ function officerRow(idx) {
 let lastCityId = null;
 // R151: 기존 내정 명령 조건의 안내만. 금/AP/효과 산식은 엔진 그대로.
 // R152: 공방/조선소 기존 생산 조건만 안내. 기교·턴당 횟수 제한 신설 없음.
+function personnelUiInfo(game, c, kind, idx) {
+  const ap = Math.ceil(20 * game.apMult(c, 'personnel'));
+  let why = '';
+  const f = game.forces[c.force];
+  if (game._blocked(c)) why = '군단 소속 도시입니다';
+  else if (!f?.alive || !c.officers.length) why = '명령할 주둔 무장이 없습니다';
+  else if (c.gold < 100) why = '금 100 필요';
+  else if (f.ap < ap) why = '행동력 ' + ap + ' 필요';
+  else if (kind === 'officer' && game.recruitChance(c.id, idx) <= 0) why = '등용할 수 없는 무장입니다';
+  return { ap, why };
+}
+function personnelUiButton(game, c, kind, idx, label) {
+  const info = personnelUiInfo(game,c,kind,idx);
+  const attrs = kind === 'search' ? 'id="cmd-search"' : 'class="cmd cmd-rec" data-i="'+idx+'"';
+  return `<span style="display:inline-flex;flex-direction:column;vertical-align:top;max-width:100%"><button ${kind === 'search' ? 'class="cmd" ' : ''}${attrs} ${info.why ? 'disabled' : ''}>${label}·AP${info.ap})</button>${info.why ? `<small class="fac-why" role="status">${info.why}</small>` : ''}</span>`;
+}
 function equipmentUiInfo(game, c, family, key) {
   const ship = family === 'ship', spec = (ship ? SHIP_BUILD : SIEGE_BUILD)[key];
   if (!c || c.force == null || !game.forces[c.force] || !spec) return { why: '도시/종류 없음' };
@@ -836,7 +852,7 @@ function showCityPanel(c) {
       <button class="cmd" id="cmd-fac">시설 건설</button>
       ${(c.burn ?? 0) > 0 ? '<span style="color:#ff9a4a;display:block;margin:4px 0">불이 붙었습니다 (' + c.burn + '턴, 턴당 수비병 -3%) — 성 주변 아군 부대가 소화할 수 있습니다</span>' : ''}
       ${c.leveeBroken ? '<button class="cmd" id="cmd-levee">제방 보수 (금300)</button>' : ''}
-      <button class="cmd" id="cmd-search">수색 (금100)</button>
+      ${personnelUiButton(game,c,'search',null,'수색 (금100')}
       ${domesticUiButton(game,c,'cmd-patrol','patrol','치안 순찰 (금100·AP20)')}
       <button class="cmd" id="cmd-trade">상인</button>
       <button class="cmd" id="cmd-diplo">외교</button>
@@ -863,7 +879,7 @@ function showCityPanel(c) {
     html += `<h3 style="margin-top:10px">재야 무장 (${free.length})</h3>`;
     for (const o of free) {
       html += officerRow(o.idx);
-      if (mine && game.recruitChance(c.id, o.idx) > 0) html += `<button class="cmd cmd-rec" data-i="${o.idx}">등용 (금100·성공률 ${Math.round(game.recruitChance(c.id, o.idx)*100)}%)</button>`;
+      if (mine && game.recruitChance(c.id, o.idx) > 0) html += personnelUiButton(game,c,'officer',o.idx,`등용 (금100·성공률 ${Math.round(game.recruitChance(c.id, o.idx)*100)}%`);
     }
   }
   const caps = game.captiveOfficers ? game.captiveOfficers(c.id) : []; // R111: 억류 포로 (매뉴얼 捕虜 — 등용·해방 가능)
@@ -872,7 +888,7 @@ function showCityPanel(c) {
     for (const o of caps) {
       html += officerRow(o.idx) + `<span style="font-size:12px;color:#c96">충성 ${o.state?.loyal ?? '?'} · 원 소속 ${game.forceName(o.state?.force)}</span>`;
       if (mine) {
-        if (game.recruitChance(c.id, o.idx) > 0) html += `<button class="cmd cmd-rec" data-i="${o.idx}">등용 (금100·성공률 ${Math.round(game.recruitChance(c.id, o.idx)*100)}%)</button>`;
+        if (game.recruitChance(c.id, o.idx) > 0) html += personnelUiButton(game,c,'officer',o.idx,`등용 (금100·성공률 ${Math.round(game.recruitChance(c.id, o.idx)*100)}%`);
         html += `<button class="cmd cmd-rel" data-i="${o.idx}">석방 (기교P +50)</button>`;
       }
     }
@@ -894,12 +910,12 @@ function showCityPanel(c) {
     $('cmd-fac').onclick = () => showFacilities(c);
     if ($('cmd-levee')) $('cmd-levee').onclick = () => { game.repairLevee(c.id); refreshAll(); showCityPanel(c); }; // R28
     $('cmd-diplo').onclick = () => showDiplomacy(c);
-    $('cmd-search').onclick = () => { game.searchCity(c.id); refreshAll(); showCityPanel(c); };
+    $('cmd-search').onclick = () => { if (!personnelUiInfo(game,c,'search').why) game.searchCity(c.id); refreshAll(); showCityPanel(c); };
     $('cmd-trade').onclick = () => showTrade(c);
     $('cmd-advisor').onclick = () => showAdvisor(c);
     p.querySelectorAll('.cmd-rwd').forEach(b => b.onclick = () => { const ok = game.rewardOfficers(c.id, [Number(b.dataset.i)]); refreshAll(); showCityPanel(c); if (!ok) game.log(game.lastRewardWhy ?? '포상할 수 없습니다', true); }); // 褒賞
     p.querySelectorAll('.cmd-office').forEach(sel => sel.onchange = () => { const ok = game.appointOffice(c.id, Number(sel.dataset.i), Number(sel.value)); refreshAll(); showCityPanel(c); if (!ok) { game.log(game.lastOfficeWhy ?? '임명할 수 없습니다', true); refreshLog(); } }); // 官職
-    p.querySelectorAll('.cmd-rec').forEach(b => b.onclick = () => { const ok = game.recruitOfficer(c.id, Number(b.dataset.i)); refreshAll(); showCityPanel(c); if (!ok && game.lastRecruitWhy) { game.log(game.lastRecruitWhy, true); game.lastRecruitWhy = null; refreshLog(); } if (game.pendingDebate) showDebate(); }); // R11: 등용 실패 시 설전 발동 / R111: 비용 부족 사유 안내
+    p.querySelectorAll('.cmd-rec').forEach(b => b.onclick = () => { if (personnelUiInfo(game,c,'officer',Number(b.dataset.i)).why) return; const ok = game.recruitOfficer(c.id, Number(b.dataset.i)); refreshAll(); showCityPanel(c); if (!ok && game.lastRecruitWhy) { game.log(game.lastRecruitWhy, true); game.lastRecruitWhy = null; refreshLog(); } if (game.pendingDebate) showDebate(); }); // R11: 등용 실패 시 설전 발동 / R111: 비용 부족 사유 안내
     p.querySelectorAll('.cmd-rel').forEach(b => b.onclick = () => { const ok = game.releaseCaptive(c.id, Number(b.dataset.i)); refreshAll(); showCityPanel(c); if (!ok && game.lastReleaseWhy) { game.log(game.lastReleaseWhy, true); game.lastReleaseWhy = null; refreshLog(); } }); // R111: 포로 석방 + 비용 부족 사유 안내
   }
   const legManage = $('cmd-legion');
