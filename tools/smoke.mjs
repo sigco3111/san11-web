@@ -1105,6 +1105,7 @@ if (g.units.find(u => u.id === 9999) && g.units.find(u => u.id === 9999).qi === 
   // 도시 전법: 병력·내구 감소
   const ec = g21.cities.find(c => c.force === ef);
   me._tacTurn = -1; me.x = ec.lon - 1; me.z = ec.lat;
+  ec.troops = 100000; ec.hp = 100000; // R157: 피해만 검사하는 첫 단계는 함락되지 않게 분리한 명시fixture
   const ct0 = ec.troops, ch0 = ec.hp;
   if (g21.fireTactic(me.id, { type: 'city', id: ec.id }) || ec.troops !== ct0) { console.log('FAIL: R15 R34 규칙: 비병기 도시 전법 차단'); process.exit(1); } // R34: 도시 대상 전법은 병기만
   { const ld = g21.officers[me.officers[0]]; ld.apt = ld.apt ?? {}; for (let k = 0; k < 12; k++) ld.apt[k] = 'S'; me.type = 'catapult'; me.qi = 100; me._tacTurn = -1; }
@@ -1112,6 +1113,8 @@ if (g.units.find(u => u.id === 9999) && g.units.find(u => u.id === 9999).qi === 
   // 함락: 잔여 병력·내구 소진 → 점령
   me._tacTurn = -1; me.qi = 100; ec.force = ef; ec.troops = 100; ec.hp = 10;
   const fr = g21.fireTactic(me.id, { type: 'city', id: ec.id }); if (!fr || ec.force !== pf) { console.log('FAIL: R15 직접 전법 함락', ec.force, fr, me.qi, me.type, pf, me.force, ec.troops, ec.hp); process.exit(1); }
+  if (g21.units.includes(me) || !ec.officers.includes(me.officers[0]) || g21.officers[me.officers[0]].state.city !== ec.id) { console.log('FAIL: R157 전법 함락 공격부대 입성'); process.exit(1); }
+  if (ec.officers.some(i => g21.officers[i]?.state.force !== pf)) { console.log('FAIL: R157 전법 함락 수비로스터 정리'); process.exit(1); }
   // 화계: 성공(확률 스텁 0) — 기력 -30, 병력 6% 소각
   const rand0 = Math.random;
   const intIdx = Object.values(g21.officers).find(o => o.state?.force === pf && o.int >= 90)?.idx ?? leadIdx;
@@ -2783,4 +2786,4 @@ console.log('sample logs:'); for (const l of g.logs.slice(-8)) console.log(' ', 
     if (!/금이 부족합니다/.test(g.lastRecruitWhy ?? '')) fail('등용 금 안내 없음', g.lastRecruitWhy);
   }
   console.log('R112 시설 소화·비용 안내 게이트 PASS (소화 성공·사거리/미점화 차단·기력 소모·쿨다운·석방 AP·등용 AP/금 안내)');
-      }
+    }
