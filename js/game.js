@@ -21,9 +21,9 @@ export function restoreOfficer(o, st) { // 저장 복원 공통: 상태 대입 +
   o.state = st;
   if (st.office > 0 && st.force == null) { st.office = 0; st._officeBonus = null; } // R86: 소속 없는 임명 상태 정리 — r84 AI 재야 임명 결함·세력 멸망으로만 발생 가능한 불법 상태이므로 복원 시 해임으로 정규화 (정상 저장에는 존재 불가)
   const research = {}, office = {};
-  const add = (src, dst) => { for (const [k, v] of Object.entries(src ?? {})) { o[k] = Math.min(100, (o[k] ?? 50) + v); dst[k] = (dst[k] ?? 0) + v; } };
+  const add = (src, dst) => { for (const [k, v] of Object.entries(src ?? {})) { const before = o[k] ?? 50; o[k] = Math.min(100, before + v); dst[k] = (dst[k] ?? 0) + o[k] - before; } }; // R163: 상한에 잘린 이론 가산을 나중에 과잉 회수하지 않음
   add(st.bonus, research); // R13 능력연구 복원
-  add(st._officeBonus, office); // R84 관직 능력 가산 복원 — 없으면 reload 후 관직 능력 상승이 소실되는 결함
+  add(st._officeBonus, office); if (st._officeBonus) st._officeBonus = { ...office }; // R84 관직 능력 가산 복원 — 없으면 reload 후 관직 능력 상승이 소실되는 결함
   if (st.grantSkill) o.skill = st.grantSkill; // R13 연구 특기 복원
   o.__restored = { research, office }; // o.state가 아니라 o에 둠 — officerStates 저장에는 포함되지 않음. 인게임 가산 경로(appointOffice·researchAbility)도 이 추적을 갱신해야 재복원 멱등 유지
 }
@@ -618,12 +618,18 @@ export class Game {
     const prev = st._officeBonus ?? {};
     for (const [k, v] of Object.entries(prev)) o[k] -= v; // 이전 관직 능력 가산 원복
     const nb = OFFICES[rank]?.bonus ?? {};
-    for (const [k, v] of Object.entries(nb)) o[k] = Math.min(100, o[k] + v);
-    st._officeBonus = { ...nb }; st.office = rank;
-    if (o.__restored) o.__restored.office = { ...nb }; // 멱등 추적 동기화 — 임명·해임 후 재복원 시 이중 가산·오제거 방지
+    const applied = {};
+    for (const [k, v] of Object.entries(nb)) { const before = o[k]; o[k] = Math.min(100, before + v); applied[k] = o[k] - before; }
+    st._officeBonus = applied; st.office = rank;
+    if (o.__restored) o.__restored.office = { ...applied }; // 멱등 추적 동기화 — 임명·해임 후 재복원 시 이중 가산·오제거 방지
     if (rank === 0) this.log(`【관직】${josa(o.name_ko, ['이','가'])} 해임되었습니다`, c.force === this.playerForce);
     else this.log(`【관직】${josa(o.name_ko, ['이','가'])} ${josa(OFFICES[rank].name, ['으로','로'])} 임명되었습니다 (지휘 +${OFFICES[rank].cmd}·봉록 +${OFFICES[rank].sal})`, c.force === this.playerForce);
     return true;
+  }
+  _clearOffice(o) { // 소속을 잃으면 관직과 실제 가산을 회수. 연구 가산은 유지
+    const st = o?.state; if (!st || !(st.office > 0)) return;
+    for (const [k, v] of Object.entries(st._officeBonus ?? {})) o[k] = Math.max(1, (o[k] ?? 50) - v);
+    st.office = 0; st._officeBonus = null; if (o.__restored) o.__restored.office = {};
   }
   meritGrade(i) { return Math.min(8, Math.floor((this.officers[i]?.state?.merit ?? 0) / 500)); } // 공적 500당 1등급 (자체 수치)
   rewardOfficers(cityId, idxs) { // 포상(褒賞, 매뉴얼 P.39): 금 100·AP 5/인, 충성 +3 (상승 폭은 매뉴얼 미기재 — 자체 수치). 충성 100 불가·1턴 1인 1회·종군 무장 불가·도시별·복수 동시 가능
@@ -1373,6 +1379,7 @@ export class Game {
           const st = this.officers[i]?.state;
           if (!st || (st.status !== 'serving' && st.status !== 'taesu')) continue;
           if ((st.loyal ?? 70) <= 25 && Math.random() < 0.15) {
+            this._clearOffice(this.officers[i]); // R163: 하야도 멸망과 같은 해임 경로, 저장 전후 능력 정합
             st.status = 'free'; st.force = null; st.city = null; st.found = false;
             c.officers = c.officers.filter(x => x !== i);
             this.log(`【하야】${josa(this.officers[i].name_ko, ['이','가'])} 충성이 낮아 【${this.forceName(c.force)}】${josa(this.forceName(c.force), ['을','를']).slice(-1)} 떠났습니다`, true);
@@ -1465,7 +1472,7 @@ export class Game {
           const st = o.state;
           if (st.status === 'captive') { const hc = this.cityById[st.city]; if (hc?.captives) hc.captives = hc.captives.filter(j => j !== o.idx); delete st.captor; delete st.captiveSince; } // R111: 멸망 세력 소속 포로는 억류지에서 재야로
           st.force = null; st.status = 'free'; st.found = false;
-          if (st.office > 0) { for (const [k, v] of Object.entries(st._officeBonus ?? {})) o[k] = Math.max(1, (o[k] ?? 50) - v); st.office = 0; st._officeBonus = null; if (o.__restored) o.__restored.office = {}; }
+          this._clearOffice(o);
         }
       }
     }
@@ -2294,9 +2301,9 @@ export class Game {
     f.techP -= AB_P[lv]; f.ab[branch] = lv + 1;
     const statNm = { war: '무력', ldr: '통솔', int: '지력', pol: '정치' }[stat];
     for (const o of this.availableOfficers(fid)) { // R111: 억류 포로는 연구 가산 제외
-      o[stat] = Math.min(100, (o[stat] ?? 50) + 2);
-      if (o.state) { o.state.bonus = o.state.bonus ?? {}; o.state.bonus[stat] = (o.state.bonus[stat] ?? 0) + 2; } // 저장 영속용
-      if (o.__restored) o.__restored.research = { ...(o.__restored.research ?? {}), [stat]: ((o.__restored.research?.[stat]) ?? 0) + 2 }; // 멱등 추적 동기화
+      const before = o[stat] ?? 50; o[stat] = Math.min(100, before + 2); const applied = o[stat] - before;
+      if (o.state) { o.state.bonus = o.state.bonus ?? {}; o.state.bonus[stat] = (o.state.bonus[stat] ?? 0) + applied; } // 저장 영속용
+      if (o.__restored) o.__restored.research = { ...(o.__restored.research ?? {}), [stat]: ((o.__restored.research?.[stat]) ?? 0) + applied }; // 멱등 추적 동기화
     }
     this.log(`【연구】${this.forceName(fid)} 능력연구 「${branch}」 ${lv + 1}단계 완료 (기교P ${AB_P[lv]} 소비, 소속 무장 전원 ${statNm} +2)`, fid === this.playerForce);
     if (lv + 1 === 3) {
