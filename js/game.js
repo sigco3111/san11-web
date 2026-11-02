@@ -1040,12 +1040,39 @@ produceArms(id,key){const g=this;const c=g.cityById[id],a=this.armsInfo(c,key);i
   availableOfficers(fid) { // R111: 소속 무장 중 포로 제외 (임무·연구·편성 등 활동 대상)
     return this.forceOfficers(fid).filter(o => o.state?.status !== 'captive');
   }
+  foreignRecruitTarget(cityId, officerIdx) { // R193 private candidate: garrisoned foreign officers only; field/travel scope remains open
+    const c = this.cityById[cityId], t = this.officers[officerIdx], st = t?.state;
+    const old = this.forces[st?.force], home = this.cityById[st?.city];
+    if (!c || c.force == null || !this.forces[c.force]?.alive || !st || !old?.alive || st.force === c.force) return false;
+    if (!['serving', 'taesu'].includes(st.status) || old.ruler === officerIdx || (st.loyal ?? 70) >= 100) return false;
+    if (!home || home.force !== st.force || !home.officers.includes(officerIdx) || this.units.some(u => u.officers.includes(officerIdx))) return false;
+    const rel = this.relOf(officerIdx);
+    if (rel.sworn.some(i => this.officers[i]?.state?.force === st.force) || (rel.spouse != null && this.officers[rel.spouse]?.state?.force === st.force)) return false;
+    return true;
+  }
+  _acceptRecruit(c, t) { // common completion, no second payment or success draw
+    const oldId = t.state.force;
+    const foreign = ['serving', 'taesu'].includes(t.state.status) && oldId != null && oldId !== c.force;
+    if (foreign) {
+      this._clearOffice(t); // foreign office is not a post granted by the new ruler
+      const old = this.forces[oldId];
+      if (old?.advisor === t.idx) old.advisor = null;
+      for (const l of [...(old?.legions ?? [])]) if (l.governor === t.idx) this.disbandLegion(oldId, l.id); // no invented successor assignment
+    }
+    for (const cc of this.cities) {
+      cc.officers = cc.officers.filter(i => i !== t.idx);
+      cc.captives = (cc.captives ?? []).filter(i => i !== t.idx);
+    }
+    delete t.state.captor; delete t.state.captiveSince;
+    t.state.status = 'serving'; t.state.force = c.force; t.state.city = c.id;
+    c.officers.push(t.idx);
+  }
   recruitChance(cityId, officerIdx) { // 등용 성공률 (자체 수치): 사자 매력·상대 매력·충성·군주 매력 반영
     const c = this.cityById[cityId], t = this.officers[officerIdx];
     if (!c || c.force == null || !this.forces[c.force]?.alive || !c.officers.length) return 0;
     if (!t?.state) return 0;
     const ownCap = t.state.status === 'captive' && t.state.city === cityId && t.state.captor === c.force; // R111: 자세력이 억류한 포로 (매뉴얼 登用 대상)
-    if (!(t.state.status === 'free' && t.state.city === cityId) && !ownCap) return 0;
+    if (!(t.state.status === 'free' && t.state.city === cityId) && !ownCap && !this.foreignRecruitTarget(cityId, officerIdx)) return 0;
     if (t.state.force != null && this.forces[t.state.force]?.ruler === t.idx) return 0; // R111: 타 세력 군주는 등용 불가 (매뉴얼 登用できない武将 — 他勢力の君主)
     if (t.state.status === 'free' && t.state.found === false) return 0; // 미발견 재야는 수색 필요
     const envoy = Math.max(...c.officers.map(i => this.officers[i].chr));
@@ -1060,7 +1087,8 @@ produceArms(id,key){const g=this;const c=g.cityById[id],a=this.armsInfo(c,key);i
     return Math.max(0.1, Math.min(0.9, 0.45 + (envoy - t.chr)/200 + (ruler - 50)/500 - loyal/400 + (this.cityHasSkill(c, '등용') ? 0.1 : 0) + (this.cityHasSkill(c, '이간') ? 0.1 : 0) + (ownCap ? 0.15 : 0) + mod)); // R17: 이간 특기 +0.1 / R111: 포로 등용 +0.15 (자체 수치)
   }
   recruitOfficer(cityId, officerIdx) { // 재야 무장 등용: 금 100, AP 20 (자체 규칙)
-    const c = this.cityById[cityId], f = this.forces[c.force];
+    const c = this.cityById[cityId], f = this.forces[c?.force];
+    if (!c || c.force == null || !f?.alive) return false;
     if (this._blocked(c)) return false; // 군단 소속
     const apc = Math.ceil(20 * this.apMult(c, 'personnel')); // R13 인재부
     if (c.gold < 100) { this.lastRecruitWhy = '금이 부족합니다 (100)'; return false; } // R111: 실패 사유 안내 (플레이어 무응답 방지)
@@ -1073,9 +1101,7 @@ produceArms(id,key){const g=this;const c=g.cityById[id],a=this.armsInfo(c,key);i
     if (Math.random() < p) {
       const envoyIdx = c.officers.length ? [...c.officers].sort((a, b) => this.officers[b].chr - this.officers[a].chr)[0] : null;
       if (envoyIdx != null) this.gainMerit(envoyIdx, MERIT.recruit);
-      if (t.state.captor != null) { c.captives = (c.captives ?? []).filter(j => j !== officerIdx); delete t.state.captor; delete t.state.captiveSince; } // R111: 포로 등용 — 억류 명단에서 해제
-      t.state.status = 'serving'; t.state.force = c.force;
-      if (!c.officers.includes(officerIdx)) c.officers.push(officerIdx);
+      this._acceptRecruit(c, t);
       this.log(`【등용】${josa(t.name_ko, ['이','가'])} 【${this.forceName(c.force)}】에 등용되었습니다 (${c.name_ko}, 사자 매력 ${envoy})`, true);
       return true;
     }
@@ -2568,7 +2594,7 @@ produceArms(id,key){const g=this;const c=g.cityById[id],a=this.armsInfo(c,key);i
       }
       else if (ctx.kind === 'alliance') { const dd = this.diploOf(ctx.fid, ctx.tid); dd.allianceUntil = this.turn + 24; this.log(`【설전】${josa(an, ['이','가'])} ${josa(bn, ['을','를'])} 논파! ${josa(this.forceName(ctx.fid), ['과','와'])} ${josa(this.forceName(ctx.tid), ['이','가'])} 24턴 동맹을 맺었습니다!`, true); }
       else if (ctx.kind === 'truce') { const dd = this.diploOf(ctx.fid, ctx.tid); dd.truceUntil = this.turn + 12; const v = this.changeRelation(ctx.fid, ctx.tid, 30); this.log(`【설전】${josa(an, ['이','가'])} ${josa(bn, ['을','를'])} 논파! 정전 성립 (12턴간 공격 금지, 관계 → ${v})`, true); }
-      else if (ctx.kind === 'recruit') { const c = this.cityById[ctx.cityId], t = this.officers[ctx.officerIdx]; if (c && t?.state && t.state.force == null) { t.state.status = 'serving'; t.state.force = c.force; if (!c.officers.includes(t.idx)) c.officers.push(t.idx); this.gainMerit(d.a.o, MERIT.recruit); this.log(`【설전】${an}의 설파 끝에 ${josa(t.name_ko, ['이','가'])} 【${this.forceName(c.force)}】에 등용되었습니다! (${c.name_ko})`, true); } }
+      else if (ctx.kind === 'recruit') { const c = this.cityById[ctx.cityId], t = this.officers[ctx.officerIdx]; if (c && t?.state && c.force === ctx.fid && this.recruitChance(c.id, t.idx) > 0) { this._acceptRecruit(c, t); this.gainMerit(d.a.o, MERIT.recruit); this.log(`【설전】${an}의 설파 끝에 ${josa(t.name_ko, ['이','가'])} 【${this.forceName(c.force)}】에 등용되었습니다! (${c.name_ko})`, true); } }
     } else if (w === 'b') {
       if (ctx.kind === 'alliance' || ctx.kind === 'truce') { const v = this.changeRelation(ctx.fid, ctx.tid, -5); this.log(`【설전】${josa(bn, ['이','가'])} ${josa(an, ['을','를'])} 논파 — 협상 결렬 (관계 → ${v} ${this.relStage(v)})`, ctx.fid === this.playerForce || ctx.tid === this.playerForce); }
       else this.log(`【설전】${josa(bn, ['이','가'])} ${josa(an, ['을','를'])} 논파 — 등용 결렬`, ctx.fid === this.playerForce);
