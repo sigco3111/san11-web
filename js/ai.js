@@ -1,5 +1,5 @@
-import {supply} from './arms-policy.js?v=r189';
-import { SHIP_TYPES, TRAPS, FIELD_FACS, SIEGE_TYPES } from './game.js?v=r189';
+import {supply} from './arms-policy.js?v=r190';
+import { SHIP_TYPES, TRAPS, FIELD_FACS, SIEGE_TYPES } from './game.js?v=r190';
 // 세력 AI — 위임 시 플레이어 세력도 이 AI가 운영 (위임·샌드박스의 실질 주체)
 export function aiThink(game, fid, legion = null) { // legion 지정 시 그 군단 소속 도시만 운영 (도독 위임)
   const f = game.forces[fid];
@@ -213,7 +213,12 @@ export function aiThink(game, fid, legion = null) { // legion 지정 시 그 군
     const shipType = (c.dous ?? 0) > 0 ? 'dou' : (c.lous ?? 0) > 0 ? 'lou' : (c.junks ?? 0) > 0 ? 'junk' : null;
     if (shipType && f.ap >= 40 && game.cityFac(c, '조선소').length && game.nearestWater(c.lon, c.lat) && c.troops >= 9000) {
       let bn = null, bnd = 12;
-      for (const e of enemyCities) { const d = Math.hypot(e.lon - c.lon, e.lat - c.lat); if (d < bnd && game.nearestWater(e.lon, e.lat)) { bnd = d; bn = e; } }
+      const [sx, sz] = game.nearestWater(c.lon, c.lat);
+      const scout = { force: fid, type: shipType, x: sx, z: sz };
+      for (const e of enemyCities) {
+        const d = Math.hypot(e.lon - c.lon, e.lat - c.lat);
+        if (d < bnd && game.nearestWater(e.lon, e.lat) && game.findPath(scout, e.lon, e.lat)) { bnd = d; bn = e; }
+      }
       const n2 = Math.min(c.troops - 3000, 5000);
       if (bn && n2 >= 3000) {
         const offs2 = [...c.officers].sort((a, b) => game.officers[b].war - game.officers[a].war);
