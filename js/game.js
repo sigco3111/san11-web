@@ -693,11 +693,20 @@ export class Game {
   }
   _blocked(c) { return c && c.force === this.playerForce && !this.delegated && !this._legionActing && !!this.cityLegion(c.id); } // 군단 소속 도시는 수동 명령 불가
   cityLegion(cityId) { const f = this.forces[this.cityById[cityId]?.force]; return (f?.legions ?? []).find(l => l.cities.includes(cityId)) ?? null; }
+  activeGovernor(fid, officerIdx) {
+    const f = this.forces[fid], st = this.officers[officerIdx]?.state;
+    return !!(f?.alive && st?.force === fid && ['ruler', 'taesu', 'serving'].includes(st.status));
+  }
+  _reconcileLegions() { // R195: lost governor returns cities to direct control, without appointing a successor
+    for (const f of Object.values(this.forces)) for (const l of [...(f.legions ?? [])]) {
+      if (!this.activeGovernor(f.id, l.governor)) this.disbandLegion(f.id, l.id);
+    }
+  }
   createLegion(governorIdx, cityIds, policy, target = null) { // 제2군단 이후 편성 (제1군단=군주 직할은 항상 플레이어)
     const o = this.officers[governorIdx];
     const fid = o?.state?.force;
     const f = this.forces[fid];
-    if (!o || fid == null || !f?.alive) return false;
+    if (!o || fid == null || !this.activeGovernor(fid, governorIdx)) return false;
     if (!['delegate', 'attack_city', 'attack_force'].includes(policy)) return false;
     const own = new Set(this.forceCities(fid).map(c => c.id));
     const cities = [...new Set(cityIds)].filter(id => own.has(id) && !this.cityLegion(id));
@@ -1448,6 +1457,7 @@ produceArms(id,key){const g=this;const c=g.cityById[id],a=this.armsInfo(c,key);i
           if ((st.loyal ?? 70) <= 25 && Math.random() < 0.15) {
             this._clearOffice(this.officers[i]); // R163: 하야도 멸망과 같은 해임 경로, 저장 전후 능력 정합
             st.status = 'free'; st.force = null; st.city = c.id; st.found = false; // R177: 하야 후에도 현재 도시에 미발견 재야로 남아 수색·등용 가능
+            this._reconcileLegions(); // R195: resigned governor returns control now
             c.officers = c.officers.filter(x => x !== i);
             this.log(`【하야】${josa(this.officers[i].name_ko, ['이','가'])} 충성이 낮아 【${this.forceName(c.force)}】${josa(this.forceName(c.force), ['을','를']).slice(-1)} 떠났습니다`, true);
           }
@@ -1510,6 +1520,7 @@ produceArms(id,key){const g=this;const c=g.cityById[id],a=this.armsInfo(c,key);i
       const hold = this.cityById[st.city];
       st.loyal = Math.max(0, (st.loyal ?? 70) - 2 - (hold && this.cityFac(hold, '부절대').length ? 2 : 0));
     }
+    this._reconcileLegions(); // R195: no AI orders under an absent governor, including old imported state
     // 세력 AP 회복·AI
     for (const f of Object.values(this.forces)) {
       if (!f.alive) continue;
@@ -1543,6 +1554,7 @@ produceArms(id,key){const g=this;const c=g.cityById[id],a=this.armsInfo(c,key);i
         }
       }
     }
+    this._reconcileLegions(); // R195: extinction can invalidate governors after the AI phase
     // R14: 천하 통일 판정 — 모든 도시를 한 세력이 제압 (설계안 102행 매뉴얼 문구)
     if (!this.over && !this.unified) {
       const owners = new Set(this.cities.map(c => c.force).filter(x => x != null));
@@ -1817,6 +1829,7 @@ produceArms(id,key){const g=this;const c=g.cityById[id],a=this.armsInfo(c,key);i
     const hold = this.cities.filter(c => c.force === captorForce).sort((a, b) => Math.hypot(a.lon - x, a.lat - z) - Math.hypot(b.lon - x, b.lat - z))[0];
     if (!hold) return false;
     st.status = 'captive'; st.captor = captorForce; st.city = hold.id; st.captiveSince = this.turn;
+    this._reconcileLegions(); // R195: captured governor no longer commands the legion
     hold.captives = hold.captives ?? [];
     if (!hold.captives.includes(o.idx)) hold.captives.push(o.idx);
     this.log(`【포박】${josa(o.name_ko, ['이','가'])} 【${this.forceName(captorForce)}】의 포로가 되었습니다 (${hold.name_ko} 억류)`, captorForce === this.playerForce || st.force === this.playerForce);
@@ -1851,6 +1864,7 @@ produceArms(id,key){const g=this;const c=g.cityById[id],a=this.armsInfo(c,key);i
       c.officers = c.officers.filter(j => j !== i);
     }
     this._restoreUnrosteredOfficers();
+    this._reconcileLegions(); // R195: legacy save governor validity, idempotent
   }
   _restoreUnrosteredOfficers(fid = null) { // R159: 기존 로드 복귀 경로 재사용. fid 지정 시 그 세력만
     const inUnit = new Set(); for (const u of this.units) for (const i of u.officers) inUnit.add(i);
