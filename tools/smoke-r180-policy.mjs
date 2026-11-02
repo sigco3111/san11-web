@@ -13,7 +13,7 @@ ok('next month resets budget without altering old stamp',()=>{g.month=2;assert.e
 ok('changed owner old budget not charged',()=>{g.month=1;c.force=7;g.forces[7]={ap:100};assert.equal(budgetInfo(g,c,'spears').spent,0)});
 ({g,c}=setup());ok('failed engine call does not advance ledger',()=>{g.produceArms=()=>false;assert.equal(safeProduce(g,c,'spears'),false);assert.equal(c.armsBudget,undefined)});
 ({g,c}=setup());ok('save reload retains monthly allowance spent',()=>{safeProduce(g,c,'spears');const restored=JSON.parse(JSON.stringify(c));assert.equal(budgetInfo(g,restored,'spears').spent,200)});
-({g,c}=setup());ok('city JSON saves allowance only after success',()=>{let saved;g.autosave=()=>{saved=JSON.parse(JSON.stringify(c))};safeProduce(g,c,'spears');assert.equal(saved.armsBudget.gold,200)});
+({g,c}=setup());ok('city JSON saves allowance only after success',()=>{let saved;g.produceArms=()=>{c.gold-=200;g.forces[5].ap-=10;saved=JSON.parse(JSON.stringify(c));return true};safeProduce(g,c,'spears');assert.equal(saved.armsBudget.gold,200)});
 console.log(n+' policy research gates PASS');
 // Actual engine integration boundaries, not mocked estimates.
 const {Game}=await import('../js/game.js');const{aiThink}=await import('../js/ai.js');const scen=JSON.parse(fs.readFileSync('data/scenario-190.json'));const officers=Object.fromEntries(JSON.parse(fs.readFileSync('data/officers670.json')).map(o=>[o.idx,o]));
@@ -25,4 +25,9 @@ ok('used shared facility no ledger charge',()=>{assert.equal(safeProduce(real,ci
 ok('manual legion boundary stays blocked',()=>{real.turn++;real.delegated=false;real.forces[5].legions=[{id:2,cities:[city.id]}];assert.equal(budgetInfo(real,city,'spears').why,'군단 소속 도시')});
 ok('acting legion uses same paid command and shared budget',()=>{real._legionActing=true;assert(safeProduce(real,city,'spears'));assert.equal(city.armsBudget.gold,300);real._legionActing=false});
 ok('JSON budget reload repeated turn cannot reset',()=>{const restored=JSON.parse(JSON.stringify(city));assert.equal(budgetInfo(real,restored,'spears').why,'군단 소속 도시');real._legionActing=true;assert.equal(budgetInfo(real,restored,'spears').why,'이번 턴 생산 횟수 소진');real._legionActing=false});
+console.log(n+' total policy gates PASS');
+
+({g,c}=setup());ok('engine autosave sees budget at same instant as stock payment',()=>{let captured;g.produceArms=()=>{captured=structuredClone(c.armsBudget);return true};assert(safeProduce(g,c,'spears'));assert.equal(captured.gold,200)});
+({g,c}=setup());ok('engine failure restores pre-existing ledger identity',()=>{c.armsBudget={month:'189-12',force:5,gold:400};const old=c.armsBudget;g.produceArms=()=>false;assert.equal(safeProduce(g,c,'spears'),false);assert.equal(c.armsBudget,old)});
+({g,c}=setup());ok('engine exception rolls back staged budget',()=>{g.produceArms=()=>{throw Error('injected test')};assert.throws(()=>safeProduce(g,c,'spears'));assert.equal(Object.hasOwn(c,'armsBudget'),false)});
 console.log(n+' total policy gates PASS');
