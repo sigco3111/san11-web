@@ -1,12 +1,12 @@
 // 진입점: 화면 전환·UI·지도 연결
-import { Map3D, toWorld } from './map3d.js?v=r190';
-import { Game, SAVE_KEY, RULES, forceColor, UNIT_TYPES, ARTS, OFFICES, restoreOfficer, FIELD_FACS, TRAPS, SHIP_TYPES, TAC_SHIP_OK, josa, josaRo, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, ARMS_BUILD, AB_BRANCHES, AB_P, AB_SKILL, AB_PICK } from './game.js?v=r190';
-import { aiThink } from './ai.js?v=r190';
+import { Map3D, toWorld } from './map3d.js?v=r193';
+import { Game, SAVE_KEY, RULES, forceColor, UNIT_TYPES, ARTS, OFFICES, restoreOfficer, FIELD_FACS, TRAPS, SHIP_TYPES, TAC_SHIP_OK, josa, josaRo, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, ARMS_BUILD, AB_BRANCHES, AB_P, AB_SKILL, AB_PICK } from './game.js?v=r193';
+import { aiThink } from './ai.js?v=r193';
 
 const $ = id => document.getElementById(id);
 let DATA = null, game = null, map = null, selectedUnit = null, autoTimer = null, pendingFire = null; // R15: 직접 전법·계략 대기
 
-const BUILD_ID = 'r190'; // 빌드 ID (index.html의 meta[name=build]와 같아야 함 - 오래된 캐시된 index와 새 스크립트의 혼합 감지)
+const BUILD_ID = 'r193'; // 빌드 ID (index.html의 meta[name=build]와 같아야 함 - 오래된 캐시된 index와 새 스크립트의 혼합 감지)
 function checkBuildSkew() {
   const idx = document.querySelector('meta[name="build"]')?.content;
   if (idx === BUILD_ID) { sessionStorage.removeItem('cheonha-xi-web.skew'); return; } // 일치하면 재시도 표식 해제
@@ -19,7 +19,7 @@ checkBuildSkew();
 async function loadData() {
   const [officers, skills, portraits, s184, s190, s251] = await Promise.all(
     ['data/officers670.json','data/skills.json','data/portraits.json','data/scenario-184.json','data/scenario-190.json','data/scenario-251.json']
-      .map(u => fetch(u + '?v=r190').then(r => r.json())));
+      .map(u => fetch(u + '?v=r193').then(r => r.json())));
   const byIdx = {};
   for (const o of officers) byIdx[o.idx] = o;
   DATA = { officers: byIdx, skills, portraits, scenarios: { '184': s184, '190': s190, '251': s251 } };
@@ -973,6 +973,15 @@ function showCityPanel(c) {
       html += officerRow(o.idx);
       if (mine && game.recruitChance(c.id, o.idx) > 0) html += personnelUiButton(game,c,'officer',o.idx,`등용 (금100·성공률 ${Math.round(game.recruitChance(c.id, o.idx)*100)}%`);
     }
+  }
+  if (mine) {
+    const foreign = Object.values(DATA.officers).filter(o => game.foreignRecruitTarget(c.id, o.idx));
+    html += `<details style="margin-top:10px"><summary>타 세력 인재 등용 (${foreign.length})</summary><p style="font-size:12px;color:#aa6">도시 주둔 인재만 대상. 현재는 즉시 결과이며 출장 기간·야전 영입·AI 자동 영입은 미지원입니다. 군주·충성100·같은 소속 의형제/배우자가 있는 무장은 제외합니다. 성공하면 이 도시로 합류하며 이전 관직은 해임되고, 도독이었다면 이전 군단은 직할로 복귀합니다.</p>`;
+    for (const o of foreign) {
+      html += officerRow(o.idx) + `<small>${game.forceName(o.state.force)} · ${game.cityById[o.state.city]?.name_ko} · 충성 ${o.state.loyal ?? 70}</small>`;
+      html += personnelUiButton(game,c,'officer',o.idx,`등용 (금100·성공률 ${Math.round(game.recruitChance(c.id,o.idx)*100)}%`);
+    }
+    html += '</details>';
   }
   const caps = game.captiveOfficers ? game.captiveOfficers(c.id) : []; // R111: 억류 포로 (매뉴얼 捕虜 — 등용·해방 가능)
   if (caps.length) {
