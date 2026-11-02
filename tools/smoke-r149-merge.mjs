@@ -1,0 +1,22 @@
+import assert from'node:assert/strict';import{Game}from'../js/game.js';import{armsInfo,produceArms,mergeCandidate}from './arms-test-adapter.mjs';import fs from'node:fs';
+let save;globalThis.localStorage={setItem:(k,v)=>{save=JSON.parse(v)}};
+const scen=JSON.parse(fs.readFileSync('data/scenario-184.json')),off=Object.fromEntries(JSON.parse(fs.readFileSync('data/officers670.json')).map(o=>[o.idx,o]));let n=0;
+function setup(){const g=new Game(structuredClone(scen),structuredClone(off),{},28);g.delegated=true;const c=g.forceCities(28)[0];c.gold=10000;g.forces[28].ap=200;c.facilities=[{type:'대장간',done:true,level:1},{type:'대장간',done:true,level:2}];return{g,c}}
+const ok=(s,fn)=>{fn();console.log('PASS '+s);n++};
+let{g,c}=setup();const id=c.id;
+ok('low-level first consumes facility itself',()=>{let b=c.spears;assert(produceArms(g,id,'spears'));assert.equal(c.spears-b,500);assert.equal(c.facilities[0].armsUsedTurn,g.turn)});
+ok('reorder does not reuse spent high/low slot',()=>{c.facilities.reverse();let b=c.bows;assert(produceArms(g,id,'bows'));assert.equal(c.bows-b,1000);assert(!produceArms(g,id,'pikes'))});
+ok('both stamps persist exact turn',()=>assert(save.cities.find(x=>x.id===id).facilities.every(x=>x.armsUsedTurn===g.turn)));
+ok('next turn available',()=>{g.turn++;assert.equal(armsInfo(g,c,'spears').remaining,2)});
+({g,c}=setup());
+ok('merge unused facilities yields one Lv2 slot',()=>{assert(mergeCandidate(g,c.id,0,1));assert.equal(armsInfo(g,c,'spears').remaining,1);assert.equal(armsInfo(g,c,'spears').amount,1000)});
+({g,c}=setup());produceArms(g,c.id,'spears');
+ok('merge used into unspent survivor carries spent stamp',()=>{assert(mergeCandidate(g,c.id,1,0));assert.equal(c.facilities[0].level,3);assert(!produceArms(g,c.id,'spears'));assert.equal(save.cities.find(x=>x.id===c.id).facilities[0].armsUsedTurn,g.turn)});
+({g,c}=setup());produceArms(g,c.id,'spears');
+ok('merge unspent into spent survivor stays spent',()=>{assert(mergeCandidate(g,c.id,0,1));assert(!produceArms(g,c.id,'bows'))});
+({g,c}=setup());produceArms(g,c.id,'spears');c.facilities.splice(0,1);
+ok('demolish spent keeps unspent facility correct yield',()=>{let b=c.pikes;assert(produceArms(g,c.id,'pikes'));assert.equal(c.pikes-b,1000)});
+({g,c}=setup());produceArms(g,c.id,'spears');c.facilities.splice(1,1);
+ok('demolish unspent cannot reset spent survivor',()=>assert(!produceArms(g,c.id,'spears')));
+ok('old facility absent stamp available next turn',()=>{g.turn++;assert(produceArms(g,c.id,'spears'))});
+console.log('TOTAL '+n);
