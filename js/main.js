@@ -1,12 +1,12 @@
 // 진입점: 화면 전환·UI·지도 연결
-import { Map3D, toWorld } from './map3d.js?v=r180';
-import { Game, SAVE_KEY, RULES, forceColor, UNIT_TYPES, ARTS, OFFICES, restoreOfficer, FIELD_FACS, TRAPS, SHIP_TYPES, TAC_SHIP_OK, josa, josaRo, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, ARMS_BUILD, AB_BRANCHES, AB_P, AB_SKILL, AB_PICK } from './game.js?v=r180';
-import { aiThink } from './ai.js?v=r180';
+import { Map3D, toWorld } from './map3d.js?v=r181';
+import { Game, SAVE_KEY, RULES, forceColor, UNIT_TYPES, ARTS, OFFICES, restoreOfficer, FIELD_FACS, TRAPS, SHIP_TYPES, TAC_SHIP_OK, josa, josaRo, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, ARMS_BUILD, AB_BRANCHES, AB_P, AB_SKILL, AB_PICK } from './game.js?v=r181';
+import { aiThink } from './ai.js?v=r181';
 
 const $ = id => document.getElementById(id);
 let DATA = null, game = null, map = null, selectedUnit = null, autoTimer = null, pendingFire = null; // R15: 직접 전법·계략 대기
 
-const BUILD_ID = 'r180'; // 빌드 ID (index.html의 meta[name=build]와 같아야 함 - 오래된 캐시된 index와 새 스크립트의 혼합 감지)
+const BUILD_ID = 'r181'; // 빌드 ID (index.html의 meta[name=build]와 같아야 함 - 오래된 캐시된 index와 새 스크립트의 혼합 감지)
 function checkBuildSkew() {
   const idx = document.querySelector('meta[name="build"]')?.content;
   if (idx === BUILD_ID) { sessionStorage.removeItem('cheonha-xi-web.skew'); return; } // 일치하면 재시도 표식 해제
@@ -19,7 +19,7 @@ checkBuildSkew();
 async function loadData() {
   const [officers, skills, portraits, s184, s190, s251] = await Promise.all(
     ['data/officers670.json','data/skills.json','data/portraits.json','data/scenario-184.json','data/scenario-190.json','data/scenario-251.json']
-      .map(u => fetch(u + '?v=r180').then(r => r.json())));
+      .map(u => fetch(u + '?v=r181').then(r => r.json())));
   const byIdx = {};
   for (const o of officers) byIdx[o.idx] = o;
   DATA = { officers: byIdx, skills, portraits, scenarios: { '184': s184, '190': s190, '251': s251 } };
@@ -78,6 +78,7 @@ function startGame(scenId, fid) {
   refreshAll();
 }
 function enterGame() {
+  game.onSaveStatus = refreshSaveNotice;
   show('screen-game');
   if (!map) {
     map = new Map3D($('map-canvas'));
@@ -111,6 +112,12 @@ function refreshAll() {
   refreshHud(); refreshLog();
   game.autosave(); // R13 회귀 방지: UI에서 실행한 모든 커맨드는 실행 직후 영속 (턴 종료 전 리로드 소실 방지)
 }
+function refreshSaveNotice() {
+ let el=$('save-notice');if(!el){el=document.createElement('div');el.id='save-notice';el.setAttribute('role','status');el.style.cssText='position:fixed;bottom:10px;left:10px;right:10px;z-index:1100;background:#4b211c;color:#fff;padding:12px;border:1px solid #f99;border-radius:6px;font-size:14px';document.body.append(el)}
+ el.replaceChildren();el.hidden=!game?.saveFailed;if(el.hidden)return;
+ const text=document.createElement('span');text.textContent='저장하지 못했습니다. 현재 진행은 이 화면에만 있습니다. 새로고침하거나 닫지 마세요. ';const b=document.createElement('button');b.textContent='저장 다시 시도';b.onclick=()=>{game.autosave();refreshSaveNotice()};el.append(text,b);
+}
+function saveAndTitle() {if(game?.autosave()){location.reload();return}refreshSaveNotice();modal('저장하지 못해 타이틀로 이동하지 않았습니다. 이 화면을 유지하고 저장을 다시 시도하세요.',[['계속',()=>{}]])}
 function worldUnit(u) { const [x, z] = toWorld(u.x, u.z); return { id: u.id, x, z, label: u.label, type: u.type }; } // R16: 병종별 모델용 type
 function refreshOpenPanel() { // R130: 일기토·설전·수신 외교 결정 후 열린 패널 정체 방지 (관계 수치 미갱신 관측 결함 수정) — 턴 종료 후속(R108)과 같은 기준으로 현재 보기만 다시 그림
   const p = $('panel');
@@ -1223,8 +1230,8 @@ async function boot() {
     ['세력 현황', () => showDashboard()], // R97
     ['연감', () => showChronicle()], // R14
     ['월 결산', () => showReview()], // R132
-    ['저장하고 타이틀로', () => { game?.autosave(); location.reload(); }],
-    ['타이틀로 (저장은 자동)', () => location.reload()],
+    ['저장하고 타이틀로', saveAndTitle],
+    ['타이틀로 (저장은 자동)', saveAndTitle],
     ['계속', () => {}],
   ]);
 }
