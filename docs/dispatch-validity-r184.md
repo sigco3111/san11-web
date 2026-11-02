@@ -1,0 +1,11 @@
+# R184 dispatch input boundary
+
+The engine previously accepted negative or NaN troop counts and officers from another force or city, and threw for an unknown unit type. The normal dispatch UI already rejects invalid troop counts, so this is an engine contract defect, not a claimed ordinary-click exploit.
+
+Before charging AP or changing any roster, dispatch now requires a live city force, an officer array, a positive safe-integer troop count, an own unit-type key, and officers whose force, city, status and roster match the dispatch city and who are not already in a field unit. Existing injury, AP, stock, legion and command-cap checks remain. Duplicate officer inputs still select that officer once. No costs, minimum UI troop count, AI policy, economy or diplomacy tuning changed.
+
+28 boundary checks cover invalid arguments, whole-state equality after rejection, and valid sword/spear dispatch including duplicate deduplication. All 37 smoke suites and five runtime syntax checks pass. A naval smoke fixture previously reassigned city ownership without matching officer states; its officer state setup was corrected rather than weakening the new contract.
+
+Finite paired observation: scenarios 184/190/251, seeds 1/7/42, 150 turns each, R183 versus R184, same skills and spectator decisions. All nine pairs have identical final state hashes, including city/force/unit/officer/turn/log/diplomacy/chronicle data, and identical dispatch call/success counts. This is not proof for every save, every seed or economic safety over unlimited turns.
+
+Actual browser proof commit 9ff88140a80229a1f24e9d15c80e699b2af0372b, separate origin, fresh 190 Dong Zhuo game, no state fixture: actual New Game/scenario/ruler/city/dispatch/officer clicks sent Lu Bu from Luoyang as 5,000 sword troops. Force AP60 became20, city troops32,000 became27,000, city food90,000 became78,000, unit troops5,000/food12,000. Officer660 was absent from all city rosters and present in exactly one unit. Immediate stored state and refresh/Continue restored turn1, AP20, city27,000/78,000 and the same unit/officer membership. Screenshot 20261102-014021 was inspected at 390px mobile emulation and shows AP20, city27,000/78,000 and Lu Bu5k. This is not a physical phone test. Invalid-input checks are engine tests, not claimed browser interactions.
