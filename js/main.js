@@ -1,12 +1,12 @@
 // 진입점: 화면 전환·UI·지도 연결
-import { Map3D, toWorld } from './map3d.js?v=r177';
-import { Game, SAVE_KEY, RULES, forceColor, UNIT_TYPES, ARTS, OFFICES, restoreOfficer, FIELD_FACS, TRAPS, SHIP_TYPES, TAC_SHIP_OK, josa, josaRo, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, AB_BRANCHES, AB_P, AB_SKILL, AB_PICK } from './game.js?v=r177';
-import { aiThink } from './ai.js?v=r177';
+import { Map3D, toWorld } from './map3d.js?v=r178';
+import { Game, SAVE_KEY, RULES, forceColor, UNIT_TYPES, ARTS, OFFICES, restoreOfficer, FIELD_FACS, TRAPS, SHIP_TYPES, TAC_SHIP_OK, josa, josaRo, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, ARMS_BUILD, AB_BRANCHES, AB_P, AB_SKILL, AB_PICK } from './game.js?v=r178';
+import { aiThink } from './ai.js?v=r178';
 
 const $ = id => document.getElementById(id);
 let DATA = null, game = null, map = null, selectedUnit = null, autoTimer = null, pendingFire = null; // R15: 직접 전법·계략 대기
 
-const BUILD_ID = 'r177'; // 빌드 ID (index.html의 meta[name=build]와 같아야 함 - 오래된 캐시된 index와 새 스크립트의 혼합 감지)
+const BUILD_ID = 'r178'; // 빌드 ID (index.html의 meta[name=build]와 같아야 함 - 오래된 캐시된 index와 새 스크립트의 혼합 감지)
 function checkBuildSkew() {
   const idx = document.querySelector('meta[name="build"]')?.content;
   if (idx === BUILD_ID) { sessionStorage.removeItem('cheonha-xi-web.skew'); return; } // 일치하면 재시도 표식 해제
@@ -19,7 +19,7 @@ checkBuildSkew();
 async function loadData() {
   const [officers, skills, portraits, s184, s190, s251] = await Promise.all(
     ['data/officers670.json','data/skills.json','data/portraits.json','data/scenario-184.json','data/scenario-190.json','data/scenario-251.json']
-      .map(u => fetch(u + '?v=r177').then(r => r.json())));
+      .map(u => fetch(u + '?v=r178').then(r => r.json())));
   const byIdx = {};
   for (const o of officers) byIdx[o.idx] = o;
   DATA = { officers: byIdx, skills, portraits, scenarios: { '184': s184, '190': s190, '251': s251 } };
@@ -131,6 +131,7 @@ function refreshOpenPanel() { // R130: 일기토·설전·수신 외교 결정 �
   else if (p.dataset.view === 'diplo') showDiplomacy(c);
   else if (p.dataset.view === 'city') showCityPanel(c);
   else if (p.dataset.view === 'facilities') showFacilities(c);
+  else if (p.dataset.view === 'arms') showArms(c);
   else return; // 출진 등 입력 중 하위 화면은 덮지 않음 (R108과 동일 기준)
   p.scrollTop = st;
 }
@@ -225,6 +226,7 @@ function doTurn() {
     const c=game.cityById[lastCityId];
     if(c?.force===game.playerForce){const st=$('panel').scrollTop;showDiplomacy(c);$('panel').scrollTop=st;}else $('panel').classList.add('hidden');
   }
+  if ($('panel').dataset.view === 'arms' && !$('panel').classList.contains('hidden')) { const c=game.cityById[lastCityId]; if(c?.force===game.playerForce)showArms(c);else $('panel').classList.add('hidden'); }
   if ($('panel').dataset.view === 'tech' && !$('panel').classList.contains('hidden')) showTech(); // R156: 턴 후 연구비·기교P·가능상태 갱신, showTech가 스크롤 보존
   checkGameOver();
   if (game.pendingDuel) showDuel(); // R10: 일기토 모달
@@ -615,6 +617,19 @@ function showTrade(c) { $('panel').dataset.view='trade';
   for (const dir of ['buy','sell']) $('trd-'+dir).onclick = () => { refreshTrade(); if ($('trd-'+dir).disabled) return; if (!game.trade(c.id,dir,Number($('trd-lots').value)) && game.lastTradeWhy) game.log(game.lastTradeWhy,true); refreshAll(); refreshTrade(); };
   $('trd-back').onclick = () => showCityPanel(c);
 }
+// R149 preview: 원기획 수동 병장생산, 월자동생산은 그대로
+function showArms(c) {
+  const p=$('panel'),reopening=p.dataset.view!=='arms'||p.dataset.city!==String(c.id),st=p.scrollTop; p.dataset.view='arms';p.dataset.city=String(c.id); p.classList.remove('hidden');
+  let html=`<div class="fac-status"><h3>${c.name_ko} 병장 생산</h3><p class="st">도시 금 ${c.gold.toLocaleString()} · 행동력 ${game.forces[c.force]?.ap ?? 0}</p></div><p class="st">완성 대장간 1개당 매턴 창·극·노 중 1회, 마구간은 군마 1회. 생산량 500 × 시설 레벨. 월 자동생산은 별도입니다.</p>`;
+  for (const [key,spec] of Object.entries(ARMS_BUILD)) {
+    const a=game.armsInfo(c,key);
+    html+=`<div class="officer"><div><div class="nm">${spec.name} · 보유 ${(c[key]??0).toLocaleString()}</div><div class="st">${spec.facility} 남은 ${a.remaining??0}/${a.capacity??0}회 · 생산 ${a.chosen?a.amount:'-'} · 금${a.gold??200} · AP${a.ap??10}</div>${a.why?`<small class="fac-why">${a.why}</small>`:''}</div><button class="cmd arms-go" data-k="${key}"${a.why?' disabled title="'+a.why+'"':''}>생산</button></div>`;
+  }
+  html+='<p class="st">같은 대장간의 남은 횟수는 창·극·노가 함께 사용합니다. 낮은 레벨 시설부터 사용하며, 당턴 사용한 시설을 합병해도 생산 횟수는 회복되지 않습니다.</p><button class="cmd" id="arms-back">← 도시 패널로</button>';
+  p.innerHTML=html;p.scrollTop=reopening?0:st;
+  p.querySelectorAll('.arms-go').forEach(b=>b.onclick=()=>{if(!game.armsInfo(c,b.dataset.k).why)game.produceArms(c.id,b.dataset.k);refreshAll();showArms(c)});
+  $('arms-back').onclick=()=>showCityPanel(c);
+}
 function diplomacyUiInfo(g,c,tid,action) {
   const f=g.forces[c?.force],t=g.forces[tid];
   const gold={envoy:500,ally:1000,truce:2000,surrender:1000,aid:0,break:0}[action]??0;
@@ -917,6 +932,7 @@ function showCityPanel(c) {
       <button class="cmd" id="cmd-move">무장 이동</button>
       <button class="cmd" id="cmd-tech">기교 연구</button>
       <button class="cmd" id="cmd-fac">시설 건설</button>
+      <button class="cmd" id="cmd-arms">병장 생산</button>
       ${(c.burn ?? 0) > 0 ? '<span style="color:#ff9a4a;display:block;margin:4px 0">불이 붙었습니다 (' + c.burn + '턴, 턴당 수비병 -3%) — 성 주변 아군 부대가 소화할 수 있습니다</span>' : ''}
       ${c.leveeBroken ? '<button class="cmd" id="cmd-levee">제방 보수 (금300)</button>' : ''}
       ${personnelUiButton(game,c,'search',null,'수색 (금100')}
@@ -975,6 +991,7 @@ function showCityPanel(c) {
     $('cmd-move').onclick = () => showMove(c);
     $('cmd-tech').onclick = () => showTech();
     $('cmd-fac').onclick = () => showFacilities(c);
+    $('cmd-arms').onclick = () => showArms(c);
     if ($('cmd-levee')) $('cmd-levee').onclick = () => { game.repairLevee(c.id); refreshAll(); showCityPanel(c); }; // R28
     $('cmd-diplo').onclick = () => showDiplomacy(c);
     $('cmd-search').onclick = () => { if (!personnelUiInfo(game,c,'search').why) game.searchCity(c.id); refreshAll(); showCityPanel(c); };
