@@ -5,7 +5,7 @@ const SUITES = [
   'tools/smoke-r178-integration.mjs',
   'tools/smoke-r149-arms.mjs',
   'tools/smoke-r149-merge.mjs',
-  'tools/smoke-r149-ai-resources.mjs',
+  'tools/smoke-r179-manual.mjs',
   'tools/smoke-r177-resign.mjs',
   'tools/smoke-r176-diploui.mjs',
   'tools/smoke-r175-trucetarget.mjs',
