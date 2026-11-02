@@ -820,8 +820,9 @@ if (g.units.find(u => u.id === 9999) && g.units.find(u => u.id === 9999).qi === 
   g11.debateTick(d, '질타', '경청');
   if (g11.diploOf(0, 1).truceUntil < g11.turn + 12 || g11.diploOf(0, 1).v !== 50) { console.error('FAIL: R11 설전 정전', g11.diploOf(0, 1)); process.exit(1); }
   // 등용 설전 승리 → 등용 성공
-  const free = Object.values(g11.officers).find(o => o.state && o.state.force == null && o.idx !== bi);
+  const free = Object.values(g11.officers).find(o => o.state?.status === 'free' && o.state.force == null && o.idx !== bi);
   if (free) {
+    free.state.city = c0.id; free.state.found = true; // R193: legal local recruitment fixture, not a remote/unborn officer
     d = g11.startDebate(ai, free.idx, { kind: 'recruit', fid: 0, tid: 0, cityId: c0.id, officerIdx: free.idx }); d.b.hp = 1;
     g11.debateTick(d, '질타', '경청');
     if (free.state.force !== 0 || !c0.officers.includes(free.idx)) { console.error('FAIL: R11 설전 등용'); process.exit(1); }
@@ -2791,4 +2792,4 @@ console.log('sample logs:'); for (const l of g.logs.slice(-8)) console.log(' ', 
     if (!/금이 부족합니다/.test(g.lastRecruitWhy ?? '')) fail('등용 금 안내 없음', g.lastRecruitWhy);
   }
   console.log('R112 시설 소화·비용 안내 게이트 PASS (소화 성공·사거리/미점화 차단·기력 소모·쿨다운·석방 AP·등용 AP/금 안내)');
-      }
+    }
