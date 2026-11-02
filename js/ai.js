@@ -1,4 +1,5 @@
-import { SHIP_TYPES, TRAPS, FIELD_FACS, SIEGE_TYPES } from './game.js?v=r177';
+import {supply} from './arms-policy.js?v=r180';
+import { SHIP_TYPES, TRAPS, FIELD_FACS, SIEGE_TYPES } from './game.js?v=r180';
 // 세력 AI — 위임 시 플레이어 세력도 이 AI가 운영 (위임·샌드박스의 실질 주체)
 export function aiThink(game, fid, legion = null) { // legion 지정 시 그 군단 소속 도시만 운영 (도독 위임)
   const f = game.forces[fid];
@@ -314,6 +315,8 @@ export function aiThink(game, fid, legion = null) { // legion 지정 시 그 군
       if (ef) game.fireStrat(u.id, 'fire', { type: 'fac', id: ef.id });
     }
   }
+  // R180 isolated: protected additional production, same engine costs.
+  supply(game,fid,legion);
 }
 
 // 구버전 game.js(pickTactic 없음)와 함께 로드된 경우의 같은 선택 규칙
