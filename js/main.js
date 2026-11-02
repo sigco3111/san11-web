@@ -1,12 +1,12 @@
 // 진입점: 화면 전환·UI·지도 연결
-import { Map3D, toWorld } from './map3d.js?v=r178';
-import { Game, SAVE_KEY, RULES, forceColor, UNIT_TYPES, ARTS, OFFICES, restoreOfficer, FIELD_FACS, TRAPS, SHIP_TYPES, TAC_SHIP_OK, josa, josaRo, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, ARMS_BUILD, AB_BRANCHES, AB_P, AB_SKILL, AB_PICK } from './game.js?v=r178';
-import { aiThink } from './ai.js?v=r178';
+import { Map3D, toWorld } from './map3d.js?v=r179';
+import { Game, SAVE_KEY, RULES, forceColor, UNIT_TYPES, ARTS, OFFICES, restoreOfficer, FIELD_FACS, TRAPS, SHIP_TYPES, TAC_SHIP_OK, josa, josaRo, TECH_BRANCHES, TECH_P, TECH_GOLD, TECH_DESC, FACILITIES, ITEMS, SIEGE_BUILD, SHIP_BUILD, ARMS_BUILD, AB_BRANCHES, AB_P, AB_SKILL, AB_PICK } from './game.js?v=r179';
+import { aiThink } from './ai.js?v=r179';
 
 const $ = id => document.getElementById(id);
 let DATA = null, game = null, map = null, selectedUnit = null, autoTimer = null, pendingFire = null; // R15: 직접 전법·계략 대기
 
-const BUILD_ID = 'r178'; // 빌드 ID (index.html의 meta[name=build]와 같아야 함 - 오래된 캐시된 index와 새 스크립트의 혼합 감지)
+const BUILD_ID = 'r179'; // 빌드 ID (index.html의 meta[name=build]와 같아야 함 - 오래된 캐시된 index와 새 스크립트의 혼합 감지)
 function checkBuildSkew() {
   const idx = document.querySelector('meta[name="build"]')?.content;
   if (idx === BUILD_ID) { sessionStorage.removeItem('cheonha-xi-web.skew'); return; } // 일치하면 재시도 표식 해제
@@ -19,7 +19,7 @@ checkBuildSkew();
 async function loadData() {
   const [officers, skills, portraits, s184, s190, s251] = await Promise.all(
     ['data/officers670.json','data/skills.json','data/portraits.json','data/scenario-184.json','data/scenario-190.json','data/scenario-251.json']
-      .map(u => fetch(u + '?v=r178').then(r => r.json())));
+      .map(u => fetch(u + '?v=r179').then(r => r.json())));
   const byIdx = {};
   for (const o of officers) byIdx[o.idx] = o;
   DATA = { officers: byIdx, skills, portraits, scenarios: { '184': s184, '190': s190, '251': s251 } };
@@ -620,7 +620,7 @@ function showTrade(c) { $('panel').dataset.view='trade';
 // R149 preview: 원기획 수동 병장생산, 월자동생산은 그대로
 function showArms(c) {
   const p=$('panel'),reopening=p.dataset.view!=='arms'||p.dataset.city!==String(c.id),st=p.scrollTop; p.dataset.view='arms';p.dataset.city=String(c.id); p.classList.remove('hidden');
-  let html=`<div class="fac-status"><h3>${c.name_ko} 병장 생산</h3><p class="st">도시 금 ${c.gold.toLocaleString()} · 행동력 ${game.forces[c.force]?.ap ?? 0}</p></div><p class="st">완성 대장간 1개당 매턴 창·극·노 중 1회, 마구간은 군마 1회. 생산량 500 × 시설 레벨. 월 자동생산은 별도입니다.</p>`;
+  let html=`<div class="fac-status"><h3>${c.name_ko} 병장 생산</h3><p class="st">도시 금 ${c.gold.toLocaleString()} · 행동력 ${game.forces[c.force]?.ap ?? 0}</p></div><p class="st">완성 대장간 1개당 매턴 창·극·노 중 1회, 마구간은 군마 1회. 생산량 500 × 시설 레벨. 월 자동생산은 별도입니다. AI 자동 추가생산은 아직 적용하지 않았습니다.</p>`;
   for (const [key,spec] of Object.entries(ARMS_BUILD)) {
     const a=game.armsInfo(c,key);
     html+=`<div class="officer"><div><div class="nm">${spec.name} · 보유 ${(c[key]??0).toLocaleString()}</div><div class="st">${spec.facility} 남은 ${a.remaining??0}/${a.capacity??0}회 · 생산 ${a.chosen?a.amount:'-'} · 금${a.gold??200} · AP${a.ap??10}</div>${a.why?`<small class="fac-why">${a.why}</small>`:''}</div><button class="cmd arms-go" data-k="${key}"${a.why?' disabled title="'+a.why+'"':''}>생산</button></div>`;
