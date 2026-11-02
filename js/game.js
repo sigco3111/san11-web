@@ -910,8 +910,13 @@ export class Game {
     const tCities = this.cities.filter(x => x.force === tid);
     for (const tc of tCities) { tc.force = fid; }
     for (const u of this.units) if (u.force === tid) u.force = fid; // 야전 부대도 귀속
-    for (const o of Object.values(this.officers)) if (o.state?.force === tid) { o.state.force = fid; if (o.state.city != null) { const nc = this.cityById[o.state.city]; if (nc && !nc.officers.includes(o.idx)) nc.officers.push(o.idx); } }
+    for (const o of Object.values(this.officers)) if (o.state?.force === tid) {
+      const st = o.state; st.force = fid;
+      if (st.status === 'captive' && st.captor === fid) { st.status = 'serving'; delete st.captor; delete st.captiveSince; } // R187: surrendered officers already held by their new force are no longer enemy prisoners
+      if (['ruler','taesu','serving'].includes(st.status) && st.city != null) { const nc = this.cityById[st.city]; if (nc && nc.force === fid && !nc.officers.includes(o.idx)) nc.officers.push(o.idx); }
+    }
     t.alive = false;
+    this._reconcileOfficerRosters(); // same existing dead-captor/roster rules now, before saving or another command
     this.log(`【항복】${josa(this.forceName(tid), ['이','가'])} ${this.forceName(fid)}에 항복했습니다! 도시 ${tCities.length}개와 무장이 귀속됩니다`, true);
   }
   resolveDiplo(id, accept) { // R123: 보류 제안 수락/거절 — 처리된 id는 큐에서 제거되어 중복 수락 불가
