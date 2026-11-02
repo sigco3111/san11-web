@@ -1,0 +1,9 @@
+# R183 all-city unification boundary
+
+The original objective is to control every city. The previous check discarded neutral cities before counting distinct owners, so 41 owned cities plus one neutral city incorrectly ended the game and reported control of every city.
+
+The change requires all cities to have an owner as well as exactly one distinct owner. No combat, city ownership, economy, AI, diplomacy or rank rule changes. Existing historical saves already marked unified are not rewritten, because that would silently undo a prior result.
+
+Engine fault-boundary fixtures verify zero, one and 41 of 42 cities do not unify, while all 42 do. The result, game-over flag, chronicle and saved state are checked. Non-winning one/41-city cases can continue to the next turn. Existing spectator continuation after a valid win remains active without a repeated victory. The engine and the UI both apply the same all-city condition. The first engine-only candidate failed actual Continue because the UI repeated the old check. That failed candidate is not counted as verified.
+
+Final browser proof commit 4777bb750f462f705189bc2d7f8dfc083bea5526, separate origin with explicit ownership fixture: Continue restored 41 owned plus one neutral at turn1 without an end modal, and actual End Turn reached turn2 with over/unified false. Fixture assignment of the last city followed by actual End Turn reached turn3 with 42 owned, neutral0, over/unified true and saved unified true. The victory modal was readable at 390px mobile emulation (screenshot 20261102-012445). Actual Spectator Continue automatically advanced to turn13 with over false, unified true, no modal and exactly one victory record. The later End Turn click was disabled during auto progression and is not evidence of manual advancement. Auto progression was stopped after the check. This is a fixture boundary test, not natural conquest or a physical phone test.

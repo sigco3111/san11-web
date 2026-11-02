@@ -1511,7 +1511,7 @@ produceArms(id,key){const g=this;const c=g.cityById[id],a=this.armsInfo(c,key);i
     // R14: 천하 통일 판정 — 모든 도시를 한 세력이 제압 (설계안 102행 매뉴얼 문구)
     if (!this.over && !this.unified) {
       const owners = new Set(this.cities.map(c => c.force).filter(x => x != null));
-      if (owners.size === 1) {
+      if (owners.size === 1 && this.cities.every(c => c.force != null)) {
         const w = [...owners][0];
         this.over = true;
         this.unified = true; // 관전 계속(over 해제) 후 재발동 방지
