@@ -1,4 +1,4 @@
-import { SHIP_TYPES, TRAPS, FIELD_FACS, SIEGE_TYPES } from './game.js?v=r178';
+import { SHIP_TYPES, TRAPS, FIELD_FACS, SIEGE_TYPES } from './game.js?v=r179';
 // 세력 AI — 위임 시 플레이어 세력도 이 AI가 운영 (위임·샌드박스의 실질 주체)
 export function aiThink(game, fid, legion = null) { // legion 지정 시 그 군단 소속 도시만 운영 (도독 위임)
   const f = game.forces[fid];
@@ -314,18 +314,7 @@ export function aiThink(game, fid, legion = null) { // legion 지정 시 그 군
       if (ef) game.fireStrat(u.id, 'fire', { type: 'fac', id: ef.id });
     }
   }
-  // R149 preview: 기존 명령 뒤 잔여 AP만 사용하는 병장 비축. 무료 월생산/출진대기 변경 없음.
-  for (const c of cities) {
-    if (f.ap < 10 || c.gold < 1400 || !c.officers.length || c.troops < 6000) continue;
-    const enemy=game.cities.some(e=>e.force!==fid && (e.force==null||!game.isPeace(fid,e.force)) && Math.hypot(c.lon-e.lon,c.lat-e.lat)<12);
-    const target=Math.min(c.troops-3000,6000);
-    if(!enemy || Math.max(c.spears,c.pikes,c.bows,c.horses)>=target)continue;
-    const keys=['spears','pikes','bows','horses'].filter(k=>!game.armsInfo(c,k).why).sort((a,b)=>c[b]-c[a]);
-    if(keys.length){const a=game.armsInfo(c,keys[0]);if(c.gold>=1200+a.gold)game.produceArms(c.id,keys[0]);}
-  }
-
 }
-
 
 // 구버전 game.js(pickTactic 없음)와 함께 로드된 경우의 같은 선택 규칙
 function legacyPick(game, u, eu, info) {
