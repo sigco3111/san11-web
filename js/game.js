@@ -265,6 +265,8 @@ const SPOUSE_PAIRS = [['손책', '대교'], ['주유', '소교'], ['유비', '�
 const DEAR_PAIRS = [['조조', '순욱'], ['조조', '곽가'], ['조조', '하후돈'], ['조조', '하후연'], ['유비', '조운'], ['유비', '제갈량'], ['손권', '주유'], ['손권', '여몽'], ['동탁', '여포']];
 const HATE_PAIRS = [['마초', '조조'], ['손책', '황조'], ['장비', '여포'], ['관우', '여포']];
 
+export const ARMS_BUILD={spears:{name:'창',facility:'대장간'},pikes:{name:'극',facility:'대장간'},bows:{name:'노',facility:'대장간'},horses:{name:'군마',facility:'마구간'}};
+
 export class Game {
   constructor(scen, officers, skills, playerForceId) {
     this.officers = officers; // by idx
@@ -963,6 +965,16 @@ export class Game {
       }
     }
   }
+armsInfo(c,key){
+ const g=this;
+ const s=ARMS_BUILD[key],f=g.forces[c?.force];if(!c||!f?.alive||!s)return{why:'도시/세력/종류 오류'};if(g._blocked(c))return{why:'군단 소속 도시'};
+ const fac=g.cityFac(c,s.facility),available=fac.filter(x=>x.armsUsedTurn!==g.turn).sort((a,b)=>(a.level??1)-(b.level??1)),chosen=available[0];
+ const gold=(c.specialty??[]).includes(s.name)?150:200,ap=Math.ceil(10*g.apMult(c,'military'));
+ const why=!fac.length?'완성 시설 필요':!chosen?'이번 턴 생산 횟수 소진':f.ap<ap?'행동력 부족':c.gold<gold?'금 부족':'';
+ return{why,capacity:fac.length,used:fac.length-available.length,remaining:available.length,gold,ap,amount:500*(chosen?.level??1),facility:s.facility,chosen};
+}
+produceArms(id,key){const g=this;const c=g.cityById[id],a=this.armsInfo(c,key);if(a.why)return false;a.chosen.armsUsedTurn=g.turn;c.gold-=a.gold;g.forces[c.force].ap-=a.ap;c[key]=(c[key]??0)+a.amount;g.log(`${c.name_ko}에서 ${ARMS_BUILD[key].name} ${a.amount} 생산 (금 ${a.gold}·AP ${a.ap})`,c.force===g.playerForce);g.autosave();return true;}
+
   // === 내정시설 ===
   facSlots(c) { return c.metropolis ? 12 : 8; } // 개발지 수 (자체 수치)
   cityFac(c, t) { return (c.facilities ?? []).filter(f => f.type === t && f.done); }
@@ -2321,7 +2333,9 @@ export class Game {
     const a = c.facilities?.[fi1], b = c.facilities?.[fi2];
     if (!a || !b || fi1 === fi2 || a.type !== b.type || !a.done || !b.done) return false;
     if ((a.level ?? 1) >= 3) return false;
+    const armsUsed = a.armsUsedTurn === this.turn || b.armsUsedTurn === this.turn;
     a.level = (a.level ?? 1) + 1;
+    if (armsUsed) a.armsUsedTurn = this.turn;
     c.facilities.splice(fi2, 1);
     c.gold -= 200; f.ap -= 10;
     this.log(`【합병】${c.name_ko}의 ${josa(a.type, ['을','를'])} 흡수합병해 Lv${josaRo(a.level)} 강화했습니다 (금 200·AP 10, 개발지 1개 회수)`, c.force === this.playerForce);
