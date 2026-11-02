@@ -2233,6 +2233,7 @@ console.log('sample logs:'); for (const l of g.logs.slice(-8)) console.log(' ', 
   const A = coastal[0];
   A.force = 0; A.troops = 20000; A.dous = 1; g.forces[0].ap = 200;
   if (!A.officers.length) A.officers = [g.forces[0].ruler];
+  for (const i of A.officers) Object.assign(g.officers[i].state, {force:0,city:A.id,status:'serving'});
   const u = g.dispatch(A.id, A.officers.slice(0, 1), 5000, 'dou');
   if (!u) fail('연안 도시 수군 출진 실패');
   if (A.dous !== 0) fail('선박 재고 미차감 ' + A.dous);
@@ -2241,6 +2242,7 @@ console.log('sample logs:'); for (const l of g.logs.slice(-8)) console.log(' ', 
   if (inland.length) {
     const I = inland[0]; I.force = 0; I.troops = 20000; I.dous = 1;
     if (!I.officers.length) I.officers = [g.forces[0].ruler];
+    for (const i of I.officers) Object.assign(g.officers[i].state, {force:0,city:I.id,status:'serving'});
     g.forces[0].ap = 200;
     if (g.dispatch(I.id, I.officers.slice(0, 1), 5000, 'dou')) fail('내륙 도시 수군 출진 성공(수로 없음)');
   }
@@ -2789,4 +2791,4 @@ console.log('sample logs:'); for (const l of g.logs.slice(-8)) console.log(' ', 
     if (!/금이 부족합니다/.test(g.lastRecruitWhy ?? '')) fail('등용 금 안내 없음', g.lastRecruitWhy);
   }
   console.log('R112 시설 소화·비용 안내 게이트 PASS (소화 성공·사거리/미점화 차단·기력 소모·쿨다운·석방 AP·등용 AP/금 안내)');
-               }
+      }
