@@ -3,6 +3,7 @@
 import { spawnSync } from 'child_process';
 const SUITES = [
  'tools/smoke-r184-dispatchvalid.mjs',
+  'tools/smoke-r185-recruitcap.mjs',
  'tools/smoke-r183-unification.mjs',
   'tools/smoke-r181-savefailure.mjs',
   'tools/smoke-r180-policy.mjs',

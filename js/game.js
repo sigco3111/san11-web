@@ -1016,14 +1016,15 @@ produceArms(id,key){const g=this;const c=g.cityById[id],a=this.armsInfo(c,key);i
     const c = this.cityById[cityId], f = this.forces[c.force];
     if (this._blocked(c)) return false; // 군단 소속
     const apc = Math.ceil(30 * this.apMult(c, 'military')); // R13 군사부
-    if (c.gold < 200 || c.food < 1000 || f.ap < apc) return false;
+    const cap = c.metropolis ? 150000 : 100000;
+    if (c.troops >= cap || c.gold < 200 || c.food < 1000 || f.ap < apc) return false;
     const best = Math.max(50, ...c.officers.map(i => this.officers[i].chr));
     const n = Math.round((1500 + best*30) * (this.cityHasSkill(c, '명성') ? 1.3 : 1) * (1 + 0.3 * this.cityFacLv(c, '병영'))); // R13: 병영 레벨 합산
     c.gold -= 200; c.food -= 1000; f.ap -= apc;
-    const cap = c.metropolis ? 150000 : 100000;
-    c.troops = Math.min(cap, c.troops + n);
+    const gained = Math.min(n, cap - c.troops);
+    c.troops += gained;
     this.gainTechP(c.force, 25); // 커맨드 실행 기교P
-    this.log(`${c.name_ko} 징병 +${n} (담당 매력 ${best})`, c.force === this.playerForce);
+    this.log(`${c.name_ko} 징병 +${gained} (담당 매력 ${best})`, c.force === this.playerForce);
     return true;
   }
   freeOfficers(cityId) { // 그 도시에 머무는 재야 무장
