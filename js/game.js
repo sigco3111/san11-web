@@ -2607,7 +2607,10 @@ produceArms(id,key){const g=this;const c=g.cityById[id],a=this.armsInfo(c,key);i
         officerStates: Object.fromEntries(Object.entries(this.officers).filter(([,o]) => o.state).map(([i,o]) => [i, o.state])),
       };
       localStorage.setItem(SAVE_KEY, JSON.stringify(data));
-    } catch (e) { /* 용량 초과 등 무시 */ }
+      this.saveFailed = false;
+    } catch (e) { this.saveFailed = true; }
+    try { this.onSaveStatus?.(!this.saveFailed); } catch (e) { /* UI notification must not change save result */ }
+    return !this.saveFailed;
   }
 }
 export function josaRo(name) { const code = String(name).charCodeAt(String(name).length-1); const jong = (code >= 0xAC00 && code <= 0xD7A3) ? (code-0xAC00)%28 : 0; return name + (jong && jong !== 8 ? '으로' : '로'); } // (으)로: 받침 없음·ㄹ받침은 '로'
