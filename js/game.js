@@ -1554,6 +1554,7 @@ produceArms(id,key){const g=this;const c=g.cityById[id],a=this.armsInfo(c,key);i
         }
       }
     }
+    this._reconcileLegions(); // R195: extinction can invalidate governors after the AI phase
     // R14: 천하 통일 판정 — 모든 도시를 한 세력이 제압 (설계안 102행 매뉴얼 문구)
     if (!this.over && !this.unified) {
       const owners = new Set(this.cities.map(c => c.force).filter(x => x != null));
