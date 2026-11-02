@@ -1,6 +1,6 @@
-# R194 foreign garrison recruitment design candidate
+# R194 foreign garrison recruitment limited release
 
-Not released. This replaces none of the R190 live rules until reviewed, actual UI verified and merged. R193 original draft stays unmerged.
+Reviewed for limited release after changed-policy actual UI verification. R193 original draft stays unmerged. Deployment must still be verified after merge.
 
 ## Meaning of loyalty
 
@@ -24,7 +24,7 @@ On success remove original garrison membership, transfer to issuing city once, c
 
 ## Evidence and limits
 
-Seventy-four focused Node assertions including prior local free/captive cases, foreign exclusions, reference/office changes, monotonicity, high-loyalty debate check, new-ruler70, same-turn guard and serialized/save-shaped restore, AI exact cost/reserve. Whole42-suite regression and five runtime syntax checks pass. New R194 actual UI not yet verified. Earlier R193 UI proof does not substitute for this changed policy.
+Seventy-four focused Node assertions including prior local free/captive cases, foreign exclusions, reference/office changes, monotonicity, high-loyalty debate check, new-ruler70, same-turn guard and serialized/save-shaped restore, AI exact cost/reserve. Whole42-suite regression and five runtime syntax checks pass. R194 changed-policy actual UI is now separately verified as detailed below. Earlier R193 proof was not substituted.
 
 184/190/251 x seeds1/7/42,600 turns each: foreign successes16-73; maximum per-officer1-3;0 tracked roster/resource violations. Three scenario seed42 runs3000 turns: successes276/543/630, maximum officer switches7/10/13,0 tracked violations; remaining factions4/5/5, all not unified. No economic superiority, campaign quality or phone-performance claim.
 
@@ -34,4 +34,15 @@ Unfinished: envoy travel, field-unit recruitment and troop ownership, neutral-ci
 
 ## Decision
 
-Recommend this as the next candidate for review and actual-UI validation, not immediate release. It has a clear meaning and bounded supporting evidence. Do not continue adding guessed cooldowns or reducing chance until another reproducible defect requires it.
+Approved for limited release after review and actual-UI validation. The design has a clear meaning and bounded supporting evidence. Do not continue adding guessed cooldowns or reducing chance until another reproducible defect requires it.
+
+
+## Changed-policy actual UI verification (12:35 KST)
+
+Fixed e0335c4615ad34e1fb5dfed29f4b5c99ac6c9cfa: eight remote files matched local bytes. Artificial190 Cao Cao/Wang Yun loyalty0/others100, Wang Yun as Dong Zhuo advisor/governor. Actual fixture button and Continue, actual73% button once with unforced success draw: AP100to80, gold5000to4900, Wang Yun force0/city12/loyalty70/transition marker1; original roster absent, destination once, previous advisor null, legions empty. Actual reload/Continue turn1 preserved all including reacquire chance0. Screenshot033105 shows costs/resources/garrison16 and log, detailed state came from app/save.
+
+First premature fixture click before module ready left Ready and old23-turn test state. That attempt was discarded. The corrected fixture produced chance0.732 before entering the app.
+
+Commit337f3490c9b741e23dff832e5b78a50ee1d362cd changed only the fixture to add an explicit AI setup: source gold800/food30000/troops6000, local free officers moved out, other faction AP disabled. Actual Delegate then Stop ran through turn6, with AI recruitment of Wang Yun, saved state matching, loyalty71 and transition marker1. No forced recruitment draw. Exact first-turn AP/gold was not captured and is not claimed as UI cost proof; Node checks and the separate manual UI supply exact costs. At turn6 former-faction reacquire chance0.060175 demonstrates that the marker is not permanent immunity.
+
+390px screenshot033447 shows AI same-rule explanation, foreign loyalty resistance, new loyalty70, same-turn transfer restriction, source faction/city and73%/AP20 button without horizontal clipping. This is emulation, not physical-device testing. No temporary fixture belongs in the release diff.
