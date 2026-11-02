@@ -12,4 +12,7 @@ for(const reason of ['free','foreign','missing','dead']){
 {
  const g=mk(),o=g.officers[60],c=g.cityById[o.state.city];g.createLegion(60,[c.id],'delegate');o.state.loyal=0;g.turn=2;g.dan=3;for(const x of g.cities){x.gold=0;x.troops=0;x.security=100}g.units=[];const rnd=Math.random;try{Math.random=()=>0;g.endTurn(()=>{})}finally{Math.random=rnd}ok('monthly actual resignation occurred',o.state.status==='free'&&o.state.force==null);ok('resigned governor direct return',g.forces[5].legions.length===0&&!g._blocked(c));
 }
+{
+ const g=mk(),o=g.officers[60],c=g.cityById[o.state.city];g.createLegion(60,[c.id],'delegate');for(const x of g.forceCities(5))x.force=null;g.units=[];g.endTurn(()=>{});ok('extinction removes command after AI phase',!g.forces[5].alive&&g.forces[5].legions.length===0);
+}
 const ui=fs.readFileSync('js/main.js','utf8');ok('UI uses shared active governor filter',ui.includes('filter(o => game.activeGovernor(c.force, o.idx))'));console.log('R195 '+n+' PASS');
