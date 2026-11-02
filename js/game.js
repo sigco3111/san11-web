@@ -891,9 +891,9 @@ export class Game {
       this._pushDiplo({ kind: 'aid', fid, tid, cityId, srcId: src.id });
       return true;
     }
-    src.troops -= 3000;
     const dst = this.cities.filter(x => x.force === fid).sort((a, b) => a.troops - b.troops)[0];
-    dst.troops = Math.min(dst.metropolis ? 150000 : 100000, dst.troops + 3000);
+    src.troops -= 3000;
+    dst.troops += 3000; // R186: existing troops transfer in full, like returning units; recruitment cap limits new generation only
     d.aidTurn = this.turn;
     this.log(`【외교】동맹국 ${josa(this.forceName(tid), ['이','가'])} 원군 3000을 ${dst.name_ko}에 보냈습니다`, true);
     return true;
@@ -936,9 +936,8 @@ export class Game {
       if (accept) {
         const src = this.cityById[it.srcId];
         if (src && src.force === it.tid && src.troops >= 3000) {
-          src.troops -= 3000;
           const dst = this.cities.filter(x => x.force === it.fid).sort((a, b) => a.troops - b.troops)[0];
-          if (dst) { dst.troops = Math.min(dst.metropolis ? 150000 : 100000, dst.troops + 3000); d.aidTurn = this.turn; this.log(`【외교】동맹국에 원군 3000을 ${dst.name_ko}에 보냈습니다 (${src.name_ko} 차출)`, true); }
+          if (dst) { src.troops -= 3000; dst.troops += 3000; d.aidTurn = this.turn; this.log(`【외교】동맹국에 원군 3000을 ${dst.name_ko}에 보냈습니다 (${src.name_ko} 차출)`, true); }
           else this.log(`【외교】원군을 보낼 대상 도시가 없어 요청에 응하지 못했습니다`, true);
         } else this.log(`【외교】원군을 보낼 병력이 부족해 요청에 응하지 못했습니다`, true);
       } else { d.aidTurn = this.turn; this.log(`【외교】${fn}의 원군 요청을 거절했습니다`, true); } // 거절도 18턴 쿨 공유 — 같은 요청 연발 방지 (자체)
