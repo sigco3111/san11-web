@@ -1143,8 +1143,10 @@ produceArms(id,key){const g=this;const c=g.cityById[id],a=this.armsInfo(c,key);i
     return true;
   }
   dispatch(cityId, officerIdxs, troops, type) { // 부대 출진, AP 40
+    const c = this.cityById[cityId], f = this.forces[c?.force];
+    if (!c || !f?.alive || !Array.isArray(officerIdxs) || !Number.isSafeInteger(troops) || troops <= 0 || !Object.hasOwn(UNIT_TYPES, type)) return false;
     officerIdxs = [...new Set(officerIdxs)];
-    const c = this.cityById[cityId], f = this.forces[c.force];
+    if (officerIdxs.some(i => { const st = this.officers[i]?.state; return !st || st.force !== c.force || st.city !== c.id || !['ruler','taesu','serving'].includes(st.status) || !c.officers.includes(i) || this.units.some(u => u.officers.includes(i)); })) return false;
     if (this._blocked(c)) return false; // 군단 소속
     const apc = Math.ceil(40 * this.apMult(c, 'military')); // R13 군사부
     if (f.ap < apc || c.troops < troops || officerIdxs.length === 0 || officerIdxs.length > this.dispatchCap(c.force)) return false;
