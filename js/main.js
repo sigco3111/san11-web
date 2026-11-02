@@ -448,7 +448,7 @@ function showDashboard() { // R97→R99: 세력 현황 대시보드 — 카드�
 
 function checkGameOver() {
   const owners = new Set(game.cities.map(c => c.force).filter(x => x != null)); // R14: 통일은 모든 도시 제압 기준 (설계안 102행)
-  if (owners.size === 1) {
+  if (owners.size === 1 && game.cities.every(c => c.force != null)) {
     if (!game._endShown) {
       game._endShown = true;
       endModal(`【${game.forceName([...owners][0])}】${josa(game.forceName([...owners][0]), ['이','가']).slice(-1)} 모든 도시를 제압해 천하를 통일했습니다! (${game.year}년 ${game.month}월, ${game.turn}턴)`, true);
